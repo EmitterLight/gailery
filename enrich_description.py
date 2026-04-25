@@ -186,7 +186,7 @@ def get_photo_data(db, photo_path):
     return {
         "description": photo.get("description", ""),
         "folder": folder,
-        "date": photo.get("date", ""),
+        "date": photo.get("manual_date") or photo.get("date", ""),
         "faces": faces,
         "photo_id": photo_id,
     }
@@ -277,11 +277,11 @@ def execute_tool(db, tool_name, arguments):
         dt_max = (dt + timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
 
         rows = db.sqlite.execute(
-            "SELECT p.path, p.date, f.persona_id, per.display_name "
+            "SELECT p.path, COALESCE(p.manual_date, p.date), f.persona_id, per.display_name "
             "FROM photos p JOIN faces f ON f.photo_id LIKE '%' || SUBSTR(p.path, LENGTH('" + str(PHOTO_SHARE_PATH) + "/')+1) "
             "LEFT JOIN personas per ON f.persona_id = per.persona_id "
-            "WHERE p.date BETWEEN ? AND ? AND per.display_name IS NOT NULL "
-            "ORDER BY p.date LIMIT 30",
+            "WHERE COALESCE(p.manual_date, p.date) BETWEEN ? AND ? AND per.display_name IS NOT NULL "
+            "ORDER BY COALESCE(p.manual_date, p.date) LIMIT 30",
             (dt_min, dt_max)
         ).fetchall()
         photos = {}

@@ -55,9 +55,12 @@ def _enrich_photo(p, photo_faces, persona_map, include_created=False, include_th
         "description": p.get("description"),
         "rich_description": p.get("rich_description"),
         "faces_present": bool(p.get("faces_present")),
-        "date": p.get("date"),
+        "date": p.get("manual_date") or p.get("date"),
+        "original_date": p.get("date"),
+        "manual_date": p.get("manual_date"),
         "gps_lat": p.get("gps_lat"),
         "gps_lon": p.get("gps_lon"),
+        "manual_gps": bool(p.get("manual_gps")),
         "camera_make": p.get("camera_make"),
         "camera_model": p.get("camera_model"),
         "total_faces": len(faces),
@@ -662,7 +665,7 @@ async def get_map_photos():
         db = DatabaseManager()
         cur = db.sqlite.cursor()
         rows = cur.execute("""
-            SELECT photo_id, path, description, gps_lat, gps_lon, date, camera_make, camera_model, img_width, img_height, manual_gps
+            SELECT photo_id, path, description, gps_lat, gps_lon, COALESCE(manual_date, date) as date, camera_make, camera_model, img_width, img_height, manual_gps
             FROM photos
             WHERE gps_lat IS NOT NULL AND gps_lon IS NOT NULL
               AND gps_lat != 0 AND gps_lon != 0
@@ -704,14 +707,14 @@ async def get_neighbor(date: str, dir: str = "next"):
 
     if dir == "next":
         row = cur.execute(
-            "SELECT photo_id, path, description, date, camera_make, camera_model, gps_lat, gps_lon "
-            "FROM photos WHERE date > ? ORDER BY date ASC LIMIT 1",
+            "SELECT photo_id, path, description, COALESCE(manual_date, date) as effective_date, camera_make, camera_model, gps_lat, gps_lon "
+            "FROM photos WHERE COALESCE(manual_date, date) > ? ORDER BY effective_date ASC LIMIT 1",
             (date,)
         ).fetchone()
     else:
         row = cur.execute(
-            "SELECT photo_id, path, description, date, camera_make, camera_model, gps_lat, gps_lon "
-            "FROM photos WHERE date < ? ORDER BY date DESC LIMIT 1",
+            "SELECT photo_id, path, description, COALESCE(manual_date, date) as effective_date, camera_make, camera_model, gps_lat, gps_lon "
+            "FROM photos WHERE COALESCE(manual_date, date) < ? ORDER BY effective_date DESC LIMIT 1",
             (date,)
         ).fetchone()
 
@@ -808,6 +811,74 @@ async def set_gps(request: Request):
     cur.execute(
         "UPDATE photos SET gps_lat = ?, gps_lon = ?, manual_gps = 1 WHERE photo_id = ?",
         (lat, lon, real_id)
+    )
+    db.sqlite.commit()
+
+    return {"success": True}
+
+
+@router.post("/set_date")
+async def set_date(request: Request):
+    from database import DatabaseManager
+
+    body = await request.json()
+    photo_id = body.get("photo_id")
+    manual_date = body.get("manual_date")
+
+    if not photo_id:
+        raise HTTPException(status_code=400, detail="photo_id is required")
+    if not manual_date:
+        raise HTTPException(status_code=400, detail="manual_date is required")
+
+    if len(manual_date) == 10 and manual_date[4] == '-' and manual_date[7] == '-':
+        manual_date += " 00:00:00"
+    elif len(manual_date) == 16 and manual_date[10] == ' ':
+        manual_date += ":00"
+
+    db = DatabaseManager()
+    cur = db.sqlite.cursor()
+
+    row = cur.execute(
+        "SELECT photo_id FROM photos WHERE photo_id = ? OR path LIKE ?",
+        (photo_id, '%' + photo_id)
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Photo not found")
+
+    real_id = row[0]
+    cur.execute(
+        "UPDATE photos SET manual_date = ? WHERE photo_id = ?",
+        (manual_date, real_id)
+    )
+    db.sqlite.commit()
+
+    return {"success": True, "manual_date": manual_date}
+
+
+@router.post("/clear_date")
+async def clear_date(request: Request):
+    from database import DatabaseManager
+
+    body = await request.json()
+    photo_id = body.get("photo_id")
+
+    if not photo_id:
+        raise HTTPException(status_code=400, detail="photo_id is required")
+
+    db = DatabaseManager()
+    cur = db.sqlite.cursor()
+
+    row = cur.execute(
+        "SELECT photo_id FROM photos WHERE photo_id = ? OR path LIKE ?",
+        (photo_id, '%' + photo_id)
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Photo not found")
+
+    real_id = row[0]
+    cur.execute(
+        "UPDATE photos SET manual_date = NULL WHERE photo_id = ?",
+        (real_id,)
     )
     db.sqlite.commit()
 

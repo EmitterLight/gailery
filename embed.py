@@ -109,7 +109,7 @@ def build_search_text(photo, faces_for_photo, persona_map):
         if parts_from_path:
             parts.append(" | ".join(parts_from_path))
 
-    date = photo.get("date")
+    date = photo.get("manual_date") or photo.get("date")
     if date and date != "0000:00:00 00:00:00":
         parts.append(date[:10].replace(":", "-"))
 
@@ -176,7 +176,7 @@ def encode_batch(tokenizer, model, device, texts, max_length=512):
 def get_unembedded_photos_sql(db, limit=0, offset=0):
     cur = db.sqlite.cursor()
     sql = """
-        SELECT photo_id, path, description, date,
+        SELECT photo_id, path, description, COALESCE(manual_date, date) as date,
                camera_make, camera_model, gps_lat, gps_lon,
                faces_present
         FROM photos

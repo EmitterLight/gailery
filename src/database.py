@@ -76,6 +76,7 @@ class DatabaseManager:
             );
             CREATE INDEX IF NOT EXISTS idx_photos_path ON photos(path);
             CREATE INDEX IF NOT EXISTS idx_photos_date ON photos(date);
+            CREATE INDEX IF NOT EXISTS idx_photos_effective_date ON photos(COALESCE(manual_date, date));
             CREATE INDEX IF NOT EXISTS idx_photos_faces ON photos(faces_present);
             CREATE INDEX IF NOT EXISTS idx_photos_exif ON photos(exif_checked);
             CREATE INDEX IF NOT EXISTS idx_photos_desc ON photos(description);
@@ -130,13 +131,16 @@ class DatabaseManager:
         """)
         self.sqlite.commit()
 
-        # Migration: check and add manual_gps column if missing (for existing databases)
         cur.execute("PRAGMA table_info(photos)")
         columns = [row[1] for row in cur.fetchall()]
         if 'manual_gps' not in columns:
             cur.execute("ALTER TABLE photos ADD COLUMN manual_gps INTEGER DEFAULT 0")
             self.sqlite.commit()
             logger.info("Migration: added manual_gps column to photos table")
+        if 'manual_date' not in columns:
+            cur.execute("ALTER TABLE photos ADD COLUMN manual_date TEXT")
+            self.sqlite.commit()
+            logger.info("Migration: added manual_date column to photos table")
 
     def _open_vector_tables(self):
         if "photo_embeddings" not in self.vectordb.table_names():
@@ -247,33 +251,34 @@ class DatabaseManager:
                       issue_type=None, photo_type=None, has_gps=None,
                       no_date=None, has_description=None,
                       sort="date_desc", limit=60, offset=0):
-        sql = "SELECT * FROM photos WHERE 1=1"
+        ed = "COALESCE(manual_date, date)"
+        sql = "SELECT *, " + ed + " as effective_date FROM photos WHERE 1=1"
         params = []
 
         if no_date is True:
-            sql += " AND (date IS NULL OR length(date) < 4 OR substr(date,1,4) = '0000')"
+            sql += f" AND ({ed} IS NULL OR length({ed}) < 4 OR substr({ed},1,4) = '0000')"
         if q:
             sql += " AND description LIKE ?"
             params.append(f"%{q}%")
         if date_from:
-            sql += " AND date >= ?"
+            sql += f" AND {ed} >= ?"
             params.append(date_from)
         if date_to:
-            sql += " AND date <= ?"
+            sql += f" AND {ed} <= ?"
             params.append(date_to)
         if date_after:
             if path_after:
-                sql += " AND (date > ? OR (date = ? AND path > ?))"
+                sql += f" AND ({ed} > ? OR ({ed} = ? AND path > ?))"
                 params.extend([date_after, date_after, path_after])
             else:
-                sql += " AND date > ?"
+                sql += f" AND {ed} > ?"
                 params.append(date_after)
         if date_before:
             if path_before:
-                sql += " AND (date < ? OR (date = ? AND path < ?))"
+                sql += f" AND ({ed} < ? OR ({ed} = ? AND path < ?))"
                 params.extend([date_before, date_before, path_before])
             else:
-                sql += " AND date < ?"
+                sql += f" AND {ed} < ?"
                 params.append(date_before)
         if has_faces is True:
             sql += " AND faces_present = 1"
@@ -313,12 +318,12 @@ class DatabaseManager:
                 sql += " AND 1=0"
 
         order_map = {
-            "date_desc": "date DESC, path DESC",
-            "date_asc": "date ASC, path ASC",
+            "date_desc": "effective_date DESC, path DESC",
+            "date_asc": "effective_date ASC, path ASC",
             "created_desc": "created_at DESC, path DESC",
             "created_asc": "created_at ASC, path ASC",
         }
-        sql += f" ORDER BY {order_map.get(sort, 'date DESC')}"
+        sql += f" ORDER BY {order_map.get(sort, 'effective_date DESC')}"
 
         count_sql = sql.replace("SELECT *", "SELECT COUNT(*)", 1)
         total = self.sqlite.execute(count_sql, params).fetchone()[0]
@@ -334,11 +339,12 @@ class DatabaseManager:
         return _rows_to_dicts(rows)
 
     def get_date_histogram(self):
+        ed = "COALESCE(manual_date, date)"
         rows = self.sqlite.execute(
-            "SELECT substr(date,1,4) as year, substr(date,1,7) as month, COUNT(*) as cnt "
-            "FROM photos WHERE date IS NOT NULL AND length(date) >= 4 "
-            "AND substr(date,1,4) != '0000' "
-            "GROUP BY year, month ORDER BY year, month"
+            f"SELECT substr({ed},1,4) as year, substr({ed},1,7) as month, COUNT(*) as cnt "
+            f"FROM photos WHERE {ed} IS NOT NULL AND length({ed}) >= 4 "
+            f"AND substr({ed},1,4) != '0000' "
+            f"GROUP BY year, month ORDER BY year, month"
         ).fetchall()
         years = {}
         months = {}
@@ -347,7 +353,7 @@ class DatabaseManager:
             years[y] = years.get(y, 0) + cnt
             months[m] = months.get(m, 0) + cnt
         no_date = self.sqlite.execute(
-            "SELECT COUNT(*) FROM photos WHERE date IS NULL OR length(date) < 4 OR substr(date,1,4) = '0000'"
+            "SELECT COUNT(*) FROM photos WHERE COALESCE(manual_date, date) IS NULL OR length(COALESCE(manual_date, date)) < 4 OR substr(COALESCE(manual_date, date),1,4) = '0000'"
         ).fetchone()[0]
         if no_date > 0:
             years["no_date"] = no_date

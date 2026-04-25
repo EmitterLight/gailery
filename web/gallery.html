@@ -142,6 +142,18 @@
         .rich-actions .btn-cancel { background: #484f58; color: #fff; }
         .rich-error { color: #f85149; font-size: 11px; }
         .detail-panel .dp-personas { margin-top: 10px; }
+        .manual-date-badge { display: inline-block; background: rgba(218,54,51,.8); color: #fff; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 3px; cursor: pointer; }
+        .manual-date-badge:hover { background: rgba(218,54,51,1); }
+        .dp-date-btn { font-size: 10px; color: #6e7681; cursor: pointer; font-family: monospace; text-decoration: underline; }
+        .dp-date-btn:hover { color: #58a6ff; }
+        .dp-date-clear { font-size: 11px; color: #f85149; cursor: pointer; font-weight: 600; }
+        .dp-date-clear:hover { color: #da3633; }
+        .dp-date-input { background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; padding: 3px 6px; font-family: monospace; font-size: 11px; }
+        .dp-date-input:focus { outline: none; border-color: #58a6ff; }
+        .dp-date-save { padding: 3px 8px; background: #238636; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 10px; font-family: monospace; }
+        .dp-date-save:hover { background: #2ea043; }
+        .dp-date-cancel { padding: 3px 8px; background: #21262d; color: #c9d1d9; border: none; border-radius: 4px; cursor: pointer; font-size: 10px; font-family: monospace; }
+        .dp-date-cancel:hover { background: #30363d; }
         .dp-pchip { display: inline-flex; align-items: center; gap: 5px; background: #0d1117; border-radius: 4px; padding: 4px 6px; margin: 3px 2px; cursor: pointer; }
         .dp-pchip:hover { background: #21262d; }
         .dp-pchip img { width: 28px; height: 28px; border-radius: 2px; object-fit: cover; }
@@ -245,6 +257,13 @@
         .light-theme .detail-panel .dp-desc { color: #24292f; }
         .light-theme .detail-panel .dp-desc.rich { color: #9a6700; border-left-color: #9a6700; }
         .light-theme .detail-panel .dp-meta { color: #24292f; }
+        .light-theme .detail-panel .manual-date-badge { background: rgba(207,34,46,.85); }
+        .light-theme .detail-panel .dp-date-btn { color: #57606a; }
+        .light-theme .detail-panel .dp-date-btn:hover { color: #0969da; }
+        .light-theme .detail-panel .dp-date-clear { color: #cf222e; }
+        .light-theme .detail-panel .dp-date-input { background: #ffffff; color: #24292f; border: 1px solid #d0d7de; }
+        .light-theme .detail-panel .dp-date-save { background: #1f883d; color: #fff; }
+        .light-theme .detail-panel .dp-date-cancel { background: #eaeef2; color: #24292f; }
         .light-theme .rich-preview textarea { background: #ffffff; color: #24292f; border: 1px solid #d0d7de; }
         .light-theme .rich-preview textarea:focus { border-color: #0969da; }
         .light-theme .rich-actions .btn-save { background: #1f883d; }
@@ -1003,7 +1022,24 @@ function openDetail(idx) {
         html += '<button onclick="showCustomDesc(\'' + esc(p.db_id || '') + '\')" style="padding:4px 12px;background:#1f6feb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-family:monospace">Своё описание</button>';
         html += '</div>';
     }
-    if (p.date) html += '<div class="dp-meta">Дата: ' + formatDate(p.date) + '</div>';
+    if (p.date) {
+        var showDate = p.manual_date || p.date;
+        html += '<div class="dp-meta" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">Дата: ' + formatDate(showDate);
+        if (p.manual_date) {
+            html += ' <span class="manual-date-badge" onclick="showDateEdit()">ручная</span>';
+            html += ' <span class="dp-date-btn dp-date-clear" onclick="clearPhotoDate(\'' + esc(p.photo_id) + '\')">✕</span>';
+        } else {
+            html += ' <span class="dp-date-btn" onclick="showDateEdit()">Изменить</span>';
+        }
+        html += '</div>';
+        if (p.original_date && p.manual_date) html += '<div class="dp-meta" style="color:#6e7681">EXIF дата: ' + formatDate(p.original_date) + '</div>';
+        html += '<div id="dateEditArea" style="display:none;margin:2px 0 6px">';
+        html += '<div style="display:flex;align-items:center;gap:4px">';
+        html += '<input type="datetime-local" id="manualDateInput" class="dp-date-input" value="">';
+        html += '<button onclick="setPhotoDate(\'' + esc(p.photo_id) + '\')" class="dp-date-save">Задать</button>';
+        html += '<button onclick="hideDateEdit()" class="dp-date-cancel">Отмена</button>';
+        html += '</div></div>';
+    }
     if (p.camera_make || p.camera_model) html += '<div class="dp-meta">Камера: ' + esc((p.camera_make || '') + ' ' + (p.camera_model || '')) + '</div>';
     html += '<div class="dp-meta">Лица: ' + p.total_faces + '</div>';
     if (p.photo_type && p.photo_type !== 'photo') html += '<div class="dp-meta">Тип: ' + esc(p.photo_type) + '</div>';
@@ -1296,6 +1332,61 @@ function clearPhotoGps(photoId) {
     }).catch(function(e) {
         alert('Ошибка: ' + e.message);
     });
+}
+
+function setPhotoDate(photoId) {
+    var input = document.getElementById('manualDateInput');
+    if (!input) return;
+    var val = input.value;
+    if (!val) { alert('Укажите дату и время'); return; }
+    var manualDate = val.replace('T', ' ') + ':00';
+    fetch(API + '/photos/set_date', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ photo_id: photoId, manual_date: manualDate })
+    }).then(function(r) { return r.json(); }).then(function(data) {
+        if (data.success) {
+            var p = currentPhotos.find(function(ph) { return ph.photo_id === photoId; });
+            if (p) {
+                if (!p.original_date) p.original_date = p.date;
+                p.manual_date = manualDate; p.date = manualDate;
+            }
+            var idx = currentPhotos.findIndex(function(ph) { return ph.photo_id === photoId; });
+            if (idx >= 0) openDetail(idx);
+        } else {
+            alert('Ошибка: ' + (data.detail || 'не удалось задать дату'));
+        }
+    }).catch(function(e) { alert('Ошибка: ' + e.message); });
+}
+
+function showDateEdit() {
+    var el = document.getElementById('dateEditArea');
+    if (el) el.style.display = 'block';
+    var input = document.getElementById('manualDateInput');
+    if (input) input.focus();
+}
+
+function hideDateEdit() {
+    var el = document.getElementById('dateEditArea');
+    if (el) el.style.display = 'none';
+}
+
+function clearPhotoDate(photoId) {
+    if (!confirm('Удалить ручную дату для этого фото?')) return;
+    fetch(API + '/photos/clear_date', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ photo_id: photoId })
+    }).then(function(r) { return r.json(); }).then(function(data) {
+        if (data.success) {
+            var p = currentPhotos.find(function(ph) { return ph.photo_id === photoId; });
+            if (p) { p.manual_date = null; p.date = p.original_date || p.date; }
+            var idx = currentPhotos.findIndex(function(ph) { return ph.photo_id === photoId; });
+            if (idx >= 0) openDetail(idx);
+        } else {
+            alert('Ошибка при удалении даты');
+        }
+    }).catch(function(e) { alert('Ошибка: ' + e.message); });
 }
 
 function modalNav(dir) {
