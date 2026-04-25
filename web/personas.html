@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gailery - Персоны</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: monospace; background: #0d1117; color: #c9d1d9; }
+        h1 { position: relative; }
+        h1 .theme-toggle { position: absolute; right: 12px; top: 50%; transform: translateY(-55%); background: none; border: none; cursor: pointer; color: #e3b341; font-size: 24px; padding: 8px 12px; display: flex; align-items: center; justify-content: center; z-index: 10; }
+        h1 .theme-toggle:hover { background: rgba(255,255,255,.08); }
+        .light-theme { background: #ffffff; color: #24292f; }
+        .light-theme h1 { background: #f6f8fa; border-bottom: 1px solid #d0d7de; color: #0969da; }
+        .light-theme h1 .nav a { color: #57606a; }
+        .light-theme h1 .nav a:hover { color: #0969da; }
+        .light-theme h1 .nav a.active { color: #0969da; }
+        .light-theme h1 .theme-toggle { color: #0969da; }
+        .light-theme h1 .theme-toggle:hover { background: rgba(0,0,0,.06); }
+        .light-theme .toolbar { background: #f6f8fa; border-color: #d0d7de; }
+        .light-theme .toolbar .stat { color: #57606a; }
+        .light-theme .toolbar .stat b { color: #0969da; }
+        .light-theme .toolbar input { background: #ffffff; color: #24292f; border-color: #d0d7de; }
+        .light-theme .toolbar input:focus { border-color: #0969da; }
+        .light-theme .toolbar select { background: #ffffff; color: #24292f; border-color: #d0d7de; }
+        .light-theme .toolbar button { background: #1f883d; }
+        .light-theme .toolbar button:hover { background: #29994a; }
+        .light-theme .personas-layout { background: #f6f8fa; }
+        .light-theme .named-panel { background: #ffffff; }
+        .light-theme .named-panel h3 { color: #0969da; border-color: #d0d7de; }
+        .light-theme .named-card { background: #ffffff; border-color: #d0d7de; }
+        .light-theme .named-card:hover { border-color: #0969da; }
+        .light-theme .named-card.expanded { border-color: #0969da; }
+        .light-theme .nc-top .pname { color: #1f883d; }
+        .light-theme .nc-bottom .face-thumb { border-color: #1f883d; background: #f6f8fa; }
+        .light-theme .nc-count { color: #0969da; }
+        .light-theme .nc-count small { color: #57606a; }
+        .light-theme .nc-detail { border-color: #d0d7de; }
+        .light-theme .nc-detail .persona-id { color: #57606a; }
+        .light-theme .nc-detail .btn-edit { border-color: #d0d7de; color: #57606a; }
+        .light-theme .nc-detail .btn-edit:hover { border-color: #0969da; color: #0969da; }
+        .light-theme .unnamed-area { background: #f6f8fa; }
+        .light-theme .unnamed-area h3 { color: #57606a; border-color: #d0d7de; }
+        .light-theme .unnamed-card { background: #ffffff; border-color: #d0d7de; }
+        .light-theme .unnamed-card:hover { border-color: #0969da; }
+        .light-theme .unnamed-card .face-thumb { border-color: #8c949e; background: #f6f8fa; }
+        .light-theme .unnamed-card .uc-name { color: #57606a; }
+        .light-theme .unnamed-card .uc-count { color: #57606a; }
+        .light-theme .uc-detail { border-color: #d0d7de; }
+        .light-theme .rename-dialog { background: rgba(0,0,0,.5); }
+        .light-theme .rd-box { background: #ffffff; border-color: #d0d7de; color: #24292f; }
+        .light-theme .rd-all { background: #1f883d; }
+        .light-theme .rd-all:hover { background: #29994a; }
+        .light-theme .rd-one { background: #0969da; }
+        .light-theme .rd-abort { background: #f6f8fa; color: #24292f; border: 1px solid #d0d7de; }
+        .light-theme .persona-modal { background: #ffffff; border-color: #d0d7de; }
+        .light-theme .pm-overlay { background: rgba(0,0,0,.3); }
+        .light-theme .pm-header { background: #f6f8fa; border-color: #d0d7de; }
+        .light-theme .pm-header .pm-thumb { border-color: #1f883d; background: #f6f8fa; }
+        .light-theme .pm-header .pm-name { color: #1f883d; }
+        .light-theme .pm-header .pm-meta { color: #57606a; }
+        .light-theme .pm-header .pm-close { color: #57606a; }
+        .light-theme .pm-header .pm-close:hover { color: #24292f; }
+        .light-theme .pm-body { background: #ffffff; }
+        .light-theme .pm-edit { background: #f6f8fa; border-color: #d0d7de; }
+        .light-theme .pm-edit label { color: #57606a; }
+        .light-theme .pm-edit input[type=text] { background: #ffffff; color: #24292f; border-color: #d0d7de; }
+        .light-theme .pm-edit input[type=text]:focus { border-color: #0969da; }
+        .light-theme .pm-faces-title { color: #57606a; }
+        .light-theme .pm-cluster-title { color: #57606a; border-color: #d0d7de; }
+        .light-theme .pm-body .face-preview { background: #f6f8fa; }
+        .light-theme .pm-body .face-preview .conf { background: rgba(0,0,0,.5); color: #8c949e; }
+        .light-theme .ac-list { background: #ffffff; border-color: #d0d7de; }
+        .light-theme .ac-item { color: #24292f; }
+        .light-theme .ac-item:hover { background: #f6f8fa; color: #0969da; }
+        .light-theme .ac-face { border-color: #d0d7de; }
+        .light-theme .ac-name { color: #24292f; }
+        .light-theme .ac-cnt { color: #57606a; }
+        .light-theme .loading, .light-theme .empty { color: #57606a; }
+
+        h1 { padding: 14px 20px; background: #161b22; border-bottom: 1px solid #30363d; font-size: 16px; color: #58a6ff; display: flex; align-items: center; justify-content: space-between; position: relative; }
+        h1 .nav { font-size: 13px; padding-right: 50px; }
+        h1 .nav a { color: #6e7681; text-decoration: none; margin-left: 14px; }
+        h1 { display: flex; align-items: center; }
+        h1 .logo { height: 32px; width: auto; margin-right: 6px; }
+        
+        h1 .nav a:hover { color: #58a6ff; }
+        .toolbar { padding: 8px 20px; background: #161b22; border-bottom: 1px solid #30363d; display: flex; gap: 10px; align-items: center; font-size: 12px; flex-wrap: wrap; }
+        .toolbar .stat { color: #8b949e; }
+        .toolbar .stat b { color: #58a6ff; }
+        .toolbar input { background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; padding: 4px 8px; font-family: monospace; font-size: 12px; }
+        .toolbar input:focus { outline: none; border-color: #58a6ff; }
+        .toolbar select { background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; padding: 4px 8px; font-family: monospace; font-size: 12px; }
+        .toolbar button { background: #238636; color: #fff; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; }
+        .toolbar button:hover { background: #2ea043; }
+        .personas-layout { display: flex; gap: 12px; padding: 12px 20px; min-height: calc(100vh - 120px); }
+        .named-panel { flex-shrink: 0; overflow-y: auto; max-height: calc(100vh - 120px); }
+        .named-panel h3 { font-size: 12px; color: #58a6ff; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid #21262d; }
+        .named-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px; }
+        .unnamed-area { flex: 1; overflow-y: auto; max-height: calc(100vh - 120px); }
+        .unnamed-area h3 { font-size: 12px; color: #6e7681; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid #21262d; }
+
+        .named-card { background: #161b22; border: 1px solid #21262d; border-radius: 6px; padding: 8px; cursor: pointer; }
+        .named-card:hover { border-color: #30363d; }
+        .named-card.expanded { border-color: #58a6ff; }
+        .nc-top { display: flex; flex-direction: column; gap: 4px; }
+        .nc-top .pname { font-size: 12px; color: #3fb950; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; text-align: left; }
+        .nc-bottom { display: flex; align-items: center; gap: 6px; }
+        .nc-bottom .face-thumb { width: 64px; height: 76px; border-radius: 8px; object-fit: cover; border: 2px solid #3fb950; flex-shrink: 0; background: #0d1117; }
+        .nc-count { font-size: 22px; font-weight: bold; color: #58a6ff; line-height: 1; text-align: center; min-width: 30px; }
+        .nc-count small { font-size: 9px; color: #6e7681; display: block; font-weight: normal; }
+        .nc-detail { display: none; margin-top: 10px; padding-top: 8px; border-top: 1px solid #21262d; }
+        .named-card.expanded .nc-detail { display: block; }
+        .nc-detail .persona-id { font-size: 10px; color: #6e7681; margin-bottom: 6px; }
+        .nc-detail .btn-edit { background: none; border: 1px solid #30363d; color: #8b949e; padding: 1px 6px; border-radius: 3px; cursor: pointer; font-size: 10px; margin-bottom: 6px; }
+        .nc-detail .btn-edit:hover { border-color: #58a6ff; color: #58a6ff; }
+
+        .unnamed-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+        .unnamed-card { background: #161b22; border: 1px solid #21262d; border-radius: 4px; padding: 8px; cursor: pointer; display: flex; align-items: center; gap: 10px; }
+        .unnamed-card:hover { border-color: #30363d; }
+        .unnamed-card.expanded { grid-column: 1 / -1; }
+        .unnamed-card .face-thumb { width: 64px; height: 76px; border-radius: 8px; object-fit: cover; border: 1px solid #6e7681; flex-shrink: 0; background: #0d1117; }
+        .unnamed-card .uc-info { flex: 1; min-width: 0; }
+        .unnamed-card .uc-name { font-size: 13px; color: #8b949e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; font-style: italic; }
+        .unnamed-card .uc-count { font-size: 16px; color: #8b949e; font-weight: bold; }
+        .uc-detail { display: none; margin-top: 8px; padding-top: 6px; border-top: 1px solid #21262d; }
+        .unnamed-card.expanded .uc-detail { display: block; }
+
+        .rename-dialog { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,.7); z-index: 1002; justify-content: center; align-items: center; }
+        .rename-dialog.show { display: flex; }
+        .rd-box { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; max-width: 400px; color: #c9d1d9; font-size: 13px; }
+        .rd-box p { margin-bottom: 12px; line-height: 1.5; }
+        .rd-box .rd-btns { display: flex; gap: 8px; }
+        .rd-box button { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .rd-all { background: #238636; color: #fff; }
+        .rd-one { background: #58a6ff; color: #fff; }
+        .rd-abort { background: #21262d; color: #c9d1d9; }
+
+        .persona-modal { display: none; position: fixed; top: 10%; left: 10%; width: 80%; height: 80%; background: #161b22; border: 1px solid #30363d; border-radius: 10px; z-index: 1000; overflow: hidden; }
+        .persona-modal.show { display: flex; flex-direction: column; }
+        .pm-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,.5); z-index: 999; }
+        .pm-overlay.show { display: block; }
+        .pm-header { padding: 14px 20px; background: #0d1117; border-bottom: 1px solid #21262d; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+        .pm-header .pm-thumb { width: 56px; height: 56px; border-radius: 50%; object-fit: cover; border: 2px solid #3fb950; background: #0d1117; }
+        .pm-header .pm-info { flex: 1; }
+        .pm-header .pm-name { font-size: 18px; color: #3fb950; font-weight: bold; }
+        .pm-header .pm-meta { font-size: 11px; color: #6e7681; margin-top: 2px; }
+        .pm-header .pm-close { font-size: 24px; color: #6e7681; cursor: pointer; padding: 4px 8px; }
+        .pm-header .pm-close:hover { color: #c9d1d9; }
+        .pm-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
+        .pm-edit { margin-bottom: 16px; padding: 12px; background: #0d1117; border: 1px solid #21262d; border-radius: 6px; }
+        .pm-edit label { display: block; color: #8b949e; font-size: 11px; margin-bottom: 4px; }
+        .pm-edit input[type="text"] { width: 100%; background: #161b22; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; padding: 6px 10px; font-family: monospace; font-size: 14px; }
+        .pm-edit input[type="text"]:focus { outline: none; border-color: #58a6ff; }
+        .pm-edit .btn-row { margin-top: 6px; display: flex; gap: 6px; }
+        .pm-edit button { border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .pm-faces-title { font-size: 12px; color: #8b949e; margin-bottom: 8px; }
+        .pm-cluster-title { color: #6e7681; font-size: 10px; margin: 10px 0 6px; padding: 4px 0; border-bottom: 1px solid #21262d; }
+        .pm-body .faces-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 6px; }
+        .pm-body .face-preview { aspect-ratio: 1; background: #0d1117; border-radius: 4px; overflow: hidden; cursor: pointer; position: relative; }
+        .pm-body .face-preview:hover { opacity: .8; }
+        .pm-body .face-preview img { width: 100%; height: 100%; object-fit: cover; }
+        .pm-body .face-preview .conf { position: absolute; bottom: 1px; right: 1px; background: rgba(0,0,0,.7); color: #8b949e; font-size: 8px; padding: 0 2px; }
+
+        .ac-wrap { position: relative; }
+        .ac-list { position: absolute; top: 100%; left: 0; right: 0; background: #0d1117; border: 1px solid #30363d; border-top: none; border-radius: 0 0 4px 4px; max-height: 360px; overflow-y: auto; z-index: 10; display: none; }
+        .ac-list.show { display: block; }
+        .ac-item { padding: 6px 10px; cursor: pointer; font-size: 13px; color: #c9d1d9; display: flex; align-items: center; gap: 8px; }
+        .ac-item:hover { background: #21262d; color: #58a6ff; }
+        .ac-face { width: 28px; height: 34px; border-radius: 4px; object-fit: cover; border: 1px solid #30363d; }
+        .ac-name { flex: 1; }
+        .ac-cnt { font-size: 10px; color: #484f58; }
+
+        .loading { text-align: center; padding: 40px; color: #8b949e; }
+        .empty { text-align: center; padding: 30px; color: #6e7681; font-size: 13px; }
+    </style>
+</head>
+<body>
+    <h1>
+        <img class="logo" src="/logo-dark.png" data-light="/logo-light.png" data-dark="/logo-dark.png" alt="Gailery"><span>Персоны</span>
+        <div class="nav">
+            <a href="/gallery">Галерея</a>
+            <a href="/catalog">Каталог</a>
+            <a href="/map">Карта</a>
+            <a href="/monitor">Монитор</a>
+            <a href="/persons" class="active">Персоны</a>
+            <a href="/control">Управление</a>
+            <a href="/log">Лог</a>
+        </div>
+        <button class="theme-toggle" onclick="toggleTheme()" title="Дневная тема">☀</button>
+    </h1>
+    <div class="toolbar">
+        <input type="text" id="filterInput" placeholder="Фильтр по имени/кластеру..." oninput="applyFilter()">
+        <select id="filterMode" onchange="applyFilter()">
+            <option value="all">Все</option>
+            <option value="named">С именем</option>
+            <option value="unnamed">Без имени</option>
+        </select>
+        <span class="stat">Всего: <b id="totalCount">?</b></span>
+        <span class="stat">С именем: <b id="namedCount">?</b></span>
+        <button onclick="loadPersonas()">Обновить</button>
+    </div>
+    <div id="personas" class="personas-layout">
+        <div class="named-panel" id="namedPanel"><h3>С именем</h3><div class="loading">Загрузка...</div></div>
+        <div class="unnamed-area" id="unnamedArea"><h3>Без имени</h3><div class="loading">Загрузка...</div></div>
+    </div>
+
+    <div class="rename-dialog" id="renameDialog">
+        <div class="rd-box">
+            <p id="rdText"></p>
+            <div class="rd-btns">
+                <button class="rd-all" onclick="doSaveAll()">Ко всем кластерам с этим именем</button>
+                <button class="rd-one" onclick="doSaveOne()">Только к этому</button>
+                <button class="rd-abort" onclick="doSaveAbort()">Отмена</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="pm-overlay" id="pmOverlay" onclick="closePersonaModal()"></div>
+    <div class="persona-modal" id="personaModal">
+        <div class="pm-header">
+            <img class="pm-thumb" id="pmThumb" src="">
+            <div class="pm-info">
+                <div class="pm-name" id="pmName"></div>
+                <div class="pm-meta" id="pmMeta"></div>
+            </div>
+            <span class="pm-close" onclick="closePersonaModal()">&times;</span>
+        </div>
+        <div class="pm-body" id="pmBody"></div>
+    </div>
+
+<script>
+var API = '/api';
+var allPersonas = [];
+var acNames = [];
+var _pmClusterIds = [];
+var _allGroups = {};
+var editingPid = null;
+var pendingName = null;
+var relatedClusters = [];
+
+function esc(s) {
+    if (!s) return '';
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function loadAcNames() {
+    fetch(API + '/persons/names').then(function(r) { return r.json(); }).then(function(n) { acNames = n; });
+}
+
+function loadPersonas() {
+    fetch(API + '/persons/').then(function(r) { return r.json(); }).then(function(personas) {
+        allPersonas = personas;
+
+        var named = personas.filter(function(p) { return p.display_name; });
+        var unnamed = personas.filter(function(p) { return !p.display_name; });
+        document.getElementById('totalCount').textContent = personas.length;
+        document.getElementById('namedCount').textContent = named.length;
+
+        applyFilter();
+        loadAcNames();
+    }).catch(function() {
+        document.getElementById('personas').innerHTML = '<div class="loading" style="color:#f85149">Ошибка загрузки</div>';
+    });
+}
+
+function applyFilter() {
+    var q = document.getElementById('filterInput').value.toLowerCase();
+    var mode = document.getElementById('filterMode').value;
+
+    var filtered = allPersonas;
+    if (mode === 'named') filtered = filtered.filter(function(p) { return p.display_name; });
+    if (mode === 'unnamed') filtered = filtered.filter(function(p) { return !p.display_name; });
+    if (q) {
+        filtered = filtered.filter(function(p) {
+            var hay = ((p.display_name || '') + ' ' + (p.name || '') + ' ' + (p.persona_id || '')).toLowerCase();
+            return hay.indexOf(q) >= 0;
+        });
+    }
+
+    var groups = {};
+    var unnamed = [];
+    _allGroups = {};
+    for (var i = 0; i < filtered.length; i++) {
+        var p = filtered[i];
+        if (p.display_name) {
+            var key = p.display_name;
+            if (!groups[key]) groups[key] = { display_name: key, face_count: 0, face_id: null, persona_ids: [], cluster_ids: [] };
+            groups[key].face_count += (p.face_count || 0);
+            if (!groups[key].face_id && p.face_id) groups[key].face_id = p.face_id;
+            groups[key].persona_ids.push(p.persona_id);
+            groups[key].cluster_ids.push(p.persona_id);
+        } else {
+            unnamed.push(p);
+        }
+    }
+    var named = [];
+    for (var k in groups) { named.push(groups[k]); _allGroups[k] = groups[k]; }
+    named.sort(function(a, b) { return b.face_count - a.face_count; });
+    unnamed.sort(function(a, b) { return (b.face_count || 0) - (a.face_count || 0); });
+
+    var namedPanel = document.getElementById('namedPanel');
+    var unnamedArea = document.getElementById('unnamedArea');
+    namedPanel.innerHTML = '<h3>С именем (' + named.length + ')</h3>';
+    unnamedArea.innerHTML = '<h3>Без имени (' + unnamed.length + ')</h3>';
+
+    if (named.length === 0 && unnamed.length === 0) {
+        namedPanel.innerHTML += '<div class="empty">Ничего не найдено</div>';
+        return;
+    }
+
+    var namedGrid = document.createElement('div');
+    namedGrid.className = 'named-grid';
+    for (var i = 0; i < named.length; i++) {
+        namedGrid.appendChild(createNamedCard(named[i]));
+    }
+    namedPanel.appendChild(namedGrid);
+
+    var unnamedGrid = document.createElement('div');
+    unnamedGrid.className = 'unnamed-grid';
+    for (var i = 0; i < unnamed.length; i++) {
+        unnamedGrid.appendChild(createUnnamedCard(unnamed[i]));
+    }
+    unnamedArea.appendChild(unnamedGrid);
+}
+
+function createNamedCard(group) {
+    var card = document.createElement('div');
+    card.className = 'named-card';
+
+    var top = document.createElement('div');
+    top.className = 'nc-top';
+    var nameSpan = document.createElement('span');
+    nameSpan.className = 'pname';
+    nameSpan.textContent = group.display_name;
+    if (group.cluster_ids.length > 1) {
+        nameSpan.textContent += ' (' + group.cluster_ids.length + ' кл.)';
+    }
+    top.appendChild(nameSpan);
+
+    var bottom = document.createElement('div');
+    bottom.className = 'nc-bottom';
+
+    var thumb = document.createElement('img');
+    thumb.className = 'face-thumb';
+    if (group.face_id) {
+        thumb.src = API + '/photos/face/' + group.face_id + '?margin=0.5';
+    } else {
+        thumb.style.display = 'none';
+    }
+    thumb.loading = 'lazy';
+
+    var countDiv = document.createElement('div');
+    countDiv.className = 'nc-count';
+    countDiv.innerHTML = group.face_count + '<small>л.</small>';
+
+    bottom.appendChild(thumb);
+    bottom.appendChild(countDiv);
+
+    top.onclick = function() { openPersonaModal(group.display_name, group.face_id, group.face_count, group.cluster_ids, true); };
+    bottom.onclick = top.onclick;
+
+    card.appendChild(top);
+    card.appendChild(bottom);
+    return card;
+}
+
+function createUnnamedCard(persona) {
+    var card = document.createElement('div');
+    card.className = 'unnamed-card';
+    card.setAttribute('data-pid', persona.persona_id);
+
+    var thumb = document.createElement('img');
+    thumb.className = 'face-thumb';
+    if (persona.face_id) {
+        thumb.src = API + '/photos/face/' + persona.face_id + '?margin=0.5';
+    } else {
+        thumb.style.display = 'none';
+    }
+    thumb.loading = 'lazy';
+
+    var info = document.createElement('div');
+    info.className = 'uc-info';
+    var nameSpan = document.createElement('span');
+    nameSpan.className = 'uc-name';
+    nameSpan.textContent = persona.name || persona.persona_id;
+    var countSpan = document.createElement('span');
+    countSpan.className = 'uc-count';
+    countSpan.textContent = (persona.face_count || 0) + ' л.';
+    info.appendChild(nameSpan);
+    info.appendChild(countSpan);
+
+    card.appendChild(thumb);
+    card.appendChild(info);
+
+    card.onclick = function() { toggleUnnamedExpand(card, persona); };
+
+    return card;
+}
+
+function toggleNamedExpand(card, group) {
+    openPersonaModal(group.display_name, group.face_id, group.face_count, group.cluster_ids, true);
+}
+
+function toggleUnnamedExpand(card, persona) {
+    openPersonaModal(persona.name || persona.persona_id, persona.face_id, persona.face_count || 0, [persona.persona_id], false, persona.persona_id);
+}
+
+function openPersonaModal(name, faceId, faceCount, clusterIds, isGroup, singlePid) {
+    _pmClusterIds = clusterIds;
+    var modal = document.getElementById('personaModal');
+    var overlay = document.getElementById('pmOverlay');
+    var thumb = document.getElementById('pmThumb');
+    var pmName = document.getElementById('pmName');
+    var pmMeta = document.getElementById('pmMeta');
+    var pmBody = document.getElementById('pmBody');
+
+    if (faceId) {
+        thumb.src = API + '/photos/face/' + faceId + '?margin=0.5';
+        thumb.style.display = '';
+    } else {
+        thumb.style.display = 'none';
+    }
+    pmName.textContent = name;
+    pmMeta.textContent = faceCount + ' лиц' + (isGroup && clusterIds.length > 1 ? ' \xB7 ' + clusterIds.length + ' кластеров' : '') + ' \xB7 ' + clusterIds.join(', ');
+
+    var bodyHtml = '';
+    var pid = isGroup ? name : singlePid;
+
+    bodyHtml += '<div class="pm-edit">';
+    bodyHtml += '<label>ФИО / Имя</label>';
+    bodyHtml += '<div class="ac-wrap">';
+    bodyHtml += '<input type="text" id="pmNameInput" value="' + esc(isGroup ? name : '') + '" oninput="pmAcSearch()" onfocus="pmAcSearch()" onblur="pmAcHideDelayed()">';
+    bodyHtml += '<div class="ac-list" id="pmAcList"></div>';
+    bodyHtml += '</div>';
+    bodyHtml += '<div class="btn-row">';
+    bodyHtml += '<button class="btn-save" onclick="pmSaveName(\'' + esc(pid) + '\')">Сохранить</button>';
+    bodyHtml += '</div></div>';
+
+    bodyHtml += '<div class="pm-faces-title">Лица (' + faceCount + ')</div>';
+    if (isGroup && clusterIds.length > 1) {
+        for (var ci = 0; ci < clusterIds.length; ci++) {
+            bodyHtml += '<div class="pm-cluster-title">Кластер ' + (ci + 1) + ' (' + clusterIds[ci] + ') <button class="btn-clear" style="font-size:10px;padding:1px 6px;margin-left:8px" onclick="pmDetachCluster(\'' + clusterIds[ci] + '\')">Отвязать</button></div>';
+            bodyHtml += '<div class="faces-grid" id="pmFaces_' + ci + '"></div>';
+        }
+    } else if (isGroup && clusterIds.length === 1) {
+        bodyHtml += '<div style="margin-bottom:8px"><button class="btn-clear" onclick="pmDetachCluster(\'' + clusterIds[0] + '\')">Отвязать от имени</button></div>';
+        bodyHtml += '<div class="faces-grid" id="pmFaces_0"></div>';
+    } else {
+        bodyHtml += '<div class="faces-grid" id="pmFaces_0"></div>';
+    }
+
+    pmBody.innerHTML = bodyHtml;
+    modal.classList.add('show');
+    overlay.classList.add('show');
+
+    if (isGroup && clusterIds.length > 1) {
+        for (var ci = 0; ci < clusterIds.length; ci++) {
+            var facesGrid = document.getElementById('pmFaces_' + ci);
+            if (facesGrid) loadPersonaFaces(clusterIds[ci], facesGrid);
+        }
+    } else {
+        var facesGrid = document.getElementById('pmFaces_0');
+        if (facesGrid) loadPersonaFaces(clusterIds[0], facesGrid);
+    }
+}
+
+function closePersonaModal() {
+    document.getElementById('personaModal').classList.remove('show');
+    document.getElementById('pmOverlay').classList.remove('show');
+}
+
+function pmAcSearch() {
+    var inp = document.getElementById('pmNameInput');
+    var list = document.getElementById('pmAcList');
+    if (!inp || !list) return;
+    var val = inp.value.toLowerCase();
+    if (!val) {
+        var allHtml = '';
+        for (var ai = 0; ai < Math.min(acNames.length, 15); ai++) {
+            var am = acNames[ai];
+            var ag = _allGroups[am] || null;
+            allHtml += '<div class="ac-item" onmousedown="document.getElementById(\'pmNameInput\').value=\'' + esc(am) + '\'">';
+            if (ag && ag.face_id) allHtml += '<img class="ac-face" src="' + API + '/photos/face/' + ag.face_id + '?margin=0.15">';
+            allHtml += '<span class="ac-name">' + esc(am) + '</span>';
+            if (ag) allHtml += '<span class="ac-cnt">' + ag.face_count + ' л.</span>';
+            allHtml += '</div>';
+        }
+        list.innerHTML = allHtml;
+        list.classList.add('show');
+        return;
+    }
+    var matches = acNames.filter(function(n) { return n.toLowerCase().indexOf(val) >= 0; });
+    if (matches.length === 0) { list.classList.remove('show'); return; }
+    var html = '';
+    for (var i = 0; i < Math.min(matches.length, 10); i++) {
+        var m = matches[i];
+        var group = null;
+        for (var g in _allGroups) {
+            if (g === m) { group = _allGroups[g]; break; }
+        }
+        html += '<div class="ac-item" onmousedown="document.getElementById(\'pmNameInput\').value=\'' + esc(m) + '\'">';
+        if (group && group.face_id) {
+            html += '<img class="ac-face" src="' + API + '/photos/face/' + group.face_id + '?margin=0.15">';
+        }
+        html += '<span class="ac-name">' + esc(m) + '</span>';
+        if (group) html += '<span class="ac-cnt">' + group.face_count + ' л.</span>';
+        html += '</div>';
+    }
+    list.innerHTML = html;
+    list.classList.add('show');
+}
+
+function pmAcHideDelayed() {
+    setTimeout(function() {
+        var list = document.getElementById('pmAcList');
+        if (list) list.classList.remove('show');
+    }, 200);
+}
+
+function pmSaveName(pid) {
+    var inp = document.getElementById('pmNameInput');
+    if (!inp) return;
+    var newName = inp.value.trim();
+    if (!newName) return;
+
+    var clustersToSave = _pmClusterIds;
+    var saved = 0;
+    for (var i = 0; i < clustersToSave.length; i++) {
+        fetch(API + '/persons/' + clustersToSave[i], {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ display_name: newName, comment: null }),
+        }).then(function(r) { return r.json(); }).then(function() {
+            saved++;
+            if (saved === clustersToSave.length) {
+                loadPersonas();
+                closePersonaModal();
+            }
+        });
+    }
+}
+
+function pmClearName(pid) {
+    clearName(pid);
+}
+
+function pmDetachCluster(clusterId) {
+    fetch(API + '/persons/' + clusterId, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ display_name: null, comment: null, clear_display_name: true, clear_comment: true }),
+    }).then(function(r) { return r.json(); }).then(function() {
+        loadPersonas();
+        closePersonaModal();
+    });
+}
+
+function loadPersonaFaces(personaId, grid) {
+    fetch(API + '/persons/' + personaId + '/faces?limit=30').then(function(r) { return r.json(); }).then(function(faces) {
+        grid.innerHTML = '';
+        if (faces.length === 0) {
+            grid.innerHTML = '<div style="color:#6e7681;font-size:11px;padding:4px">0 лиц</div>';
+            return;
+        }
+        for (var i = 0; i < faces.length; i++) {
+            var face = faces[i];
+            var preview = document.createElement('div');
+            preview.className = 'face-preview';
+
+            var img = document.createElement('img');
+            img.src = API + '/photos/face/' + face.face_id + '?margin=0.5';
+            img.alt = 'Face';
+            img.loading = 'lazy';
+
+            var conf = document.createElement('span');
+            conf.className = 'conf';
+            conf.textContent = Math.round(face.confidence * 100);
+
+            preview.appendChild(img);
+            preview.appendChild(conf);
+            preview.onclick = (function(photoId) {
+                return function() { window.open(API + '/photos/?path=' + encodeURIComponent(photoId), '_blank'); };
+            })(face.photo_id);
+
+            grid.appendChild(preview);
+        }
+    }).catch(function() {
+        grid.innerHTML = '<div style="color:#f85149;font-size:11px;padding:8px">Ошибка</div>';
+    });
+}
+
+function toggleEdit(pid) {
+    var row = document.getElementById('edit-' + pid);
+    if (!row) return;
+    row.classList.toggle('show');
+    if (row.classList.contains('show')) {
+        var inp = document.getElementById('nameInput-' + pid);
+        if (inp) inp.focus();
+    }
+}
+
+function acSearch(pid) {
+    var inp = document.getElementById('nameInput-' + pid);
+    var list = document.getElementById('acList-' + pid);
+    if (!inp || !list) return;
+    var val = inp.value.toLowerCase();
+    if (!val) { list.classList.remove('show'); return; }
+    var matches = acNames.filter(function(n) { return n.toLowerCase().indexOf(val) >= 0; });
+    if (matches.length === 0) { list.classList.remove('show'); return; }
+    var html = '';
+    for (var i = 0; i < matches.length; i++) {
+        html += '<div class="ac-item" onmousedown="acSelect(\'' + esc(pid) + '\',\'' + esc(matches[i]) + '\')">' + esc(matches[i]) + '</div>';
+    }
+    list.innerHTML = html;
+    list.classList.add('show');
+}
+
+function acHideDelayed(pid) {
+    setTimeout(function() {
+        var list = document.getElementById('acList-' + pid);
+        if (list) list.classList.remove('show');
+    }, 200);
+}
+
+function acSelect(pid, name) {
+    var inp = document.getElementById('nameInput-' + pid);
+    var list = document.getElementById('acList-' + pid);
+    if (inp) inp.value = name;
+    if (list) list.classList.remove('show');
+}
+
+function saveName(pid) {
+    var inp = document.getElementById('nameInput-' + pid);
+    if (!inp) return;
+    var newName = inp.value.trim();
+
+    var oldPersona = allPersonas.find(function(p) { return p.persona_id === pid; });
+    var oldName = oldPersona ? (oldPersona.display_name || '') : '';
+
+    if (oldName && oldName !== newName && acNames.indexOf(oldName) >= 0) {
+        editingPid = pid;
+        pendingName = newName;
+        fetch(API + '/persons/by_name/' + encodeURIComponent(oldName)).then(function(r) { return r.json(); }).then(function(list) {
+            relatedClusters = list;
+            if (list.length > 1) {
+                document.getElementById('rdText').textContent = 'Имя "' + oldName + '" привязано к ' + list.length + ' кластерам. Применить "' + newName + '":';
+                document.getElementById('renameDialog').classList.add('show');
+                return;
+            }
+            doSaveOne();
+        });
+        return;
+    }
+
+    doSaveOne(pid, newName);
+}
+
+function doSaveOne(overridePid, overrideName) {
+    document.getElementById('renameDialog').classList.remove('show');
+    var pid = overridePid || editingPid;
+    var name = overrideName || pendingName || '';
+    if (!pid) return;
+    if (!name) { clearName(pid); return; }
+
+    fetch(API + '/persons/' + pid, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ display_name: name, comment: null }),
+    }).then(function(r) { return r.json(); }).then(function() {
+        showSaved(pid);
+        loadPersonas();
+    });
+    editingPid = null;
+    pendingName = null;
+}
+
+function doSaveAll() {
+    document.getElementById('renameDialog').classList.remove('show');
+    if (!editingPid || !pendingName) return;
+    var oldPersona = allPersonas.find(function(p) { return p.persona_id === editingPid; });
+    var oldName = oldPersona ? (oldPersona.display_name || '') : '';
+    fetch(API + '/persons/batch/by_name?old_name=' + encodeURIComponent(oldName), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ display_name: pendingName, comment: null }),
+    }).then(function(r) { return r.json(); }).then(function() {
+        showSaved(editingPid);
+        loadPersonas();
+    });
+    editingPid = null;
+    pendingName = null;
+}
+
+function doSaveAbort() {
+    document.getElementById('renameDialog').classList.remove('show');
+    editingPid = null;
+    pendingName = null;
+}
+
+function clearName(pid) {
+    fetch(API + '/persons/' + pid, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ display_name: null, comment: null, clear_display_name: true, clear_comment: true }),
+    }).then(function(r) { return r.json(); }).then(function() {
+        showSaved(pid);
+        loadPersonas();
+    });
+}
+
+function showSaved(pid) {
+    var el = document.getElementById('saved-' + pid);
+    if (el) {
+        el.style.display = 'inline';
+        setTimeout(function() { el.style.display = 'none'; }, 2000);
+    }
+}
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        document.getElementById('renameDialog').classList.remove('show');
+    }
+});
+
+loadPersonas();
+
+var _isLightTheme = false;
+function toggleTheme() {
+    _isLightTheme = !_isLightTheme;
+    document.body.classList.toggle('light-theme', _isLightTheme);
+    localStorage.setItem('gallery-theme', _isLightTheme ? 'light' : 'dark');
+    var logo = document.querySelector('h1 .logo');
+    if (logo) logo.src = _isLightTheme ? logo.dataset.light : logo.dataset.dark;
+    updateThemeIcon();
+}
+function updateThemeIcon() {
+    var btn = document.querySelector('.theme-toggle');
+    if (btn) {
+        btn.innerHTML = _isLightTheme ? '\u263E' : '\u2600';
+        btn.title = _isLightTheme ? 'Тёмная тема' : 'Дневная тема';
+    }
+}
+(function() {
+    var savedTheme = localStorage.getItem('gallery-theme');
+    if (savedTheme === 'light') {
+        _isLightTheme = true;
+        var logo = document.querySelector("h1 .logo");
+        if (logo) logo.src = logo.dataset.light;
+        document.body.classList.add('light-theme');
+    }
+    updateThemeIcon();
+})();
+
+</script>
+</body>
+</html>

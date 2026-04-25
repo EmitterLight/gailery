@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gailery - Pipeline Log</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: monospace; background: #0d1117; color: #c9d1d9; }
+        h1 { position: relative; }
+        h1 .theme-toggle { position: absolute; right: 12px; top: 50%; transform: translateY(-55%); background: none; border: none; cursor: pointer; color: #e3b341; font-size: 24px; padding: 8px 12px; display: flex; align-items: center; justify-content: center; z-index: 10; }
+        h1 .theme-toggle:hover { background: rgba(255,255,255,.08); }
+        .light-theme { background: #ffffff; color: #24292f; }
+        .light-theme h1 { background: #f6f8fa; border-bottom: 1px solid #d0d7de; color: #0969da; }
+        .light-theme h1 .nav a { color: #57606a; }
+        .light-theme h1 .nav a:hover { color: #0969da; }
+        .light-theme h1 .nav a.active { color: #0969da; }
+        .light-theme h1 .theme-toggle { color: #0969da; }
+        .light-theme h1 .theme-toggle:hover { background: rgba(0,0,0,.06); }
+        .light-theme .toolbar { background: #f6f8fa; border-color: #d0d7de; }
+        .light-theme .toolbar .info { color: #57606a; }
+        .light-theme #log { background: #ffffff; color: #24292f; }
+        .light-theme .l-describe { color: #0969da; }
+        .light-theme .l-faces { color: #9a6700; }
+        .light-theme .l-exif { color: #0550ae; }
+        .light-theme .l-pipeline { color: #1f883d; }
+        .light-theme .l-ingest { color: #24292f; }
+        .light-theme .l-error { color: #cf222e; }
+        .light-theme .l-start { color: #1f883d; }
+        .light-theme .l-done { color: #1f883d; }
+        .light-theme .l-failed { color: #cf222e; }
+
+        h1 { padding: 14px 20px; background: #161b22; border-bottom: 1px solid #30363d; font-size: 16px; color: #58a6ff; display: flex; align-items: center; justify-content: space-between; position: relative; }
+        h1 .nav { font-size: 13px; padding-right: 50px; }
+        h1 .nav a { color: #6e7681; text-decoration: none; margin-left: 14px; }
+        h1 { display: flex; align-items: center; }
+        h1 .logo { height: 32px; width: auto; margin-right: 6px; }
+        
+        h1 .nav a:hover { color: #58a6ff; }
+        h1 .nav a.active { color: #58a6ff; }
+        .toolbar { padding: 8px 20px; background: #161b22; border-bottom: 1px solid #30363d; display: flex; gap: 12px; align-items: center; font-size: 12px; }
+        .toolbar button { background: #238636; color: #fff; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; }
+        .toolbar .info { color: #8b949e; }
+        #log { padding: 12px 20px; font-size: 11px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; max-height: 85vh; overflow-y: auto; }
+        .l-describe { color: #58a6ff; }
+        .l-faces { color: #d29922; }
+        .l-exif { color: #a5d6ff; }
+        .l-pipeline { color: #3fb950; font-weight: bold; }
+        .l-ingest { color: #c9d1d9; }
+        .l-error { color: #f85149; }
+        .l-start { color: #3fb950; }
+        .l-done { color: #3fb950; }
+        .l-failed { color: #f85149; }
+    </style>
+</head>
+<body>
+    <h1>
+        <img class="logo" src="/logo-dark.png" data-light="/logo-light.png" data-dark="/logo-dark.png" alt="Gailery"><span>Лог</span>
+        <div class="nav">
+            <a href="/gallery">Галерея</a>
+            <a href="/catalog">Каталог</a>
+            <a href="/map">Карта</a>
+            <a href="/monitor">Монитор</a>
+            <a href="/persons">Персоны</a>
+            <a href="/control">Управление</a>
+            <a href="/log" class="active">Лог</a>
+        </div>
+        <button class="theme-toggle" onclick="toggleTheme()" title="Дневная тема">☀</button>
+    </h1>
+    <div class="toolbar">
+        <button onclick="loadLog()">Обновить</button>
+        <button onclick="toggleAuto()" id="autoBtn">Auto: OFF</button>
+        <span class="info" id="logInfo"></span>
+    </div>
+    <div id="log"></div>
+
+<script>
+var autoOn = false;
+var autoInterval = null;
+var lastLen = 0;
+
+function colorize(line) {
+    var m = line.match(/^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/);
+    if (m) {
+        var d = new Date(m[1] + 'Z');
+        if (!isNaN(d.getTime())) {
+            var pad = function(n) { return n < 10 ? '0' + n : n; };
+            var local = d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+            line = line.replace(m[1], local);
+        }
+    }
+    if (line.indexOf('[DESCRIBE]') >= 0) return '<span class="l-describe">' + line + '</span>';
+    if (line.indexOf('[FACES]') >= 0) return '<span class="l-faces">' + line + '</span>';
+    if (line.indexOf('[EXIF]') >= 0) return '<span class="l-exif">' + line + '</span>';
+    if (line.indexOf('[PIPELINE]') >= 0) return '<span class="l-pipeline">' + line + '</span>';
+    if (line.indexOf('[INGEST]') >= 0) return '<span class="l-ingest">' + line + '</span>';
+    if (line.indexOf('ERROR') >= 0 || line.indexOf('FAILED') >= 0) return '<span class="l-error">' + line + '</span>';
+    if (line.indexOf('START') >= 0) return '<span class="l-start">' + line + '</span>';
+    if (line.indexOf('DONE') >= 0) return '<span class="l-done">' + line + '</span>';
+    return line;
+}
+
+function loadLog() {
+    fetch('/api/log?lines=200').then(function(r) { return r.json(); }).then(function(data) {
+        var el = document.getElementById('log');
+        var wasAtBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 20;
+        var lines = data.lines.map(function(l) { return colorize(l.replace(/</g, '&lt;').replace(/>/g, '&gt;')); });
+        el.innerHTML = lines.join('');
+        document.getElementById('logInfo').textContent = data.total + ' lines';
+        if (wasAtBottom || data.total !== lastLen) {
+            el.scrollTop = el.scrollHeight;
+        }
+        lastLen = data.total;
+    });
+}
+
+function toggleAuto() {
+    autoOn = !autoOn;
+    var btn = document.getElementById('autoBtn');
+    if (autoOn) {
+        btn.textContent = 'Auto: ON';
+        btn.style.background = '#238636';
+        autoInterval = setInterval(loadLog, 3000);
+    } else {
+        btn.textContent = 'Auto: OFF';
+        btn.style.background = '#21262d';
+        clearInterval(autoInterval);
+    }
+}
+
+loadLog();
+
+var _isLightTheme = false;
+function toggleTheme() {
+    _isLightTheme = !_isLightTheme;
+    document.body.classList.toggle('light-theme', _isLightTheme);
+    localStorage.setItem('gallery-theme', _isLightTheme ? 'light' : 'dark');
+    var logo = document.querySelector('h1 .logo');
+    if (logo) logo.src = _isLightTheme ? logo.dataset.light : logo.dataset.dark;
+    updateThemeIcon();
+}
+function updateThemeIcon() {
+    var btn = document.querySelector('.theme-toggle');
+    if (btn) {
+        btn.innerHTML = _isLightTheme ? '\u263E' : '\u2600';
+        btn.title = _isLightTheme ? 'Тёмная тема' : 'Дневная тема';
+    }
+}
+(function() {
+    var savedTheme = localStorage.getItem('gallery-theme');
+    if (savedTheme === 'light') {
+        _isLightTheme = true;
+        var logo = document.querySelector("h1 .logo");
+        if (logo) logo.src = logo.dataset.light;
+        document.body.classList.add('light-theme');
+    }
+    updateThemeIcon();
+})();
+
+</script>
+</body>
+</html>

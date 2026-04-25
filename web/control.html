@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gailery - Управление</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: monospace; background: #0d1117; color: #c9d1d9; }
+        h1 { position: relative; }
+        h1 .theme-toggle { position: absolute; right: 12px; top: 50%; transform: translateY(-55%); background: none; border: none; cursor: pointer; color: #e3b341; font-size: 24px; padding: 8px 12px; display: flex; align-items: center; justify-content: center; z-index: 10; }
+        h1 .theme-toggle:hover { background: rgba(255,255,255,.08); }
+        .light-theme { background: #ffffff; color: #24292f; }
+        .light-theme h1 { background: #f6f8fa; border-bottom: 1px solid #d0d7de; color: #0969da; }
+        .light-theme h1 .nav a { color: #57606a; }
+        .light-theme h1 .nav a:hover { color: #0969da; }
+        .light-theme h1 .nav a.active { color: #0969da; }
+        .light-theme h1 .theme-toggle { color: #0969da; }
+        .light-theme h1 .theme-toggle:hover { background: rgba(0,0,0,.06); }
+        .light-theme .main { background: #f6f8fa; }
+        .light-theme .summary { background: #f6f8fa; }
+        .light-theme .sbox { background: #ffffff; border-color: #d0d7de; }
+        .light-theme .sbox .sv { color: #0969da; }
+        .light-theme .sbox .sl { color: #57606a; }
+        .light-theme .pipeline-banner { border-color: #d0d7de; }
+        .light-theme .pipeline-banner.idle { background: #ffffff; }
+        .light-theme .pipeline-banner.running { background: linear-gradient(135deg, #f6f8fa 0%, #d8f5e1 100%); border-color: #1f883d; }
+        .light-theme .pipeline-banner .pb-title { color: #24292f; }
+        .light-theme .pipeline-banner.running .pb-title { color: #1f883d; }
+        .light-theme .pipeline-banner .pb-pipeline-time { color: #57606a; }
+
+        .backup-sec { margin: 20px; background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; }
+        .backup-sec h3 { color: #58a6ff; font-size: 14px; margin-bottom: 12px; }
+        .backup-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+        .backup-row:last-child { margin-bottom: 0; }
+        .backup-info { color: #6e7681; font-size: 11px; }
+        .backup-status { font-size: 11px; margin-top: 6px; }
+        .backup-status.ok { color: #3fb950; }
+        .backup-status.err { color: #f85149; }
+        .light-theme .backup-sec { background: #f6f8fa; border-color: #d0d7de; }
+        .light-theme .backup-sec h3 { color: #0969da; }
+
+        .maint-sec { margin: 20px; background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; }
+        .maint-sec h3 { color: #d29922; font-size: 14px; margin-bottom: 12px; }
+        .maint-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+        .maint-row:last-child { margin-bottom: 0; }
+        .maint-info { color: #6e7681; font-size: 11px; }
+        .maint-sizes { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; margin-bottom: 12px; }
+        .maint-sbox { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 8px 10px; }
+        .maint-sbox .sv { font-size: 16px; font-weight: bold; color: #58a6ff; }
+        .maint-sbox .sl { font-size: 10px; color: #6e7681; }
+        .light-theme .maint-sec { background: #f6f8fa; border-color: #d0d7de; }
+        .light-theme .maint-sec h3 { color: #9a6700; }
+        .light-theme .maint-sbox { background: #fff; border-color: #d0d7de; }
+        .light-theme .maint-sbox .sv { color: #0969da; }
+        .light-theme .pipeline-banner.running .pb-pipeline-time { color: #1f883d; }
+        .light-theme .pb-status.s-idle { background: #eaeef2; color: #57606a; }
+        .light-theme .pb-status.s-run { background: rgba(31,136,61,.15); color: #1f883d; border-color: #1f883d; }
+        .light-theme .cyclo { background: #ffffff; border-radius: 8px; padding: 12px; }
+        .light-theme .cy-step.st-wait { background: #f6f8fa; border-color: #d0d7de; color: #57606a; }
+        .light-theme .cy-step.st-wait .cy-pct { color: #57606a; }
+        .light-theme .cy-step.st-wait .cy-badge { background: #eaeef2; color: #57606a; }
+        .light-theme .cy-step.st-wait .cy-bar-bg { background: #eaeef2; }
+        .light-theme .cy-step.st-run { background: rgba(31,136,61,.08); border-color: #1f883d; color: #24292f; }
+        .light-theme .cy-step.st-run .cy-name { color: #1f883d; }
+        .light-theme .cy-step.st-run .cy-pct { color: #1f883d; }
+        .light-theme .cy-step.st-run .cy-badge { background: rgba(31,136,61,.2); color: #1f883d; border-color: #1f883d; }
+        .light-theme .cy-step.st-run .cy-bar-bg { background: #eaeef2; }
+        .light-theme .cy-step.st-done { background: #f6f8fa; border-color: #d0d7de; color: #57606a; }
+        .light-theme .cy-step.st-done .cy-name { color: #57606a; }
+        .light-theme .cy-step.st-done .cy-pct { color: #1f883d; }
+        .light-theme .cy-step.st-done .cy-badge { background: rgba(31,136,61,.15); color: #1f883d; }
+        .light-theme .cy-step.st-done .cy-check { color: #1f883d; }
+        .light-theme .cy-step.st-done .cy-bar-bg { background: #eaeef2; }
+        .light-theme .cy-step .cy-count { color: #57606a; }
+        .light-theme .cy-step .cy-time { color: #57606a; }
+        .light-theme .cy-step.st-run .cy-time { color: #1f883d; }
+        .light-theme .cy-step.st-fail { background: rgba(207,34,46,.05); border-color: #cf222e; }
+        .light-theme .cy-arrow { color: #d0d7de; }
+        .light-theme .cy-arrow.lit { color: #1f883d; }
+        .light-theme .pb-ctrl { border-color: #d0d7de; }
+        .light-theme .pb-ctrl label { color: #57606a; }
+        .light-theme .pb-ctrl input { background: #ffffff; color: #24292f; border-color: #d0d7de; }
+        .light-theme .pb-ctrl input:focus { border-color: #0969da; }
+        .light-theme .btn-go { background: #1f883d; }
+        .light-theme .btn-go:hover { background: #29994a; }
+        .light-theme .btn-go:disabled { background: #eaeef2; color: #8c949e; }
+        .light-theme .btn-stop { background: #cf222e; }
+        .light-theme .btn-stop:hover { background: #a40e26; }
+        .light-theme .btn-stop:disabled { background: #eaeef2; color: #8c949e; }
+        .light-theme .tasks { background: #f6f8fa; }
+        .light-theme .task { background: #ffffff; border-color: #d0d7de; }
+        .light-theme .task-info .tn { color: #24292f; }
+        .light-theme .task-info .td { color: #57606a; }
+        .light-theme .task-info .td b { color: #24292f; }
+        .light-theme .task-head:hover { background: #f6f8fa; }
+        .light-theme .tb-idle { background: #eaeef2; color: #57606a; }
+        .light-theme .tb-run { background: rgba(31,136,61,.15); color: #1f883d; border-color: #1f883d; }
+        .light-theme .tb-done { background: rgba(31,136,61,.1); color: #1f883d; border-color: #1f883d; }
+        .light-theme .tb-fail { background: rgba(207,34,46,.1); color: #cf222e; border-color: #cf222e; }
+        .light-theme .task-body { background: #f6f8fa; }
+        .light-theme .task-body label { color: #57606a; }
+        .light-theme .task-body input, .light-theme .task-body select { background: #ffffff; color: #24292f; border-color: #d0d7de; }
+        .light-theme .task-body input:focus { border-color: #0969da; }
+        .light-theme .task-timeline { color: #57606a; }
+        .light-theme .task-timeline .ev { color: #57606a; }
+        .light-theme .task-timeline .ev b { color: #24292f; }
+        .light-theme .log-sec { background: #ffffff; border-color: #d0d7de; }
+        .light-theme .log-sec h3 { color: #0969da; }
+        .light-theme .log-sec h3 span { color: #57606a; }
+        .light-theme #logC { background: #f6f8fa; color: #24292f; }
+
+        h1 { padding: 14px 20px; background: #161b22; border-bottom: 1px solid #30363d; font-size: 16px; color: #58a6ff; display: flex; align-items: center; justify-content: space-between; position: relative; }
+        h1 .nav { font-size: 13px; padding-right: 50px; }
+        h1 .nav a { color: #6e7681; text-decoration: none; margin-left: 14px; }
+        h1 { display: flex; align-items: center; }
+        h1 .logo { height: 32px; width: auto; margin-right: 6px; }
+        
+        h1 .nav a:hover { color: #58a6ff; }
+        h1 .nav a.active { color: #58a6ff; }
+
+        .main { max-width: 1100px; margin: 0 auto; padding: 16px 20px; }
+
+        .summary { display: grid; grid-template-columns: repeat(5,1fr); gap: 8px; margin-bottom: 20px; }
+        .sbox { background: #161b22; border: 1px solid #21262d; border-radius: 6px; padding: 10px 12px; text-align: center; }
+        .sbox .sv { font-size: 22px; color: #58a6ff; font-weight: bold; }
+        .sbox .sl { font-size: 10px; color: #8b949e; margin-top: 2px; }
+
+        .pipeline-banner { border-radius: 8px; padding: 14px 20px; margin-bottom: 20px; border: 1px solid #21262d; }
+        .pipeline-banner.idle { background: #161b22; }
+        .pipeline-banner.running { background: linear-gradient(135deg, #0d1117 0%, #0d1f0d 100%); border-color: #238636; }
+        .pipeline-banner .pb-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+        .pipeline-banner .pb-title { font-size: 15px; color: #c9d1d9; font-weight: bold; }
+        .pipeline-banner.running .pb-title { color: #3fb950; }
+        .pipeline-banner .pb-pipeline-time { font-size: 11px; color: #8b949e; margin-top: 2px; }
+        .pipeline-banner.running .pb-pipeline-time { color: #3fb950; }
+        .pipeline-banner .pb-status { font-size: 12px; padding: 4px 12px; border-radius: 12px; font-weight: bold; }
+        .pb-status.s-idle { background: #21262d; color: #6e7681; }
+        .pb-status.s-run { background: rgba(35,134,54,.3); color: #3fb950; border: 1px solid #238636; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
+
+        .cyclo { display: flex; align-items: stretch; gap: 0; }
+        .cy-step { flex: 1; text-align: center; padding: 10px 6px; border-radius: 6px; position: relative; min-width: 0; }
+        .cy-step .cy-icon { font-size: 20px; margin-bottom: 2px; }
+        .cy-step .cy-name { font-size: 11px; font-weight: bold; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .cy-step .cy-pct { font-size: 18px; font-weight: bold; margin-bottom: 2px; }
+        .cy-step .cy-count { font-size: 9px; color: #8b949e; margin-bottom: 6px; }
+        .cy-step .cy-bar-bg { height: 4px; background: #21262d; border-radius: 2px; overflow: hidden; }
+        .cy-step .cy-bar { height: 100%; border-radius: 2px; transition: width .5s ease; width: 0; }
+        .cy-step .cy-badge { display: inline-block; font-size: 9px; padding: 1px 6px; border-radius: 8px; margin-top: 4px; }
+
+        .cy-step.st-wait { background: #0d1117; border: 1px solid #21262d; color: #484f58; }
+        .cy-step.st-wait .cy-pct { color: #484f58; }
+        .cy-step.st-wait .cy-badge { background: #21262d; color: #484f58; }
+        .cy-step.st-wait .cy-bar { background: #30363d; }
+
+        .cy-step.st-run { background: rgba(35,134,54,.08); border: 2px solid #3fb950; color: #c9d1d9; animation: stepGlow 1.5s ease-in-out infinite; position: relative; overflow: hidden; }
+        .cy-step.st-run::after { content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(35,134,54,.15), transparent); animation: stepSweep 2s ease-in-out infinite; }
+        .cy-step.st-run .cy-name { color: #3fb950; }
+        .cy-step.st-run .cy-pct { color: #3fb950; animation: pctPulse 1.5s ease-in-out infinite; }
+        .cy-step.st-run .cy-badge { background: rgba(35,134,54,.3); color: #3fb950; border: 1px solid #3fb950; }
+        .cy-step.st-run .cy-bar { background: linear-gradient(90deg, #238636, #3fb950); animation: barShimmer 1.5s ease-in-out infinite; }
+        @keyframes stepGlow { 0%,100%{box-shadow:0 0 5px rgba(35,134,54,.3), inset 0 0 5px rgba(35,134,54,.05)} 50%{box-shadow:0 0 20px rgba(35,134,54,.5), inset 0 0 15px rgba(35,134,54,.1)} }
+        @keyframes stepSweep { 0%{left:-100%} 100%{left:100%} }
+        @keyframes pctPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.1)} }
+        @keyframes barShimmer { 0%,100%{opacity:1} 50%{opacity:.7} }
+
+        .cy-step.st-done { background: #0d1117; border: 1px solid #21262d; color: #8b949e; }
+        .cy-step.st-done .cy-name { color: #8b949e; }
+        .cy-step.st-done .cy-pct { color: #238636; }
+        .cy-step.st-done .cy-badge { background: rgba(35,134,54,.2); color: #238636; }
+        .cy-step.st-done .cy-bar { background: #238636; }
+        .cy-step.st-done .cy-check { color: #3fb950; font-size: 12px; margin-top: 3px; }
+        .cy-step .cy-time { font-size: 10px; margin-top: 2px; }
+        .cy-step.st-run .cy-time { color: #3fb950; font-weight: bold; }
+        .cy-step.st-done .cy-time { color: #8b949e; }
+
+        .cy-step.st-fail { background: rgba(248,81,73,.05); border: 1px solid #da3633; }
+        .cy-step.st-fail .cy-pct { color: #f85149; }
+        .cy-step.st-fail .cy-badge { background: rgba(248,81,73,.2); color: #f85149; }
+        .cy-step.st-fail .cy-bar { background: #da3633; }
+
+        .cy-arrow { display: flex; align-items: center; justify-content: center; color: #30363d; font-size: 16px; padding: 0 2px; flex-shrink: 0; }
+        .cy-arrow.lit { color: #238636; }
+
+        .pb-ctrl { display: flex; gap: 8px; align-items: center; margin-top: 12px; padding-top: 12px; border-top: 1px solid #21262d; }
+        .pb-ctrl label { font-size: 11px; color: #8b949e; }
+        .pb-ctrl input { width: 70px; background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; padding: 4px 8px; font-family: monospace; font-size: 12px; }
+        .btn { padding: 6px 16px; border: none; border-radius: 4px; cursor: pointer; font-family: monospace; font-size: 12px; font-weight: bold; }
+        .btn-go { background: #238636; color: #fff; }
+        .btn-go:hover { background: #2ea043; }
+        .btn-go:disabled { background: #21262d; color: #484f58; cursor: default; }
+        .btn-stop { background: #da3633; color: #fff; }
+        .btn-stop:hover { background: #f85149; }
+        .btn-stop:disabled { background: #21262d; color: #484f58; cursor: default; }
+
+        .tasks { margin-bottom: 20px; }
+        .task { background: #161b22; border: 1px solid #21262d; border-radius: 8px; margin-bottom: 8px; overflow: hidden; }
+        .task-head { display: grid; grid-template-columns: 36px 1fr auto auto; align-items: center; padding: 10px 14px; gap: 10px; cursor: pointer; }
+        .task-icon { font-size: 18px; text-align: center; }
+        .task-info .tn { font-size: 13px; color: #c9d1d9; font-weight: bold; }
+        .task-info .td { font-size: 10px; color: #6e7681; margin-top: 2px; }
+        .task-info .td b { color: #8b949e; }
+        .task-badge { display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 10px; font-weight: bold; }
+        .tb-idle { background: #21262d; color: #6e7681; }
+        .tb-run { background: rgba(35,134,54,.2); color: #3fb950; border: 1px solid #238636; animation: pulse 1.5s infinite; }
+        .tb-done { background: rgba(35,134,54,.1); color: #238636; border: 1px solid #238636; }
+        .tb-fail { background: rgba(248,81,73,.1); color: #f85149; border: 1px solid #da3633; }
+        .task-btns { display: flex; gap: 4px; }
+        .task-btns .btn { padding: 4px 10px; font-size: 11px; }
+
+        .task-body { padding: 0 14px 10px 46px; display: none; }
+        .task-body.open { display: block; }
+        .task-body label { display: block; font-size: 11px; color: #8b949e; margin-top: 6px; margin-bottom: 2px; }
+        .task-body input, .task-body select { width: 200px; background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; padding: 4px 8px; font-family: monospace; font-size: 12px; }
+        .task-body input:focus { outline: none; border-color: #58a6ff; }
+        .task-timeline { margin-top: 8px; font-size: 10px; color: #6e7681; line-height: 1.8; }
+        .task-timeline .ev { color: #8b949e; }
+        .task-timeline .ev b { color: #c9d1d9; }
+
+        .log-sec { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 14px; }
+        .log-sec h3 { font-size: 13px; color: #58a6ff; margin-bottom: 6px; display: flex; justify-content: space-between; }
+        .log-sec h3 span { color: #6e7681; font-weight: normal; font-size: 11px; }
+        #logC { font-size: 10px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; max-height: 250px; overflow-y: auto; background: #0d1117; border-radius: 4px; padding: 8px; }
+        .l-DESCRIBE{color:#58a6ff} .l-FACES{color:#d29922} .l-EXIF{color:#a5d6ff} .l-EMBED{color:#bc8cff} .l-PIPELINE{color:#3fb950;font-weight:bold} .l-INGEST{color:#c9d1d9} .l-error,.l-FAILED{color:#f85149} .l-DONE,.l-START{color:#3fb950}
+    </style>
+</head>
+<body>
+    <h1>
+        <img class="logo" src="/logo-dark.png" data-light="/logo-light.png" data-dark="/logo-dark.png" alt="Gailery"><span>Управление</span>
+        <div class="nav">
+            <a href="/gallery">Галерея</a>
+            <a href="/catalog">Каталог</a>
+            <a href="/map">Карта</a>
+            <a href="/monitor">Монитор</a>
+            <a href="/persons">Персоны</a>
+            <a href="/control" class="active">Управление</a>
+            <a href="/log">Лог</a>
+        </div>
+        <button class="theme-toggle" onclick="toggleTheme()" title="Дневная тема">☀</button>
+    </h1>
+    <div class="main">
+        <div class="summary" id="summary"></div>
+
+        <div class="pipeline-banner idle" id="pipelineBanner">
+            <div class="pb-top">
+                <div>
+                    <div class="pb-title" id="pbTitle">Пайплайн остановлен</div>
+                    <div class="pb-pipeline-time" id="pbPipelineTime"></div>
+                </div>
+                <div class="pb-status s-idle" id="pbStatus">IDLE</div>
+            </div>
+            <div class="cyclo" id="cyclo"></div>
+            <div class="pb-ctrl">
+                <label>Лимит:</label>
+                <input type="number" id="chainLimit" value="100" min="0">
+                <button class="btn btn-go" id="btnStart" onclick="runChain()">Запустить цепочку</button>
+                <button class="btn btn-stop" id="btnStop" onclick="stopAll()" disabled>Остановить всё</button>
+                <span style="color:#6e7681;font-size:11px" id="chainInfo"></span>
+            </div>
+        </div>
+
+        <div class="backup-sec">
+            <h3>&#128190; Бекап базы данных</h3>
+            <div class="backup-row">
+                <button class="btn btn-go" onclick="backupDownload()">&#11015; Скачать бекап</button>
+                <label class="btn btn-go" style="cursor:pointer">&#11014; Загрузить бекап <input type="file" accept=".gz,.db" onchange="backupUpload(this)" style="display:none"></label>
+                <span class="backup-info" id="backupInfo"></span>
+            </div>
+            <div class="backup-status" id="backupStatus"></div>
+        </div>
+
+        <div class="maint-sec">
+            <h3>&#128295; Обслуживание базы данных</h3>
+            <div class="maint-sizes" id="maintSizes"></div>
+            <div class="maint-row">
+                <button class="btn btn-go" onclick="maintVacuum()">VACUUM SQLite</button>
+                <span class="maint-info">Сжать SQLite, удалить мусор</span>
+            </div>
+            <div class="maint-row">
+                <button class="btn btn-go" onclick="maintDedup()">Удалить дубли эмбеддингов</button>
+                <span class="maint-info">LanceDB: убрать повторные записи</span>
+            </div>
+            <div class="backup-status" id="maintStatus"></div>
+        </div>
+
+        <div class="tasks" id="tasks"></div>
+
+        <div class="log-sec">
+            <h3>Лог <span id="logInfo"></span></h3>
+            <div id="logC"></div>
+        </div>
+    </div>
+
+<script>
+var API = '/api';
+var st = {};
+
+var STEPS = [
+    {id:'ingest', name:'Наполнение', icon:'&#128193;', color:'#c9d1d9'},
+    {id:'describe', name:'Описание', icon:'&#128444;&#65039;', color:'#58a6ff'},
+    {id:'faces', name:'Лица', icon:'&#128100;', color:'#d29922'},
+    {id:'exif', name:'EXIF', icon:'&#128247;', color:'#a5d6ff'},
+    {id:'embed', name:'Индексация', icon:'&#128269;', color:'#bc8cff'},
+];
+
+var TASKS = [
+    {id:'ingest', name:'Наполнение базы', icon:'&#128193;', desc:'Сканирование фото, добавление записей в базу',
+     params:[{k:'ingest_limit',l:'Количество фото',v:100,t:'n'},{k:'exif',l:'Читать EXIF',v:'1',t:'s',opts:[['1','Да'],['0','Нет']]}]},
+    {id:'describe', name:'Описание фото', icon:'&#128444;&#65039;', desc:'VLM (Qwen3.5-4B) генерирует описание и флаг лиц',
+     params:[{k:'desc_limit',l:'Лимит описаний (0=все)',v:60,t:'n'},{k:'batch_size',l:'Размер батча ВЛМ',v:6,t:'n'}]},
+    {id:'faces', name:'Поиск лиц', icon:'&#128100;', desc:'InsightFace: детекция, эмбеддинги, кластеризация в персоны',
+     params:[]},
+    {id:'exif', name:'Чтение EXIF', icon:'&#128247;', desc:'Дата, GPS, камера из метаданных фото',
+     params:[]},
+    {id:'embed', name:'Индексация', icon:'&#128269;', desc:'Qwen3-Embedding: векторный индекс для смыслового поиска',
+     params:[]},
+];
+
+var taskState = {};
+TASKS.forEach(function(t){ taskState[t.id] = {status:'idle', started:null, stopped:null, startPct:0, baseCount:0}; });
+
+function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function fmtTime(iso){ if(!iso) return '\u2014'; return iso.substring(11,19); }
+function fmtDur(ms){
+    var s=Math.floor(ms/1000), m=Math.floor(s/60), h=Math.floor(m/60);
+    if(h>0) return h+'ч '+m%60+'м';
+    if(m>0) return m+'м '+s%60+'с';
+    return s+'с';
+}
+
+function stepPct(id){
+    if(!st.photos_total && id!=='ingest') return 0;
+    if(id==='ingest') return st.pct_ingested||0;
+    if(id==='describe') return st.pct_described||0;
+    if(id==='faces') return st.pct_faces||0;
+    if(id==='exif') return st.pct_exif||0;
+    if(id==='embed') return st.pct_embedded||0;
+    return 0;
+}
+function stepCount(id){
+    var ct = st.catalog_total||0, ci = st.catalog_ingested||0, ff = st.faces_flagged_in_db||0;
+    if(id==='ingest') return {done:ci, total:ct};
+    if(id==='describe') return {done:st.catalog_described||0, total:ci||ct};
+    if(id==='faces') return {done:st.catalog_faces_done||0, total:ff||ci||ct};
+    if(id==='exif') return {done:st.catalog_exif_done||0, total:ci||ct};
+    if(id==='embed') return {done:st.photos_embedded||0, total:st.photos_total||0};
+    return {done:0, total:0};
+}
+function fmtPct(v){
+    if(!v) return '0%';
+    if(v < 1) return v.toFixed(2)+'%';
+    return v.toFixed(1)+'%';
+}
+
+function renderSummary(){
+    if(!st.photos_total) return;
+    var ct = st.catalog_total || 0;
+    var h='';
+    h+='<div class="sbox"><div class="sv">'+(st.catalog_ingested||0)+'</div><div class="sl">Внесено из '+ct+'</div></div>';
+    h+='<div class="sbox"><div class="sv">'+(st.catalog_described||0)+'</div><div class="sl">Описано из '+(st.catalog_ingested||0)+'</div></div>';
+    h+='<div class="sbox"><div class="sv">'+(st.catalog_faces_done||0)+'</div><div class="sl">Лица из '+(st.faces_flagged_in_db||0)+'</div></div>';
+    h+='<div class="sbox"><div class="sv">'+(st.catalog_exif_done||0)+'</div><div class="sl">EXIF из '+(st.catalog_ingested||0)+'</div></div>';
+    h+='<div class="sbox"><div class="sv">'+(st.photos_embedded||0)+'</div><div class="sl">Индекс из '+(st.photos_total||0)+'</div></div>';
+    document.getElementById('summary').innerHTML = h;
+}
+
+function renderCyclo(){
+    var currentStep = (st.step_details||'').toLowerCase();
+    var isRunning = st.current_step !== 'idle';
+    var banner = document.getElementById('pipelineBanner');
+    var title = document.getElementById('pbTitle');
+    var status = document.getElementById('pbStatus');
+    var btnStart = document.getElementById('btnStart');
+    var btnStop = document.getElementById('btnStop');
+
+    if(isRunning){
+        banner.className = 'pipeline-banner running';
+        title.textContent = '\u26A1 Пайплайн работает: ' + st.step_details;
+        status.className = 'pb-status s-run';
+        status.textContent = '\u25CF ' + st.step_details;
+        btnStart.disabled = true;
+        btnStop.disabled = false;
+        var pTimeEl = document.getElementById('pbPipelineTime');
+        if(st.pipeline_started_at){
+            var pStart = new Date(st.pipeline_started_at + (st.pipeline_started_at.indexOf('+') < 0 && st.pipeline_started_at.indexOf('Z') < 0 ? '+00:00' : ''));
+            pTimeEl.innerHTML = 'Цепочка идёт: <span id="pbPipelineDur">' + fmtDur(Date.now() - pStart.getTime()) + '</span> (с ' + pStart.toLocaleTimeString() + ')';
+        } else {
+            pTimeEl.textContent = 'Одиночный шаг: ' + st.step_details;
+        }
+    } else {
+        banner.className = 'pipeline-banner idle';
+        title.textContent = 'Пайплайн остановлен';
+        status.className = 'pb-status s-idle';
+        status.textContent = 'IDLE';
+        btnStart.disabled = false;
+        btnStop.disabled = true;
+        var pTimeEl = document.getElementById('pbPipelineTime');
+        if(st.pipeline_started_at){
+            var pStart = new Date(st.pipeline_started_at + (st.pipeline_started_at.indexOf('+') < 0 && st.pipeline_started_at.indexOf('Z') < 0 ? '+00:00' : ''));
+            pTimeEl.textContent = 'Последний запуск: ' + pStart.toLocaleTimeString();
+        } else {
+            pTimeEl.textContent = '';
+        }
+    }
+
+    var h = '';
+    for(var i=0; i<STEPS.length; i++){
+        var s = STEPS[i];
+        var pct = stepPct(s.id);
+        var cnt = stepCount(s.id);
+        var isActive = (s.id === currentStep && isRunning);
+        var ts = taskState[s.id];
+        var isDone = pct >= 100;
+        var isFailed = ts.status === 'fail';
+
+        var cls = 'st-wait';
+        var badgeHtml = '\u25CB ожидание';
+        if(isFailed){ cls = 'st-fail'; badgeHtml = '\u2717 ошибка'; }
+        else if(isActive){ cls = 'st-run'; badgeHtml = '\u25CF работает'; }
+        else if(isDone){ cls = 'st-done'; badgeHtml = '\u2713 готово'; }
+
+        var pctStr = fmtPct(pct);
+        var countStr = cnt.done + '/' + cnt.total;
+        var barW = Math.min(pct, 100);
+
+        h += '<div class="cy-step ' + cls + '">';
+        h += '<div class="cy-icon">' + s.icon + '</div>';
+        h += '<div class="cy-name" style="color:' + (isActive || isDone ? s.color : '') + '">' + s.name + '</div>';
+        h += '<div class="cy-pct">' + pctStr + '</div>';
+        h += '<div class="cy-count">' + countStr + '</div>';
+        h += '<div class="cy-bar-bg"><div class="cy-bar" style="width:' + barW + '%"></div></div>';
+        h += '<div class="cy-badge">' + badgeHtml + '</div>';
+        if(isActive && ts.started){
+            h += '<div class="cy-time" id="cyTime_' + s.id + '">' + fmtDur(Date.now() - ts.started.getTime()) + '</div>';
+        } else if(ts.status === 'done' && ts.started && ts.stopped){
+            var durDone = fmtDur(ts.stopped.getTime() - ts.started.getTime());
+            var agoDone = fmtDur(Date.now() - ts.stopped.getTime());
+            h += '<div class="cy-time">' + durDone + ' \u2022 ' + agoDone + ' назад</div>';
+        }
+        var cycleDelta = cnt.done - ts.baseCount;
+        if(ts.baseCount > 0 && cycleDelta > 0){
+            h += '<div class="cy-count" style="color:#3fb950">+' + cycleDelta + ' за цикл</div>';
+        }
+        if(isDone && !isActive) h += '<div class="cy-check">\u2713</div>';
+        if(s.id === 'faces' && isActive && st.faces_phase){
+            var phaseNames = {loading:'Загрузка', detecting:'Детекция', lance_write:'LanceDB', clustering:'Кластеризация', detection_done:'Завершение', done:'Готово'};
+            var phaseLabel = phaseNames[st.faces_phase] || st.faces_phase;
+            var detailHtml = st.faces_detail ? esc(st.faces_detail) : '';
+            h += '<div style="font-size:9px;color:#d29922;margin-top:3px">' + phaseLabel + (detailHtml ? ': ' + detailHtml : '') + '</div>';
+        }
+        h += '</div>';
+
+        if(i < STEPS.length - 1){
+            var arrowLit = isRunning && STEPS.slice(0, i+1).some(function(ss){ return ss.id === currentStep; });
+            h += '<div class="cy-arrow' + (arrowLit ? ' lit' : '') + '">\u2192</div>';
+        }
+    }
+    document.getElementById('cyclo').innerHTML = h;
+}
+
+function renderTasks(){
+    var currentStep = (st.step_details||'').toLowerCase();
+    var isRunning = st.current_step !== 'idle';
+    var h = '';
+
+    for(var i=0;i<TASKS.length;i++){
+        var t = TASKS[i];
+        var ts = taskState[t.id];
+        var isActive = (t.id === currentStep && isRunning);
+
+        if(isActive && ts.status !== 'run'){
+            ts.status = 'run';
+            if(!ts.started){
+                if(st.step_started_at){
+                    ts.started = new Date(st.step_started_at + (st.step_started_at.indexOf('+') < 0 && st.step_started_at.indexOf('Z') < 0 ? '+00:00' : ''));
+                } else {
+                    ts.started = new Date();
+                }
+            }
+            if(!ts.startPct && ts.startPct !== 0) ts.startPct = stepPct(t.id);
+            if(!ts.baseCount) ts.baseCount = stepCount(t.id).done;
+        } else if(!isActive && ts.status === 'run'){
+            ts.status = stepPct(t.id) >= 100 ? 'done' : 'done';
+            ts.stopped = new Date();
+        }
+
+        var badgeCls = 'tb-idle', badgeText = 'Остановлено';
+        if(ts.status==='run'){ badgeCls='tb-run'; badgeText='\u25CF Выполняется'; }
+        else if(ts.status==='done'){ badgeCls='tb-done'; badgeText='\u2713 Завершено'; }
+        else if(ts.status==='fail'){ badgeCls='tb-fail'; badgeText='\u2717 Ошибка'; }
+
+        var dur = '';
+        var eta = '';
+        var progressLine = (st.progress_lines || {})[t.id] || '';
+        if(ts.status==='run' && ts.started){
+            dur = fmtDur(Date.now() - ts.started.getTime());
+        } else if(ts.stopped && ts.started){
+            dur = fmtDur(ts.stopped.getTime() - ts.started.getTime());
+        }
+        if(progressLine){
+            var m = progressLine.match(/\u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C ~([^\]]+)/);
+            if(m) eta = '~'+m[1];
+        }
+
+        var tl = '';
+        if(ts.started) tl += '<div class="ev">Запущено: <b>'+fmtTime(ts.started.toISOString())+'</b></div>';
+        if(ts.stopped) tl += '<div class="ev">Остановлено: <b>'+fmtTime(ts.stopped.toISOString())+'</b></div>';
+        if(dur) tl += '<div class="ev">Длительность: <b>'+dur+'</b></div>';
+
+        var descHtml = t.desc;
+        var cnt = stepCount(t.id);
+        if(cnt.total > 0){
+            var pctStr = fmtPct(stepPct(t.id));
+            descHtml += ' \xB7 <b style="color:#58a6ff">'+cnt.done+'/'+cnt.total+' ('+pctStr+')</b>';
+        }
+
+        h += '<div class="task">';
+        h += '<div class="task-head" onclick="toggleTask(\''+t.id+'\')">';
+        h += '<div class="task-icon">'+t.icon+'</div>';
+        h += '<div class="task-info"><div class="tn">'+t.name+'</div><div class="td">'+descHtml+(dur?' \xB7 <b>'+dur+'</b>':'')+(eta?' \u2192 '+eta:'')+'</div></div>';
+        h += '<div class="task-badge '+badgeCls+'">'+badgeText+'</div>';
+        h += '<div class="task-btns" onclick="event.stopPropagation()">';
+        h += '<button class="btn btn-go" onclick="runStep(\''+t.id+'\')" '+(isRunning?'disabled':'')+'>Запустить</button>';
+        h += '<button class="btn btn-stop" onclick="stopStep(\''+t.id+'\')" '+(isActive?'':'disabled')+'>Стоп</button>';
+        h += '</div></div>';
+
+        h += '<div class="task-body" id="tb_'+t.id+'">';
+        if(t.params.length > 0){
+            for(var j=0;j<t.params.length;j++){
+                var pp = t.params[j];
+                h += '<label>'+pp.l+'</label>';
+                if(pp.t==='s'){
+                    h += '<select id="p_'+pp.k+'">';
+                    for(var o=0;o<pp.opts.length;o++) h+='<option value="'+pp.opts[o][0]+'">'+pp.opts[o][1]+'</option>';
+                    h += '</select>';
+                } else {
+                    h += '<input type="number" id="p_'+pp.k+'" value="'+pp.v+'" min="0">';
+                }
+            }
+        }
+        h += '<div class="task-timeline">'+tl+'</div>';
+        h += '</div></div>';
+    }
+    saveParamValues();
+    document.getElementById('tasks').innerHTML = h;
+    restoreOpenTasks();
+}
+
+function toggleTask(id){
+    var el = document.getElementById('tb_'+id);
+    if(el) el.classList.toggle('open');
+    var openIds = [];
+    var bodies = document.querySelectorAll('.task-body.open');
+    for(var i=0;i<bodies.length;i++) openIds.push(bodies[i].id);
+    _openTasks = openIds;
+}
+
+var _openTasks = [];
+var _paramValues = {};
+
+function saveParamValues(){
+    var inputs = document.querySelectorAll('.task-body input, .task-body select');
+    for(var i=0;i<inputs.length;i++){
+        if(inputs[i].id) _paramValues[inputs[i].id] = inputs[i].value;
+    }
+}
+
+function restoreParamValues(){
+    for(var id in _paramValues){
+        var el = document.getElementById(id);
+        if(el) el.value = _paramValues[id];
+    }
+}
+
+function restoreOpenTasks(){
+    for(var i=0;i<_openTasks.length;i++){
+        var el = document.getElementById(_openTasks[i]);
+        if(el) el.classList.add('open');
+    }
+    restoreParamValues();
+}
+
+function getParam(key){
+    var el = document.getElementById('p_'+key);
+    return el ? el.value : '';
+}
+
+function runStep(step){
+    var params = {step: step};
+    TASKS.forEach(function(t){
+        if(t.id===step){
+            t.params.forEach(function(pp){ params[pp.k] = getParam(pp.k); });
+        }
+    });
+    fetch(API+'/../api/control/start',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(params)
+    }).then(function(r){return r.json()}).then(function(d){
+        if(d.ok){
+            taskState[step] = {status:'run', started:new Date(), stopped:null, startPct:stepPct(step), baseCount:stepCount(step).done};
+            renderTasks(); renderCyclo();
+        }
+    });
+}
+
+function stopStep(step){
+    fetch(API+'/../api/control/stop',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({step:step})
+    }).then(function(r){return r.json()}).then(function(d){
+        taskState[step] = {status:'idle', started:taskState[step].started, stopped:new Date(), baseCount:0};
+        renderTasks(); renderCyclo();
+    });
+}
+
+function runChain(){
+    var lim = document.getElementById('chainLimit').value;
+    var params = {step:'chain', ingest_limit:lim, desc_limit:lim, batch_size:getParam('batch_size')||10, exif:getParam('exif')||'1'};
+    fetch(API+'/../api/control/start',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(params)
+    }).then(function(r){return r.json()}).then(function(d){
+        if(d.ok){
+            document.getElementById('chainInfo').textContent = '\u26A1 Запущено '+new Date().toLocaleTimeString();
+            TASKS.forEach(function(t){
+                taskState[t.id].baseCount = stepCount(t.id).done;
+            });
+            renderTasks(); renderCyclo();
+        }
+    });
+}
+
+function stopAll(){
+    fetch(API+'/../api/control/stop',{method:'POST'}).then(function(r){return r.json()}).then(function(){
+        TASKS.forEach(function(t){
+            if(taskState[t.id].status==='run'){
+                taskState[t.id] = {status:'idle', started:taskState[t.id].started, stopped:new Date(), baseCount:0};
+            }
+        });
+        document.getElementById('chainInfo').textContent = 'Остановлено '+new Date().toLocaleTimeString();
+        renderTasks(); renderCyclo();
+    });
+}
+
+function loadStatus(){
+    fetch(API+'/../api/status').then(function(r){return r.json()}).then(function(d){
+        st = d;
+        var step = (d.step_details||'').toLowerCase();
+        if(d.current_step==='idle'){
+            TASKS.forEach(function(t){
+                if(taskState[t.id].status==='run') taskState[t.id].status='done';
+                if(!taskState[t.id].stopped) taskState[t.id].stopped=new Date();
+            });
+        }
+        renderSummary();
+        renderCyclo();
+        renderTasks();
+    }).catch(function(){});
+}
+
+function loadLog(){
+    fetch(API+'/../api/log?lines=60').then(function(r){return r.json()}).then(function(d){
+        var el = document.getElementById('logC');
+        var wasBot = el.scrollTop+el.clientHeight >= el.scrollHeight-20;
+        var lines = d.lines.map(function(l){
+            var t = l.replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            var m = t.match(/^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/);
+            if(m){
+                var d2=new Date(m[1]+'Z');
+                if(!isNaN(d2.getTime())){
+                    var pad=function(n){return n<10?'0'+n:n;};
+                    var local=d2.getFullYear()+'-'+pad(d2.getMonth()+1)+'-'+pad(d2.getDate())+' '+pad(d2.getHours())+':'+pad(d2.getMinutes())+':'+pad(d2.getSeconds());
+                    t=t.replace(m[1],local);
+                }
+            }
+            if(t.indexOf('[DESCRIBE]')>=0) return '<span class="l-DESCRIBE">'+t+'</span>';
+            if(t.indexOf('[FACES]')>=0) return '<span class="l-FACES">'+t+'</span>';
+            if(t.indexOf('[EMBED]')>=0) return '<span class="l-EMBED">'+t+'</span>';
+            if(t.indexOf('[EXIF]')>=0) return '<span class="l-EXIF">'+t+'</span>';
+            if(t.indexOf('[PIPELINE]')>=0) return '<span class="l-PIPELINE">'+t+'</span>';
+            if(t.indexOf('[INGEST]')>=0) return '<span class="l-INGEST">'+t+'</span>';
+            if(t.indexOf('FAILED')>=0||t.indexOf('ERROR')>=0) return '<span class="l-error">'+t+'</span>';
+            if(t.indexOf('DONE')>=0||t.indexOf('START')>=0) return '<span class="l-DONE">'+t+'</span>';
+            return t;
+        });
+        el.innerHTML = lines.join('');
+        document.getElementById('logInfo').textContent = d.total+' строк';
+        if(wasBot) el.scrollTop = el.scrollHeight;
+    }).catch(function(){});
+}
+
+function backupDownload(){
+    var el = document.getElementById('backupStatus');
+    el.className = 'backup-status'; el.textContent = 'Создание бекапа...';
+    fetch(API+'/backup/download').then(function(r){
+        if(!r.ok) throw new Error('HTTP '+r.status);
+        var sz = r.headers.get('content-length');
+        var mb = sz ? (parseInt(sz)/1048576).toFixed(1)+'MB' : '';
+        el.className = 'backup-status ok'; el.textContent = 'Скачивание... '+mb;
+        return r.blob();
+    }).then(function(blob){
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        var cd = '';
+        a.download = 'gallery_backup.db.gz';
+        a.click();
+        URL.revokeObjectURL(url);
+        el.className = 'backup-status ok'; el.textContent = 'Бекап скачан ('+(blob.size/1048576).toFixed(1)+'MB)';
+    }).catch(function(e){
+        el.className = 'backup-status err'; el.textContent = 'Ошибка: '+e.message;
+    });
+}
+
+function backupUpload(input){
+    if(!input.files || !input.files[0]) return;
+    var file = input.files[0];
+    var el = document.getElementById('backupStatus');
+    el.className = 'backup-status'; el.textContent = 'Загрузка '+file.name+' ('+(file.size/1048576).toFixed(1)+'MB)...';
+    var fd = new FormData();
+    fd.append('file', file);
+    fetch(API+'/backup/upload', {method:'POST', body:fd}).then(function(r){
+        if(!r.ok) return r.json().then(function(d){ throw new Error(d.detail||'HTTP '+r.status); });
+        return r.json();
+    }).then(function(d){
+        el.className = 'backup-status ok'; el.textContent = 'БД восстановлена! Перезапустите сервис для применения.';
+    }).catch(function(e){
+        el.className = 'backup-status err'; el.textContent = 'Ошибка: '+e.message;
+    });
+    input.value = '';
+}
+
+function fmtBytes(b){
+    if(!b) return '0';
+    if(b < 1024) return b+'B';
+    if(b < 1048576) return (b/1024).toFixed(1)+'KB';
+    if(b < 1073741824) return (b/1048576).toFixed(1)+'MB';
+    return (b/1073741824).toFixed(1)+'GB';
+}
+
+function loadMaintStats(){
+    fetch(API+'/maintenance/stats').then(function(r){return r.json()}).then(function(d){
+        var h = '';
+        h += '<div class="maint-sbox"><div class="sv">'+fmtBytes(d.sqlite_size)+'</div><div class="sl">SQLite (gallery.db)</div></div>';
+        h += '<div class="maint-sbox"><div class="sv">'+fmtBytes(d.embeddings_size)+'</div><div class="sl">Эмбеддинги (LanceDB)</div></div>';
+        h += '<div class="maint-sbox"><div class="sv">'+fmtBytes(d.data_total)+'</div><div class="sl">Всего данных</div></div>';
+        document.getElementById('maintSizes').innerHTML = h;
+    }).catch(function(){});
+}
+
+function maintVacuum(){
+    var el = document.getElementById('maintStatus');
+    el.className = 'backup-status'; el.textContent = 'VACUUM...';
+    fetch(API+'/maintenance/vacuum',{method:'POST'}).then(function(r){
+        if(!r.ok) return r.json().then(function(d){ throw new Error(d.detail); });
+        return r.json();
+    }).then(function(d){
+        el.className = 'backup-status ok';
+        el.textContent = 'VACUUM: '+fmtBytes(d.before)+' → '+fmtBytes(d.after)+' (освобождено '+fmtBytes(d.freed)+')';
+        loadMaintStats();
+    }).catch(function(e){
+        el.className = 'backup-status err'; el.textContent = 'Ошибка: '+e.message;
+    });
+}
+
+function maintDedup(){
+    var el = document.getElementById('maintStatus');
+    el.className = 'backup-status'; el.textContent = 'Дедупликация эмбеддингов... (может занять минуту)';
+    fetch(API+'/maintenance/dedup_embeddings',{method:'POST'}).then(function(r){
+        if(!r.ok) return r.json().then(function(d){ throw new Error(d.detail); });
+        return r.json();
+    }).then(function(d){
+        el.className = 'backup-status ok';
+        el.textContent = 'Было '+d.before+' → стало '+d.after+' (удалено '+d.removed+' дублей)';
+        loadMaintStats();
+    }).catch(function(e){
+        el.className = 'backup-status err'; el.textContent = 'Ошибка: '+e.message;
+    });
+}
+
+loadStatus(); loadLog(); loadMaintStats();
+setInterval(loadStatus, 3000);
+setInterval(loadLog, 5000);
+setInterval(function(){
+    for(var i=0; i<STEPS.length; i++){
+        var ts = taskState[STEPS[i].id];
+        var el = document.getElementById('cyTime_' + STEPS[i].id);
+        if(el && ts.status === 'run' && ts.started){
+            el.textContent = fmtDur(Date.now() - ts.started.getTime());
+        }
+    }
+    if(st.pipeline_started_at){
+        var pStart = new Date(st.pipeline_started_at + (st.pipeline_started_at.indexOf('+') < 0 && st.pipeline_started_at.indexOf('Z') < 0 ? '+00:00' : ''));
+        var pdEl = document.getElementById('pbPipelineDur');
+        if(pdEl) pdEl.textContent = fmtDur(Date.now() - pStart.getTime());
+    }
+}, 1000);
+
+var _isLightTheme = false;
+function toggleTheme() {
+    _isLightTheme = !_isLightTheme;
+    document.body.classList.toggle('light-theme', _isLightTheme);
+    localStorage.setItem('gallery-theme', _isLightTheme ? 'light' : 'dark');
+    var logo = document.querySelector('h1 .logo');
+    if (logo) logo.src = _isLightTheme ? logo.dataset.light : logo.dataset.dark;
+    updateThemeIcon();
+}
+function updateThemeIcon() {
+    var btn = document.querySelector('.theme-toggle');
+    if (btn) {
+        btn.innerHTML = _isLightTheme ? '\u263E' : '\u2600';
+        btn.title = _isLightTheme ? 'Тёмная тема' : 'Дневная тема';
+    }
+}
+(function() {
+    var savedTheme = localStorage.getItem('gallery-theme');
+    if (savedTheme === 'light') {
+        _isLightTheme = true;
+        var logo = document.querySelector("h1 .logo");
+        if (logo) logo.src = logo.dataset.light;
+        document.body.classList.add('light-theme');
+    }
+    updateThemeIcon();
+})();
+
+</script>
+</body>
+</html>

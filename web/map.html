@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Карта — Gailery</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0d1117; color: #c9d1d9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; height: 100vh; display: flex; flex-direction: column; }
+        h1 { position: relative; }
+        h1 .theme-toggle { position: absolute; right: 12px; top: 50%; transform: translateY(-55%); background: none; border: none; cursor: pointer; color: #e3b341; font-size: 24px; padding: 8px 12px; display: flex; align-items: center; justify-content: center; z-index: 10; }
+        h1 .theme-toggle:hover { background: rgba(255,255,255,.08); }
+        .light-theme { background: #ffffff; color: #24292f; }
+        .light-theme h1 { background: #f6f8fa; border-bottom: 1px solid #d0d7de; color: #0969da; }
+        .light-theme h1 .nav a { color: #57606a; }
+        .light-theme h1 .nav a:hover { color: #0969da; }
+        .light-theme h1 .nav a.active { color: #0969da; }
+        .light-theme h1 .theme-toggle { color: #0969da; }
+        .light-theme h1 .theme-toggle:hover { background: rgba(0,0,0,.06); }
+        .light-theme h1 span { color: #24292f; }
+        .light-theme .nav a { color: #57606a; }
+        .light-theme .nav a:hover { background: #eaeef2; color: #24292f; }
+        .light-theme .nav a.active { color: #0969da; }
+        .light-theme .info-bar { background: #f6f8fa; border-color: #d0d7de; color: #57606a; }
+        .light-theme .modal-close { color: #57606a; }
+        .light-theme .modal-nav { color: #57606a; }
+        .light-theme .modal-fs { color: #57606a; }
+        .light-theme .modal-date { background: rgba(255,255,255,.8); color: #24292f; }
+        .light-theme .modal-loc { background: rgba(255,255,255,.8); color: #24292f; }
+        .light-theme .modal-gps { background: rgba(9,105,218,.15); color: #0969da; }
+        .light-theme .modal-gps:hover { background: rgba(9,105,218,.3); }
+        .light-theme .thumb-wrap { background: #eaeef2; border-color: #ffffff; box-shadow: 0 0 6px rgba(0,0,0,.2); }
+        .light-theme .thumb-ph { background: #d0d7de; }
+        .light-theme .thumb-ph svg { fill: #8c949e; }
+
+        h1 { background: #161b22; border-bottom: 1px solid #30363d; padding: 10px 20px; display: flex; align-items: center; justify-content: space-between; font-size: 16px; font-weight: 600; }
+        h1 span { color: #f0f6fc; }
+        .nav { display: flex; gap: 4px; padding-right: 54px; }
+        .nav a { color: #8b949e; text-decoration: none; font-size: 12px; padding: 4px 8px; border-radius: 4px; }
+        h1 { display: flex; align-items: center; }
+        h1 .logo { height: 32px; width: auto; margin-right: 6px; }
+        
+        .nav a:hover { background: #21262d; color: #c9d1d9; }
+        .nav a.active { color: #58a6ff; }
+        #map { flex: 1; width: 100%; }
+        .info-bar { background: #161b22; border-top: 1px solid #30363d; padding: 6px 20px; font-size: 11px; color: #8b949e; display: flex; justify-content: space-between; }
+        .modal-bg { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,.9); z-index: 2000; justify-content: center; align-items: center; }
+        .modal-bg.show { display: flex; }
+        .modal-bg img { max-width: 95vw; max-height: 95vh; object-fit: contain; border-radius: 4px; }
+        .modal-bg.fs { background: #000; }
+        .modal-bg.fs img { max-width: 100vw; max-height: 100vh; border-radius: 0; }
+        .modal-fs { position: absolute; top: 12px; right: 56px; color: #fff; font-size: 22px; cursor: pointer; z-index: 2001; opacity: .7; }
+        .modal-fs:hover { opacity: 1; }
+        .modal-close { position: absolute; top: 12px; right: 16px; color: #fff; font-size: 30px; cursor: pointer; z-index: 2001; line-height: 1; opacity: .7; }
+        .modal-close:hover { opacity: 1; }
+        .modal-nav { position: absolute; top: 50%; color: #fff; font-size: 44px; cursor: pointer; z-index: 2001; opacity: .5; user-select: none; padding: 20px 12px; transform: translateY(-50%); }
+        .modal-nav:hover { opacity: .9; }
+        .modal-prev { left: 8px; }
+        .modal-next { right: 8px; }
+        .modal-date { position: absolute; top: 14px; left: 16px; color: #c9d1d9; font-size: 14px; z-index: 2001; background: rgba(0,0,0,.6); padding: 3px 10px; border-radius: 4px; }
+        .modal-cam { color: #8b949e; font-size: 11px; margin-left: 8px; }
+        .modal-loc { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); color: #e0e0e0; font-size: 14px; z-index: 2001; background: rgba(0,0,0,.6); padding: 3px 12px; border-radius: 4px; white-space: nowrap; display: flex; align-items: center; gap: 8px; }
+        .modal-gps { color: #58a6ff; font-size: 11px; font-weight: 600; background: rgba(88,166,255,.15); padding: 1px 6px; border-radius: 3px; cursor: pointer; }
+        .modal-gps:hover { background: rgba(88,166,255,.3); }
+        .marker-cluster-small { background: rgba(35, 134, 54, 0.4); }
+        .marker-cluster-small div { background: rgba(35, 134, 54, 0.7); color: #fff; font-size: 11px; }
+        .marker-cluster-medium { background: rgba(31, 111, 235, 0.4); }
+        .marker-cluster-medium div { background: rgba(31, 111, 235, 0.7); color: #fff; font-size: 11px; }
+        .marker-cluster-large { background: rgba(163, 113, 247, 0.4); }
+        .marker-cluster-large div { background: rgba(163, 113, 247, 0.7); color: #fff; font-size: 11px; }
+        .popup-thumb { object-fit: contain; border-radius: 4px; display: block; margin-bottom: 4px; background: #161b22; }
+        .popup-desc { color: #333; font-size: 11px; max-width: 480px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .popup-date { color: #999; font-size: 10px; }
+        .dot-marker { width: 8px; height: 8px; background: #58a6ff; border-radius: 50%; border: 1.5px solid #fff; box-shadow: 0 0 3px rgba(0,0,0,.5); }
+        .dot-marker.manual { background: #da3633; }
+        .manual-badge { background: #da3633; color: #fff; font-size: 10px; padding: 1px 5px; border-radius: 3px; margin-left: 5px; }
+        .light-theme .manual-badge { color: #fff; }
+        .popup-clear-gps { display: inline-block; margin-top: 4px; background: rgba(218,54,51,.8); color: #fff; font-size: 10px; padding: 2px 8px; border-radius: 3px; cursor: pointer; text-decoration: none; }
+        .popup-clear-gps:hover { background: rgba(218,54,51,1); }
+        .pick-panel { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); background: rgba(13, 17, 23, 0.95); border: 1px solid #30363d; padding: 10px 20px; border-radius: 6px; z-index: 1500; font-size: 14px; color: #c9d1d9; box-shadow: 0 2px 8px rgba(0,0,0,.4); }
+        .light-theme .pick-panel { background: rgba(255, 255, 255, 0.95); border-color: #d0d7de; color: #24292f; }
+        .pick-dialog { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,.7); z-index: 3000; justify-content: center; align-items: center; }
+        .pick-dialog.show { display: flex; }
+        .pick-dialog-box { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; max-width: 320px; text-align: center; }
+        .light-theme .pick-dialog-box { background: #fff; border-color: #d0d7de; }
+        .pick-dialog-box h3 { margin-bottom: 15px; font-size: 16px; color: #c9d1d9; }
+        .light-theme .pick-dialog-box h3 { color: #24292f; }
+        .pick-dialog-box p { margin-bottom: 20px; font-size: 13px; color: #8b949e; }
+        .light-theme .pick-dialog-box p { color: #57606a; }
+        .pick-dialog-btns { display: flex; gap: 10px; justify-content: center; }
+        .pick-dialog-btns button { padding: 8px 16px; border-radius: 4px; border: none; cursor: pointer; font-size: 13px; }
+        .pick-btn-link { background: #238636; color: #fff; }
+        .pick-btn-link:hover { background: #2ea043; }
+        .pick-btn-cancel { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; }
+        .pick-btn-cancel:hover { background: #30363d; }
+        .light-theme .pick-btn-cancel { background: #f6f8fa; color: #24292f; border-color: #d0d7de; }
+        .light-theme .pick-btn-cancel:hover { background: #eaeef2; }
+        .pick-success { position: fixed; top: 60px; left: 50%; transform: translateX(-50%); background: #238636; color: #fff; padding: 10px 20px; border-radius: 6px; z-index: 3001; font-size: 14px; display: none; }
+        .thumb-wrap { position: relative; border-radius: 6px; border: 2px solid #fff; box-shadow: 0 0 6px rgba(0,0,0,.6); overflow: hidden; background: #21262d; }
+        .thumb-wrap img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity .15s; }
+        .thumb-wrap img.loaded { opacity: 1; }
+        .thumb-ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #30363d; z-index: -1; }
+        .thumb-ph svg { width: 18px; height: 18px; fill: #484f58; }
+        .thumb-ph-big svg { width: 48px; height: 48px; fill: #484f58; }
+    </style>
+</head>
+<body>
+    <h1>
+        <img class="logo" src="/logo-dark.png" data-light="/logo-light.png" data-dark="/logo-dark.png" alt="Gailery"><span>Карта</span>
+        <div class="nav">
+            <a href="/gallery">Галерея</a>
+            <a href="/catalog">Каталог</a>
+            <a href="/map" class="active">Карта</a>
+            <a href="/monitor">Монитор</a>
+            <a href="/persons">Персоны</a>
+            <a href="/control">Управление</a>
+            <a href="/log">Лог</a>
+        </div>
+        <button class="theme-toggle" onclick="toggleTheme()" title="Дневная тема">☀</button>
+    </h1>
+    <div id="map"></div>
+    <div class="info-bar">
+        <span id="infoLeft">Загрузка...</span>
+        <span id="infoRight"></span>
+    </div>
+    <div class="modal-bg" id="photoModal">
+        <div class="modal-close" onclick="closePhotoModal()">&times;</div>
+        <div class="modal-fs" id="modalFsBtn" onclick="toggleFullscreen()">&#x26F6;</div>
+        <div class="modal-nav modal-prev" onclick="modalNav(-1)">&#8249;</div>
+        <div class="modal-nav modal-next" onclick="modalNav(1)">&#8250;</div>
+        <img id="photoModalImg" src="" onclick="event.stopPropagation()" style="transition:transform .1s;cursor:grab">
+        <div class="modal-date" id="modalDate"></div>
+        <div class="modal-loc" id="modalLoc"></div>
+    </div>
+
+    <div class="pick-panel" id="pickPanel" style="display:none;">
+        Кликните на карте для установки точки
+    </div>
+
+    <div class="pick-dialog" id="pickDialog">
+        <div class="pick-dialog-box">
+            <h3>Связать фото с этим местом?</h3>
+            <p id="pickDialogCoords"></p>
+            <div class="pick-dialog-btns">
+                <button class="pick-btn-link" onclick="confirmPick()">Связать</button>
+                <button class="pick-btn-cancel" onclick="cancelPick()">Отмена</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="pick-success" id="pickSuccess">Точка успешно установлена!</div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <script>
+        var API = '/api';
+        var mapPhotos = [];
+        var THUMB_ZOOM = 12;
+        var modalDate = '';
+        var pickMode = false;
+        var pickPhotoId = null;
+        var pickTempMarker = null;
+        var pickLat = null;
+        var pickLon = null;
+        var modalZoom = 1;
+        var modalPx = 0;
+        var modalPy = 0;
+        var modalDragging = false;
+        var modalDragX = 0;
+        var modalDragY = 0;
+        var map = L.map('map').setView([55.75, 37.62], 5);
+
+        var osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap',
+            maxNativeZoom: 19,
+            maxZoom: 26
+        });
+
+        var satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            attribution: '&copy; Esri',
+            maxNativeZoom: 19,
+            maxZoom: 26
+        });
+
+        var labelsLayer = L.tileLayer('https://basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png', {
+            maxNativeZoom: 18,
+            maxZoom: 26,
+            opacity: 0.9
+        });
+
+        var hybridLayer = L.layerGroup([
+            satelliteLayer,
+            labelsLayer
+        ]);
+
+        osmLayer.addTo(map);
+
+        // Check for pick mode in URL
+        function initPickMode() {
+            var params = new URLSearchParams(window.location.search);
+            if (params.get('mode') === 'pick') {
+                pickPhotoId = params.get('photo_id');
+                if (pickPhotoId) {
+                    pickMode = true;
+                    document.getElementById('pickPanel').style.display = 'block';
+                    map.on('click', onMapClickForPick);
+                }
+            }
+        }
+
+        function onMapClickForPick(e) {
+            if (!pickMode) return;
+            pickLat = e.latlng.lat;
+            pickLon = e.latlng.lng;
+
+            // Remove old temp marker
+            if (pickTempMarker) {
+                map.removeLayer(pickTempMarker);
+            }
+
+            // Add red temp marker
+            pickTempMarker = L.marker([pickLat, pickLon], {
+                icon: L.divIcon({
+                    className: '',
+                    html: '<div class="dot-marker manual"></div>',
+                    iconSize: [8, 8],
+                    iconAnchor: [4, 4]
+                })
+            }).addTo(map);
+
+            // Show dialog
+            document.getElementById('pickDialogCoords').textContent = pickLat.toFixed(6) + ', ' + pickLon.toFixed(6);
+            document.getElementById('pickDialog').classList.add('show');
+        }
+
+        function cancelPick() {
+            document.getElementById('pickDialog').classList.remove('show');
+            if (pickTempMarker) {
+                map.removeLayer(pickTempMarker);
+                pickTempMarker = null;
+            }
+        }
+
+        function confirmPick() {
+            if (!pickPhotoId || pickLat === null || pickLon === null) return;
+
+            fetch(API + '/photos/set_gps', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    photo_id: pickPhotoId,
+                    lat: pickLat,
+                    lon: pickLon
+                })
+            }).then(function(r) {
+                if (!r.ok) throw new Error('Ошибка сохранения');
+                return r.json();
+            }).then(function(data) {
+                document.getElementById('pickDialog').classList.remove('show');
+                if (pickTempMarker) {
+                    map.removeLayer(pickTempMarker);
+                    pickTempMarker = null;
+                }
+                // Show success message
+                var successEl = document.getElementById('pickSuccess');
+                successEl.style.display = 'block';
+                setTimeout(function() {
+                    successEl.style.display = 'none';
+                    // Close window after 2 seconds or refresh
+                    if (window.opener) {
+                        window.close();
+                    } else {
+                        window.location.href = '/map';
+                    }
+                }, 2000);
+            }).catch(function(e) {
+                alert('Ошибка: ' + e.message);
+            });
+        }
+
+        initPickMode();
+
+        function clearMapGps(idx, el) {
+            var p = mapPhotos[idx];
+            if (!p || !p.photo_id) return;
+            if (!confirm('Удалить GPS-привязку для этого фото?')) return;
+            fetch(API + '/photos/clear_gps', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({photo_id: p.photo_id})
+            }).then(function(r) {
+                if (!r.ok) throw new Error('Ошибка');
+                return r.json();
+            }).then(function() {
+                p.lat = null;
+                p.lon = null;
+                p.manual_gps = 0;
+                markers.eachLayer(function(layer) {
+                    if (layer._photoIdx === idx) {
+                        markers.removeLayer(layer);
+                    }
+                });
+            }).catch(function(e) { alert('Ошибка: ' + e.message); });
+        }
+
+        L.control.layers({
+            'Карта': osmLayer,
+            'Спутник': satelliteLayer,
+            'Спутник+подписи': hybridLayer
+        }, null, { position: 'topright' }).addTo(map);
+
+        var markers = L.markerClusterGroup({
+            maxClusterRadius: function(zoom) { return zoom >= 18 ? 5 : 40; },
+            spiderfyOnMaxZoom: true,
+            showCoverageOnHover: false,
+            spiderfyDistanceMultiplier: 2
+        });
+
+        function esc(s) {
+            if (!s) return '';
+            return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
+        function preloadLocations(photos) {
+            var seen = {};
+            var coords = [];
+            for (var i = 0; i < photos.length; i++) {
+                var p = photos[i];
+                if (!p.lat || !p.lon) continue;
+                var key = p.lat.toFixed(3) + ',' + p.lon.toFixed(3);
+                if (seen[key]) continue;
+                seen[key] = true;
+                coords.push({lat: p.lat, lon: p.lon, key: key});
+            }
+            if (!coords.length) return;
+            window._rgCache = {};
+            var BATCH = 100;
+            function batch(start) {
+                var slice = coords.slice(start, start + BATCH);
+                if (!slice.length) return;
+                fetch(API + '/photos/reverse_geocode', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(slice)
+                }).then(function(r) { return r.json(); }).then(function(names) {
+                    for (var j = 0; j < slice.length && j < names.length; j++) {
+                        window._rgCache[slice[j].key] = names[j];
+                    }
+                    batch(start + BATCH);
+                });
+            }
+            batch(0);
+        }
+
+        function getDotIcon(isManual) {
+            return L.divIcon({
+                className: '',
+                html: '<div class="dot-marker' + (isManual ? ' manual' : '') + '"></div>',
+                iconSize: [8, 8],
+                iconAnchor: [4, 4]
+            });
+        }
+        var DOT_ICON = getDotIcon(false);
+
+        var CAMERA_SVG = '<svg viewBox="0 0 24 24"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4zM9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9z"/></svg>';
+
+        function calcSize(maxW, maxH, w, h) {
+            if (!w || !h) { return { w: maxW, h: maxH }; }
+            var ar = w / h;
+            if (ar >= maxW / maxH) { var iw = maxW; var ih = Math.round(maxW / ar); }
+            else { var ih = maxH; var iw = Math.round(maxH * ar); }
+            return { w: iw, h: ih };
+        }
+
+        function makeThumbIcon(thumbUrl, zoom, w, h) {
+            var maxS = zoom >= 15 ? { w: 130, h: 100 } : { w: 54, h: 42 };
+            var s = calcSize(maxS.w, maxS.h, w, h);
+            var ph = zoom >= 15 ? 'thumb-ph-big' : 'thumb-ph';
+            return L.divIcon({
+                className: '',
+                html: '<div class="thumb-wrap" style="width:' + s.w + 'px;height:' + s.h + 'px"><div class="' + ph + '">' + CAMERA_SVG + '</div><img src="' + thumbUrl + '" onload="this.classList.add(\'loaded\')" onerror="this.style.opacity=\'0\'"></div>',
+                iconSize: [s.w + 4, s.h + 4],
+                iconAnchor: [(s.w + 4) / 2, (s.h + 4) / 2]
+            });
+        }
+
+        function thumbUrl(p) {
+            return API + '/photos/thumbnail?path=' + encodeURIComponent(p.rel_path || p.path) + '&size=sm&fit=true';
+        }
+
+        function thumbDims(p) {
+            var w = p.w || 1, h = p.h || 1, maxW = 400, maxH = 400;
+            var ar = w / h;
+            var tw, th;
+            if (ar >= 1) { tw = maxW; th = Math.round(maxW / ar); }
+            else { th = maxH; tw = Math.round(maxH * ar); }
+            return { w: tw, h: th };
+        }
+
+        fetch(API + '/photos/map').then(function(r) { return r.json(); }).then(function(photos) {
+            document.getElementById('infoLeft').textContent = 'Фото с GPS: ' + photos.length;
+            mapPhotos = photos;
+            preloadLocations(photos);
+
+            for (var i = 0; i < photos.length; i++) {
+                var p = photos[i];
+                var isManual = p.manual_gps === 1 || p.manual_gps === true;
+                var marker = L.marker([p.lat, p.lon], { icon: getDotIcon(isManual) });
+                marker._photoIdx = i;
+                marker._iconZoom = 0;
+                marker._isManual = isManual;
+
+                var tUrl = thumbUrl(p);
+                var td = thumbDims(p);
+                var ps = calcSize(480, 360, td.w, td.h);
+                var popupHtml = '<img class="popup-thumb" src="' + tUrl + '" data-idx="' + i + '" width="' + ps.w + '" height="' + ps.h + '" onerror="this.style.display=\'none\'">';
+                if (p.description) {
+                    popupHtml += '<div class="popup-desc">' + esc(p.description.substring(0, 80)) + '</div>';
+                }
+                if (p.date) {
+                    popupHtml += '<div class="popup-date">' + esc(p.date.substring(0, 10));
+                    if (isManual) {
+                        popupHtml += '<span class="manual-badge">ручная привязка</span>';
+                    }
+                    popupHtml += '</div>';
+                }
+                if (isManual) {
+                    popupHtml += '<span class="popup-clear-gps" onclick="clearMapGps(' + i + ', this)">Удалить GPS</span>';
+                }
+                marker.bindPopup(popupHtml, { maxWidth: 520 });
+                markers.addLayer(marker);
+            }
+
+            map.addLayer(markers);
+
+            if (photos.length > 0) {
+                var hash = window.location.hash.substring(1);
+                if (hash && hash.indexOf(',') > 0) {
+                    var parts = hash.split(',');
+                    var lat = parseFloat(parts[0]);
+                    var lon = parseFloat(parts[1]);
+                    if (!isNaN(lat) && !isNaN(lon)) {
+                        map.setView([lat, lon], 18);
+                    } else {
+                        var bounds = markers.getBounds();
+                        if (bounds.isValid()) map.fitBounds(bounds, { padding: [30, 30] });
+                    }
+                } else {
+                    var bounds = markers.getBounds();
+                    if (bounds.isValid()) map.fitBounds(bounds, { padding: [30, 30] });
+                }
+            }
+
+            map.on('moveend', upgradeVisible);
+
+            document.addEventListener('click', function(e) {
+                if (e.target && e.target.classList && e.target.classList.contains('popup-thumb')) {
+                    var idx = parseInt(e.target.getAttribute('data-idx'));
+                    if (!isNaN(idx) && mapPhotos[idx]) {
+                        openModal(mapPhotos[idx]);
+                    }
+                }
+            });
+        }).catch(function(e) {
+            document.getElementById('infoLeft').textContent = 'Ошибка: ' + e.message;
+        });
+
+        var _upgradeTimer = null;
+        function upgradeVisible() {
+            if (_upgradeTimer) clearTimeout(_upgradeTimer);
+            _upgradeTimer = setTimeout(_doUpgrade, 150);
+        }
+
+        function _doUpgrade() {
+            var zoom = map.getZoom();
+            if (zoom < THUMB_ZOOM) {
+                markers.eachLayer(function(layer) {
+                    if (layer._photoIdx === undefined) return;
+                    if (layer._iconZoom > 0) {
+                        layer.setIcon(getDotIcon(layer._isManual));
+                        layer._iconZoom = 0;
+                    }
+                });
+                return;
+            }
+            var wantZoom = zoom >= 15 ? 15 : 12;
+            var bounds = map.getBounds();
+            markers.eachLayer(function(layer) {
+                if (layer._photoIdx === undefined) return;
+                if (layer._iconZoom >= wantZoom) return;
+                if (!bounds.contains(layer.getLatLng())) return;
+                var p = mapPhotos[layer._photoIdx];
+                var td = thumbDims(p);
+                layer.setIcon(makeThumbIcon(thumbUrl(p), zoom, td.w, td.h));
+                layer._iconZoom = wantZoom;
+            });
+        }
+
+        function formatDate(ds) {
+            if (!ds) return '';
+            var p = ds.substring(0, 19).replace('T', ' ');
+            var ru = p.replace(/^(\d{4})[:\-](\d{2})[:\-](\d{2})/, function(m, y, mo, d) { return d + '.' + mo + '.' + y; });
+            return ru;
+        }
+
+        function showPhoto(p) {
+            modalDate = p.date || '';
+            var fullUrl = API + '/photos/?path=' + encodeURIComponent(p.rel_path || p.path);
+            var img = document.getElementById('photoModalImg');
+            img.src = fullUrl;
+            img.style.transform = '';
+            img.style.transformOrigin = 'center center';
+            modalZoom = 1;
+            modalPx = 0;
+            modalPy = 0;
+            var dateEl = document.getElementById('modalDate');
+            var txt = formatDate(p.date);
+            if (p.camera) txt += '<span class="modal-cam">' + esc(p.camera) + '</span>';
+            dateEl.innerHTML = txt;
+            var locEl = document.getElementById('modalLoc');
+            if (p.lat && p.lon) {
+                var locText = '';
+                var key = p.lat.toFixed(3) + ',' + p.lon.toFixed(3);
+                if (window._rgCache && window._rgCache[key]) locText = window._rgCache[key];
+                locEl.innerHTML = '<span class="modal-gps" onclick="goToGps(' + p.lat + ',' + p.lon + ')">GPS</span>' + esc(locText);
+                locEl.style.display = '';
+            } else {
+                locEl.innerHTML = '';
+                locEl.style.display = 'none';
+            }
+        }
+
+        function openModal(p) {
+            showPhoto(p);
+            document.getElementById('photoModal').classList.add('show');
+            map.closePopup();
+        }
+
+        function modalNav(dir) {
+            if (!modalDate) return;
+            var d = dir > 0 ? 'next' : 'prev';
+            fetch(API + '/photos/neighbor?date=' + encodeURIComponent(modalDate) + '&dir=' + d)
+                .then(function(r) { return r.json(); })
+                .then(function(p) {
+                    if (p && p.rel_path) showPhoto(p);
+                });
+        }
+
+        function goToGps(lat, lon) {
+            closePhotoModal();
+            map.setView([lat, lon], 18, { animate: true });
+        }
+
+        function applyModalTransform() {
+            var img = document.getElementById('photoModalImg');
+            img.style.transform = 'translate(' + modalPx + 'px,' + modalPy + 'px) scale(' + modalZoom + ')';
+        }
+
+        function toggleFullscreen() {
+            var el = document.getElementById('photoModal');
+            if (el.classList.contains('fs')) {
+                el.classList.remove('fs');
+                if (document.exitFullscreen) document.exitFullscreen();
+            } else {
+                el.classList.add('fs');
+                var fsEl = document.documentElement;
+                if (fsEl.requestFullscreen) fsEl.requestFullscreen();
+                else if (fsEl.webkitRequestFullscreen) fsEl.webkitRequestFullscreen();
+            }
+        }
+
+        function closePhotoModal() {
+            document.getElementById('photoModal').classList.remove('show');
+            document.getElementById('photoModalImg').src = '';
+            modalDate = '';
+        }
+
+        document.getElementById('photoModal').addEventListener('click', function(e) {
+            if (e.target === this) closePhotoModal();
+        });
+
+        document.getElementById('photoModal').addEventListener('wheel', function(e) {
+            e.preventDefault();
+            var rect = document.getElementById('photoModalImg').getBoundingClientRect();
+            var cx = e.clientX - rect.left - rect.width / 2 - modalPx;
+            var cy = e.clientY - rect.top - rect.height / 2 - modalPy;
+            var oldZ = modalZoom;
+            var delta = e.deltaY > 0 ? 0.8 : 1.25;
+            modalZoom = Math.max(1, Math.min(20, modalZoom * delta));
+            var ratio = modalZoom / oldZ;
+            modalPx -= cx * (ratio - 1);
+            modalPy -= cy * (ratio - 1);
+            if (modalZoom <= 1) { modalPx = 0; modalPy = 0; }
+            applyModalTransform();
+        });
+
+        document.getElementById('photoModalImg').addEventListener('mousedown', function(e) {
+            if (modalZoom > 1) {
+                e.preventDefault();
+                modalDragging = true;
+                modalDragX = e.clientX - modalPx;
+                modalDragY = e.clientY - modalPy;
+                e.target.style.cursor = 'grabbing';
+            }
+        });
+
+        document.addEventListener('mousemove', function(e) {
+            if (modalDragging) {
+                modalPx = e.clientX - modalDragX;
+                modalPy = e.clientY - modalDragY;
+                applyModalTransform();
+            }
+        });
+
+        document.addEventListener('mouseup', function() {
+            if (modalDragging) {
+                modalDragging = false;
+                document.getElementById('photoModalImg').style.cursor = 'grab';
+            }
+        });
+
+        document.addEventListener('fullscreenchange', function() {
+            if (!document.fullscreenElement) {
+                document.getElementById('photoModal').classList.remove('fs');
+            }
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (!modalDate) return;
+            if (e.key === 'ArrowLeft') modalNav(-1);
+            else if (e.key === 'ArrowRight') modalNav(1);
+            else if (e.key === 'Escape') closePhotoModal();
+        });
+    
+var _isLightTheme = false;
+function toggleTheme() {
+    _isLightTheme = !_isLightTheme;
+    document.body.classList.toggle('light-theme', _isLightTheme);
+    localStorage.setItem('gallery-theme', _isLightTheme ? 'light' : 'dark');
+    var logo = document.querySelector('h1 .logo');
+    if (logo) logo.src = _isLightTheme ? logo.dataset.light : logo.dataset.dark;
+    updateThemeIcon();
+}
+function updateThemeIcon() {
+    var btn = document.querySelector('.theme-toggle');
+    if (btn) {
+        btn.innerHTML = _isLightTheme ? '\u263E' : '\u2600';
+        btn.title = _isLightTheme ? 'Тёмная тема' : 'Дневная тема';
+    }
+}
+(function() {
+    var savedTheme = localStorage.getItem('gallery-theme');
+    if (savedTheme === 'light') {
+        _isLightTheme = true;
+        var logo = document.querySelector("h1 .logo");
+        if (logo) logo.src = logo.dataset.light;
+        document.body.classList.add('light-theme');
+    }
+    updateThemeIcon();
+})();
+
+</script>
+</body>
+</html>
