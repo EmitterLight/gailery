@@ -1,0 +1,270 @@
+#!/usr/bin/env python3
+"""
+scan_catalog.py - Scan photo directories and populate the file catalog.
+Stores the full directory tree in DB so other scripts don't need to scan filesystem.
+Supports multiple roots. Detects new/deleted/changed files on re-scan.
+
+Usage:
+    python scan_catalog.py                        # scan all registered roots
+    python scan_catalog.py --add /path/to/photos  # register and scan a root
+    python scan_catalog.py --stats                # show catalog statistics
+"""
+
+import argparse
+import os
+import sys
+import time
+import uuid
+from datetime import datetime
+from pathlib import Path
+
+VENV_PYTHON = os.environ.get("GALLERY_VENV_PYTHON", str(Path(__file__).parent / "venv" / "bin" / "python3"))
+if os.path.exists(VENV_PYTHON) and sys.executable != VENV_PYTHON:
+    os.execv(VENV_PYTHON, [VENV_PYTHON, __file__] + sys.argv[1:])
+
+sys.path.insert(0, str(Path(__file__).parent / 'src'))
+LOG_FILE = str(Path(__file__).parent / "logs" / "pipeline.log")
+
+SUPPORTED_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".raw", ".cr2", ".nef", ".arw", ".dng", ".heic"}
+
+
+def log(msg):
+    line = f"[{datetime.now().isoformat()}] [CATALOG] {msg}"
+    pass  # log to file only
+    with open(LOG_FILE, "a") as f:
+        f.write(line + "\n")
+
+
+def get_db():
+    from database import DatabaseManager
+    return DatabaseManager()
+
+
+def add_root(db, root_path, alias=""):
+    root_path = str(Path(root_path).resolve())
+    existing_roots = db.get_catalog_roots()
+    existing = [r for r in existing_roots if r.get("root_path") == root_path]
+    if existing:
+        log(f"Root already registered: {root_path}")
+        return existing[0]["root_id"]
+
+    root_id = str(uuid.uuid4())
+    db.add_catalog_root(root_id, root_path, alias=alias or Path(root_path).name)
+    log(f"Registered root: {root_path} (id={root_id})")
+    return root_id
+
+
+def scan_root(db, root_id):
+    root = db.get_catalog_root(root_id)
+    if not root:
+        log(f"Root not found: {root_id}")
+        return
+    root_path = root["root_path"]
+
+    if not Path(root_path).exists():
+        log(f"Root path does not exist: {root_path}")
+        return
+
+    log(f"Scanning: {root_path}")
+
+    existing_files = db.get_catalog_files(root_id=root_id)
+    existing_map = {}
+    for f in existing_files:
+        existing_map[f["rel_path"]] = f
+
+    existing_rel = set(existing_map.keys())
+
+    new_files = []
+    kept_rel = set()
+    changed_count = 0
+
+    t0 = time.time()
+    scanned = 0
+    for dirpath, dirnames, filenames in os.walk(root_path):
+        for fn in filenames:
+            ext = Path(fn).suffix.lower()
+            if ext not in SUPPORTED_EXTS:
+                continue
+            abs_path = os.path.join(dirpath, fn)
+            rel_path = os.path.relpath(abs_path, root_path)
+            kept_rel.add(rel_path)
+            scanned += 1
+
+            try:
+                stat = os.stat(abs_path)
+                file_size = stat.st_size
+                mtime = stat.st_mtime
+            except OSError:
+                continue
+
+            mtime_str = str(mtime)
+
+            if rel_path in existing_map:
+                old = existing_map[rel_path]
+                if str(old.get("modified", "")) != mtime_str or old.get("size", 0) != file_size:
+                    db.update_catalog_file(old["file_id"], abs_path=abs_path, parent_dir=str(Path(rel_path).parent), ext=ext, size=file_size, modified=mtime_str)
+                    changed_count += 1
+            else:
+                new_files.append({
+                    "file_id": str(uuid.uuid4()),
+                    "root_id": root_id,
+                    "rel_path": rel_path,
+                    "abs_path": abs_path,
+                    "parent_dir": str(Path(rel_path).parent),
+                    "ext": ext,
+                    "size": file_size,
+                    "modified": mtime_str,
+                    "ingested": False,
+                    "described": False,
+                    "exif_done": False,
+                    "faces_done": False,
+                })
+
+            if len(new_files) >= 1000:
+                db.add_catalog_files_batch(new_files)
+                new_files = []
+
+    if new_files:
+        db.add_catalog_files_batch(new_files)
+
+    deleted_rel = existing_rel - kept_rel
+    if deleted_rel:
+        log(f"Deleting {len(deleted_rel)} files removed from disk...")
+        for rel in deleted_rel:
+            old = existing_map[rel]
+            db.delete_catalog_file(old["file_id"])
+
+    total_files = db.get_catalog_files(root_id=root_id)
+    file_count = len(total_files)
+    total_size = sum(f.get("size", 0) for f in total_files)
+
+    db.update_catalog_root(root_id, scanned_at=datetime.now().isoformat(), file_count=file_count, total_size=total_size)
+
+    new_count = len(kept_rel - existing_rel)
+    deleted_count = len(deleted_rel)
+    elapsed = time.time() - t0
+
+    log(f"Scan done in {elapsed:.1f}s: {scanned} scanned, {new_count} new, {changed_count} changed, {deleted_count} deleted, {file_count} total")
+
+
+def show_stats(db):
+    roots = db.get_catalog_roots()
+    if not roots:
+        print("No roots registered. Use --add <path> to add one.")
+        return
+
+    all_files = db.get_catalog_files()
+    photos = db.get_all_photos()
+    photo_paths = set(p.get("path", "") for p in photos)
+    described_paths = set(p.get("path", "") for p in photos if p.get("description"))
+
+    for root in roots:
+        root_files = [f for f in all_files if f["root_id"] == root["root_id"]]
+        total = len(root_files)
+        ingested = sum(1 for f in root_files if f.get("ingested"))
+        described = sum(1 for f in root_files if f.get("described"))
+        exif_done = sum(1 for f in root_files if f.get("exif_done"))
+        faces_done = sum(1 for f in root_files if f.get("faces_done"))
+        total_size = sum(f.get("size", 0) for f in root_files)
+
+        dirs = set(f.get("parent_dir", "") for f in root_files)
+
+        print(f"\n  Root: {root['root_path']}")
+        print(f"  Alias: {root.get('alias', '')}")
+        print(f"  Last scan: {root.get('scanned_at', 'never')}")
+        print(f"  Files: {total}")
+        print(f"  Dirs: {len(dirs)}")
+        print(f"  Size: {total_size / 1e9:.1f} GB")
+        print(f"  Ingested: {ingested}")
+        print(f"  Described: {described}")
+        print(f"  EXIF done: {exif_done}")
+        print(f"  Faces done: {faces_done}")
+
+        by_ext = {}
+        for f in root_files:
+            e = f.get("ext", "?")
+            by_ext[e] = by_ext.get(e, 0) + 1
+        print(f"  By ext: {', '.join(f'{k}:{v}' for k, v in sorted(by_ext.items(), key=lambda x: -x[1])[:10])}")
+
+        by_year = {}
+        for f in root_files:
+            d = f.get("parent_dir", "")
+            parts = d.split("/")
+            for p in parts:
+                if len(p) == 4 and p.isdigit():
+                    by_year[p] = by_year.get(p, 0) + 1
+                    break
+        if by_year:
+            print(f"  By year: {', '.join(f'{k}:{v}' for k, v in sorted(by_year.items()))}")
+
+    print(f"\n  Total files in catalog: {len(all_files)}")
+    print(f"  Total photos in DB: {len(photos)}")
+
+
+def sync_ingest_flags(db):
+    photos = db.get_all_photos()
+    all_files = db.get_catalog_files()
+
+    abs_to_file = {}
+    for f in all_files:
+        abs_to_file[f.get("abs_path", "")] = f
+
+    path_to_photo = {}
+    for p in photos:
+        path_to_photo[p.get("path", "")] = p
+
+    updated = 0
+    for f in all_files:
+        abs_path = f.get("abs_path", "")
+        photo = path_to_photo.get(abs_path)
+
+        ingested = photo is not None
+        described = bool(photo and photo.get("description"))
+        exif_done = bool(photo and photo.get("date"))
+        faces_done = bool(photo and photo.get("faces_present"))
+
+        if f.get("ingested") != int(ingested) or f.get("described") != int(described) or \
+           f.get("exif_done") != int(exif_done) or f.get("faces_done") != int(faces_done):
+            db.update_catalog_file(f["file_id"], ingested=int(ingested), described=int(described), exif_done=int(exif_done), faces_done=int(faces_done))
+            updated += 1
+
+        if updated % 500 == 0 and updated > 0:
+            print(f"  Synced {updated}...", flush=True)
+
+    log(f"Synced {updated} file flags from photos table")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Scan and manage photo file catalog")
+    parser.add_argument("--add", metavar="PATH", help="Register a new root directory and scan it")
+    parser.add_argument("--alias", default="", help="Alias for the root being added")
+    parser.add_argument("--scan", action="store_true", help="Re-scan all registered roots")
+    parser.add_argument("--stats", action="store_true", help="Show catalog statistics")
+    parser.add_argument("--sync", action="store_true", help="Sync ingest/describe flags from photos table")
+    args = parser.parse_args()
+
+    db = get_db()
+
+    if args.add:
+        root_id = add_root(db, args.add, args.alias)
+        scan_root(db, root_id)
+        return
+
+    if args.scan:
+        roots = db.get_catalog_roots()
+        if not roots:
+            print("No roots registered. Use --add <path> first.")
+            return
+        for root in roots:
+            scan_root(db, root["root_id"])
+        return
+
+    if args.sync:
+        sync_ingest_flags(db)
+        return
+
+    show_stats(db)
+
+
+if __name__ == "__main__":
+    main()

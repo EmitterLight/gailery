@@ -1,0 +1,187 @@
+"""Thumbnail generation for photos using pyvips"""
+
+import pyvips
+import logging as _logging
+_logging.getLogger("pyvips").setLevel(_logging.WARNING)
+from pathlib import Path
+from typing import Optional, Dict, Tuple
+import logging
+
+from config import THUMBNAILS_DIR, PHOTO_SHARE_PATH
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+SIZES = {
+    "sm": 400,
+    "md": 800,
+    "lg": 1200,
+}
+
+FORMATS = ["webp", "jpg"]
+
+
+class ThumbnailGenerator:
+    """Generate thumbnails using pyvips (libvips)"""
+
+    def __init__(self, output_dir: Path = None, sizes: Dict[str, int] = None):
+        self.output_dir = output_dir or THUMBNAILS_DIR
+        self.sizes = sizes or SIZES
+
+    def _thumb_path(self, rel_path: str, size_name: str, fmt: str) -> Path:
+        p = Path(rel_path)
+        return self.output_dir / f"{size_name}" / p.with_suffix(f".{fmt}")
+
+    def generate(self, image_path: Path, size_name: str = None, fmt: str = None) -> Optional[Path]:
+        if not image_path.exists():
+            logger.warning(f"Image does not exist: {image_path}")
+            return None
+
+        try:
+            rel = str(image_path.relative_to(PHOTO_SHARE_PATH))
+        except ValueError:
+            rel = image_path.name
+
+        sizes_to_gen = {size_name: self.sizes[size_name]} if size_name else self.sizes
+        fmts_to_gen = [fmt] if fmt else FORMATS
+
+        try:
+            img = pyvips.Image.new_from_file(str(image_path), access="random")
+        except Exception as e:
+            logger.error(f"Failed to load {image_path}: {e}")
+            return None
+
+        last_path = None
+        for sname, width in sizes_to_gen.items():
+            try:
+                thumb = img.thumbnail_image(width, crop="centre")
+            except Exception as e:
+                logger.error(f"Failed to resize {image_path} to {width}: {e}")
+                continue
+
+            for f in fmts_to_gen:
+                out = self._thumb_path(rel, sname, f)
+                out.parent.mkdir(parents=True, exist_ok=True)
+                if out.exists():
+                    last_path = out
+                    continue
+                try:
+                    if f == "jpg":
+                        thumb.write_to_file(str(out), Q=80)
+                    else:
+                        thumb.write_to_file(str(out), Q=80)
+                    last_path = out
+                except Exception as e:
+                    logger.error(f"Failed to save {out}: {e}")
+
+        return last_path
+
+    def generate_to_buffer(self, image_path: Path, width: int, fmt: str = "webp", quality: int = 80) -> Optional[bytes]:
+        if not image_path.exists():
+            return None
+        try:
+            img = pyvips.Image.new_from_file(str(image_path), access="random")
+            thumb = img.thumbnail_image(width, crop="centre")
+            ext = f".{fmt}"
+            return thumb.write_to_buffer(ext, Q=quality)
+        except Exception as e:
+            logger.error(f"Failed to generate buffer for {image_path}: {e}")
+            return None
+
+    def generate_fit_buffer(self, image_path: Path, width: int = 400, quality: int = 80) -> Optional[bytes]:
+        if not image_path.exists():
+            return None
+        try:
+            img = pyvips.Image.new_from_file(str(image_path), access="random")
+            thumb = img.thumbnail_image(width, crop="none")
+            return thumb.write_to_buffer(".webp", Q=quality)
+        except Exception as e:
+            logger.error(f"Failed to generate fit buffer for {image_path}: {e}")
+            return None
+
+    def exists(self, image_path: Path, size_name: str = "sm", fmt: str = "webp") -> bool:
+        try:
+            rel = str(image_path.relative_to(PHOTO_SHARE_PATH))
+        except ValueError:
+            rel = image_path.name
+        return self._thumb_path(rel, size_name, fmt).exists()
+
+    def get_thumbnail_path(self, image_path: Path, size_name: str = "sm", fmt: str = "webp") -> Path:
+        try:
+            rel = str(image_path.relative_to(PHOTO_SHARE_PATH))
+        except ValueError:
+            rel = image_path.name
+        return self._thumb_path(rel, size_name, fmt)
+
+    def needs_regeneration(self, image_path: Path, size_name: str = "sm", fmt: str = "webp") -> bool:
+        thumb = self.get_thumbnail_path(image_path, size_name, fmt)
+        if not thumb.exists():
+            return True
+        try:
+            if image_path.stat().st_mtime > thumb.stat().st_mtime:
+                return True
+        except OSError:
+            return True
+        return False
+
+
+def generate_batch(photo_paths, sizes=None, fmt=None, workers=4):
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+    import time
+
+    gen = ThumbnailGenerator(sizes=sizes)
+    t0 = time.time()
+    done = 0
+    failed = 0
+
+    def _gen(path_str):
+        p = Path(path_str)
+        result = gen.generate(p, fmt=fmt)
+        return result is not None
+
+    with ProcessPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(_gen, str(p)): p for p in photo_paths}
+        for future in as_completed(futures):
+            if future.result():
+                done += 1
+            else:
+                failed += 1
+            total = done + failed
+            if total % 500 == 0:
+                elapsed = time.time() - t0
+                rate = total / max(elapsed, 1)
+                print(f"  [{total}/{len(photo_paths)}] {done} ok, {failed} fail, {rate:.0f}/s")
+
+    elapsed = time.time() - t0
+    print(f"Done: {done} generated, {failed} failed in {elapsed:.1f}s ({done/max(elapsed,1):.0f}/s)")
+    return done, failed
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Batch thumbnail generation")
+    parser.add_argument("--all", action="store_true", help="Generate for all photos in DB")
+    parser.add_argument("--missing", action="true", help="Generate only missing thumbnails")
+    parser.add_argument("--limit", type=int, default=0, help="Limit number of photos")
+    parser.add_argument("--workers", type=int, default=4, help="Parallel workers")
+    parser.add_argument("--size", type=str, default=None, help="Size name (sm/md/lg)")
+    parser.add_argument("--format", type=str, default=None, help="Format (webp/jpg)")
+    args = parser.parse_args()
+
+    from database import DatabaseManager
+    db = DatabaseManager()
+    rows = db.sqlite.execute("SELECT path FROM photos ORDER BY path").fetchall()
+    paths = [Path(r[0]) for r in rows if r[0] and Path(r[0]).exists()]
+
+    if args.limit > 0:
+        paths = paths[:args.limit]
+
+    sizes = {args.size: SIZES[args.size]} if args.size else None
+    fmt = args.format or None
+
+    print(f"Generating thumbnails for {len(paths)} photos (workers={args.workers})")
+    generate_batch(paths, sizes=sizes, fmt=fmt, workers=args.workers)
+
+
+if __name__ == "__main__":
+    main()

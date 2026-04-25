@@ -1,0 +1,84 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.so
+
+# Virtual environments
+venv/
+venv_vllm/
+
+# Data & databases
+data/
+
+# Models
+gguf/
+*.gguf
+*.safetensors
+*.pt
+*.onnx
+*.bin
+
+# Thumbnails
+thumbnails/
+
+# Logs
+logs/
+*.log
+
+# llama.cpp build
+llama.cpp/
+
+# Environment
+.env
+
+# Benchmarks & tests (not part of the project)
+bench_*
+benchmark_*
+bench_dataset.txt
+
+# One-off utility scripts (hardcoded paths, not for distribution)
+check_gpu.py
+face_pipeline.py
+migrate_lance_to_sqlite.py
+vision_agent.py
+test_*
+check_*
+migrate_*
+
+# YOLO model file
+yolo26n.pt
+
+# Old git backup
+.git_old
+
+# Leftover src utilities with hardcoded paths
+src/analyze_group_c.py
+src/analyze_personas.py
+src/check_clustering.py
+src/clear_2020_faces.py
+src/clear_all_faces.py
+src/clear_persona_ids.py
+src/describe_photo.py
+src/describe_photo_ollama.py
+src/exif.py
+src/face_detection.py
+src/face_embeddings.py
+src/frontend/
+src/list_photos.py
+src/match_personas.py
+src/process_photos.py
+src/recreate_faces_table.py
+src/scanner.py
+src/requirements.txt
+src/test_*
+src/yolo26n.pt
+
+# Legacy docs not relevant to current codebase
+MIGRATION_PLAN.md
+TECH_STACK.md
+plan.md
+protocols/
+
+# Deployment (contains local paths)
+deploy/
