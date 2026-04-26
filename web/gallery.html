@@ -63,6 +63,10 @@
         .card .del-mark:hover { background: rgba(218,54,51,.9); color: #fff; }
         .card .undo-mark { position: absolute; bottom: 4px; right: 4px; padding: 2px 8px; background: rgba(35,134,54,.9); color: #fff; border-radius: 12px; font-size: 10px; font-weight: 600; cursor: pointer; z-index: 2; font-family: monospace; }
         .card .undo-mark:hover { background: rgba(35,134,54,1); }
+        .placeholder-card { background: #161b22; border-radius: 4px; overflow: hidden; }
+        .placeholder-card .ph-thumb { width: 100%; aspect-ratio: 1; background: #21262d; animation: phPulse 1.5s ease-in-out infinite; }
+        .placeholder-card .ph-line { height: 8px; width: 60%; background: #21262d; border-radius: 4px; margin-top: 4px; }
+        @keyframes phPulse { 0%,100% { opacity: .6; } 50% { opacity: .3; } }
         .card.deleted-card img { opacity: .45; filter: grayscale(.5); }
 
         .loading { text-align: center; padding: 40px; color: #8b949e; }
@@ -260,6 +264,9 @@
         .light-theme .card .del-mark:hover { background: rgba(207,34,46,.9); color: #fff; }
         .light-theme .card .undo-mark { background: rgba(31,136,61,.9); }
         .light-theme .card .undo-mark:hover { background: rgba(31,136,61,1); }
+        .light-theme .placeholder-card { background: #f6f8fa; }
+        .light-theme .placeholder-card .ph-thumb { background: #eaeef2; }
+        .light-theme .placeholder-card .ph-line { background: #eaeef2; }
         .light-theme .card.deleted-card img { opacity: .45; filter: grayscale(.5); }
         .light-theme .detail-panel { background: #f6f8fa; border-left: 1px solid #d0d7de; color: #24292f; }
         .light-theme .detail-panel h2 { color: #0969da; }
@@ -489,7 +496,7 @@
 
 <script>
 var API = '/api';
-var pageSize = 60;
+var pageSize = 40;
 var totalResults = 0;
 var activeYear = '';
 var activePerson = '';
@@ -499,6 +506,40 @@ var MONTH_NAMES = ['Январь','Февраль','Март','Апрель','М
 var currentPhotos = [];
 var _isLoading = false;
 var _canLoadMore = true;
+var _prefetchQueue = [];
+var _prefetching = false;
+var _lazyObs = null;
+function initLazyObserver() {
+    if (_lazyObs) return;
+    _lazyObs = new IntersectionObserver(function(entries) {
+        for (var i = 0; i < entries.length; i++) {
+            if (entries[i].isIntersecting) {
+                var img = entries[i].target;
+                var ds = img.getAttribute('data-src');
+                var dss = img.getAttribute('data-srcset');
+                if (ds) {
+                    img.setAttribute('src', ds);
+                    img.removeAttribute('data-src');
+                }
+                if (dss) {
+                    img.setAttribute('srcset', dss);
+                    img.removeAttribute('data-srcset');
+                }
+                _lazyObs.unobserve(img);
+            }
+        }
+    }, { rootMargin: '200px' });
+}
+
+function observeLazyThumbs() {
+    initLazyObserver();
+    var imgs = document.querySelectorAll('.lazy-thumb[data-src]');
+    for (var i = 0; i < imgs.length; i++) {
+        _lazyObs.observe(imgs[i]);
+    }
+}
+var _pendingLoads = 0;
+var _MAX_PENDING = 4;
 var _canLoadPrev = false;
 var _firstDate = null;
 var _lastDate = null;
@@ -562,6 +603,9 @@ function doSearch() {
     _canLoadMore = true;
     _canLoadPrev = true;
     _isLoading = false;
+    _pendingLoads = 0;
+    _phCount = 0;
+    _prefetchQueue = [];
     _firstDate = null;
     _lastDate = null;
     _firstPath = null;
@@ -627,8 +671,8 @@ function getSearchParams() {
 }
 
 function loadAfter(afterDate, afterPath, useDateFrom) {
-    if (_isLoading || !_canLoadMore) return;
-    _isLoading = true;
+    if (!_canLoadMore || _pendingLoads >= _MAX_PENDING) return;
+    _pendingLoads++;
     var params = getSearchParams();
     if (afterDate) {
         if (useDateFrom) {
@@ -638,52 +682,151 @@ function loadAfter(afterDate, afterPath, useDateFrom) {
             if (afterPath) params += '&path_after=' + encodeURIComponent(afterPath);
         }
     }
-    if (currentPhotos.length === 0) document.getElementById('grid').innerHTML = '<div class="loading">Загрузка...</div>';
+    if (currentPhotos.length === 0) {
+        document.getElementById('grid').innerHTML = '<div class="loading">Загрузка...</div>';
+    }
 
-    fetch(API + '/photos/search?' + params).then(function(r) { return r.json(); }).then(function(data) {
-        totalResults = data.total;
-        if (currentPhotos.length === 0) document.getElementById('grid').innerHTML = '';
-        if (data.photos.length === 0 && currentPhotos.length === 0) {
-            document.getElementById('grid').innerHTML = '<div class="empty">Ничего не найдено</div>';
+    var taken = _prefetchQueue.shift();
+    if (taken && taken.key === _pfKey(params, afterDate, afterPath, useDateFrom)) {
+        applyBatch(taken.data);
+        _pendingLoads--;
+        fillPrefetchQueue();
+    } else {
+        _prefetchQueue = [];
+        var phStartIdx = currentPhotos.length + _phCount;
+        appendPlaceholders(pageSize, phStartIdx);
+        fetch(API + '/photos/search?' + params).then(function(r) { return r.json(); }).then(function(data) {
+            removePlaceholders(phStartIdx);
+            applyBatch(data);
+            _pendingLoads--;
+            fillPrefetchQueue();
+        }).catch(function(e) {
+            removePlaceholders(phStartIdx);
+            if (currentPhotos.length === 0) document.getElementById('grid').innerHTML = '<div class="empty">Ошибка: ' + esc(e.message) + '</div>';
+            _pendingLoads--;
+        });
+    }
+}
+
+var _phCount = 0;
+
+function appendPlaceholders(count, startIdx) {
+    var grid = document.getElementById('grid');
+    var html = '';
+    for (var i = 0; i < count; i++) {
+        html += '<div class="card placeholder-card" data-ph-idx="' + (startIdx + i) + '"><div class="ph-thumb"></div><div class="overlay"><div class="ph-line"></div></div></div>';
+    }
+    grid.insertAdjacentHTML('beforeend', html);
+    _phCount += count;
+}
+
+function removePlaceholders(startIdx) {
+    var grid = document.getElementById('grid');
+    var phs = grid.querySelectorAll('.placeholder-card');
+    for (var i = phs.length - 1; i >= 0; i--) {
+        phs[i].remove();
+    }
+    _phCount = 0;
+}
+
+function _pfKey(params, afterDate, afterPath, useDateFrom) {
+    return params + '|' + (afterDate || '') + '|' + (afterPath || '') + '|' + (useDateFrom || '');
+}
+
+function _pfNextKey() {
+    return getSearchParams() + '|' + (_lastDate || '') + '|' + (_lastPath || '') + '|';
+}
+
+function applyBatch(data) {
+    totalResults = data.total;
+    if (currentPhotos.length === 0) document.getElementById('grid').innerHTML = '';
+    if (data.photos.length === 0 && currentPhotos.length === 0) {
+        document.getElementById('grid').innerHTML = '<div class="empty">Ничего не найдено</div>';
+    }
+    var startIdx = currentPhotos.length;
+    currentPhotos = currentPhotos.concat(data.photos);
+    if (data.photos.length > 0) {
+        _lastDate = data.photos[data.photos.length - 1].date || null;
+        _lastPath = data.photos[data.photos.length - 1].path || null;
+        if (!_firstDate) {
+            _firstDate = data.photos[0].date || null;
+            _firstPath = data.photos[0].path || null;
         }
-        var startIdx = currentPhotos.length;
-        currentPhotos = currentPhotos.concat(data.photos);
-        if (data.photos.length > 0) {
-            _lastDate = data.photos[data.photos.length - 1].date || null;
-            _lastPath = data.photos[data.photos.length - 1].path || null;
-            if (!_firstDate) {
-                _firstDate = data.photos[0].date || null;
-                _firstPath = data.photos[0].path || null;
+    }
+    if (data.photos.length < pageSize) _canLoadMore = false;
+    appendGrid(data.photos, startIdx);
+    updateInfo();
+    saveFilters();
+    if (startIdx === 0) {
+        setTimeout(function() { updateTimelinePosition(); }, 100);
+        if (_needleMode && _restorePhotoId) {
+            var rid = _restorePhotoId;
+            _restorePhotoId = null;
+            _needleMode = false;
+            var scrollAttempts = 0;
+            function scrollToPhoto() {
+                var el = document.querySelector('.card[data-photo-id="' + CSS.escape(rid) + '"]');
+                if (el) el.scrollIntoView({ block: 'start' });
+                scrollAttempts++;
+                if (scrollAttempts < 5) setTimeout(scrollToPhoto, 400);
             }
+            setTimeout(scrollToPhoto, 300);
         }
-        if (data.photos.length < pageSize) _canLoadMore = false;
-        appendGrid(data.photos, startIdx);
-        _isLoading = false;
-        updateInfo();
-        saveFilters();
-        if (startIdx === 0) {
-            setTimeout(function() { updateTimelinePosition(); }, 100);
-            if (_needleMode && _restorePhotoId) {
-                var rid = _restorePhotoId;
-                _restorePhotoId = null;
-                _needleMode = false;
-                var scrollAttempts = 0;
-                function scrollToPhoto() {
-                    var el = document.querySelector('.card[data-photo-id="' + CSS.escape(rid) + '"]');
-                    if (el) el.scrollIntoView({ block: 'start' });
-                    scrollAttempts++;
-                    if (scrollAttempts < 5) setTimeout(scrollToPhoto, 400);
+    }
+}
+
+function fillPrefetchQueue() {
+    if (!_canLoadMore || _prefetching) return;
+    var needed = _PREFETCH_AHEAD - _prefetchQueue.length;
+    if (needed <= 0) return;
+    _prefetching = true;
+    var params0 = getSearchParams();
+
+    var chainDate = _lastDate;
+    var chainPath = _lastPath;
+    if (_prefetchQueue.length > 0) {
+        var last = _prefetchQueue[_prefetchQueue.length - 1];
+        if (last.data.photos.length > 0) {
+            chainDate = last.data.photos[last.data.photos.length - 1].date || null;
+            chainPath = last.data.photos[last.data.photos.length - 1].path || null;
+        }
+    }
+
+    var requests = [];
+    var curD = chainDate, curP = chainPath;
+    for (var i = 0; i < needed; i++) {
+        requests.push({ date: curD, path: curP });
+        curD = null; curP = null;
+    }
+
+    var done = 0;
+    function doNext(idx) {
+        if (idx >= requests.length) { _prefetching = false; return; }
+        var req = requests[idx];
+        var par = params0;
+        if (req.date) {
+            par += '&date_after=' + encodeURIComponent(req.date);
+            if (req.path) par += '&path_after=' + encodeURIComponent(req.path);
+        }
+        var key = par + '|' + (req.date || '') + '|' + (req.path || '');
+        fetch(API + '/photos/search?' + par).then(function(r) { return r.json(); }).then(function(data) {
+            _prefetchQueue.push({ key: key, data: data });
+            if (data.photos.length > 0) {
+                for (var j = idx + 1; j < requests.length; j++) {
+                    if (!requests[j].date) {
+                        requests[j].date = data.photos[data.photos.length - 1].date || null;
+                        requests[j].path = data.photos[data.photos.length - 1].path || null;
+                    } else break;
                 }
-                setTimeout(scrollToPhoto, 300);
             }
-        }
-        if (afterDate && data.photos.length < totalResults) {
-            _canLoadPrev = true;
-        }
-    }).catch(function(e) {
-        if (currentPhotos.length === 0) document.getElementById('grid').innerHTML = '<div class="empty">Ошибка: ' + esc(e.message) + '</div>';
-        _isLoading = false;
-    });
+            done++;
+            doNext(idx + 1);
+        }).catch(function() {
+            done++;
+            doNext(idx + 1);
+        });
+    }
+    doNext(0);
 }
 
 function loadBefore(beforeDate, beforePath) {
@@ -768,23 +911,35 @@ function _monthDividerHtml(dateStr) {
 
 function appendGrid(photos, startIdx) {
     var grid = document.getElementById('grid');
-    var html = '';
     var lastMonth = null;
     var lastCard = grid.querySelector('.card:last-child');
     if (lastCard) lastMonth = lastCard.getAttribute('data-date') ? _monthKey(lastCard.getAttribute('data-date')) : null;
-    for (var i = 0; i < photos.length; i++) {
-        if (!isSemanticMode) {
-            var mk = _monthKey(photos[i].date || '');
-            if (mk && mk !== lastMonth) {
-                html += _monthDividerHtml(photos[i].date);
-                lastMonth = mk;
+    var CHUNK = 10;
+    var i = 0;
+    function renderChunk() {
+        var html = '';
+        var end = Math.min(i + CHUNK, photos.length);
+        for (; i < end; i++) {
+            if (!isSemanticMode) {
+                var mk = _monthKey(photos[i].date || '');
+                if (mk && mk !== lastMonth) {
+                    html += _monthDividerHtml(photos[i].date);
+                    lastMonth = mk;
+                }
             }
+            html += buildCardHtml(photos[i], startIdx + i);
         }
-        html += buildCardHtml(photos[i], startIdx + i);
+        if (html) grid.insertAdjacentHTML('beforeend', html);
+        reindexAll();
+        if (i < photos.length) {
+            requestAnimationFrame(renderChunk);
+        } else {
+            _canLoadPrev = true;
+            if (photos.length > 0) _phCount = 0;
+            observeLazyThumbs();
+        }
     }
-    grid.insertAdjacentHTML('beforeend', html);
-    _canLoadPrev = true;
-    reindexAll();
+    renderChunk();
 }
 
 function prependGrid(photos, startIdx) {
@@ -801,6 +956,7 @@ function prependGrid(photos, startIdx) {
     }
     grid.insertAdjacentHTML('afterbegin', html);
     reindexAll();
+    observeLazyThumbs();
 }
 
 function reindexAll() {
@@ -854,7 +1010,7 @@ function buildCardHtml(p, idx) {
     var q = document.getElementById('searchInput').value.trim();
     if (q) html += '<button class="goto-btn" onclick="event.stopPropagation();goToTimelineFromCard(' + idx + ')" title="Найти в хронологии">&#x21E1;</button>';
     if (thumbBase) {
-        html += '<img src="' + thumbBase + '&size=sm" srcset="' + thumbBase + '&size=sm 400w, ' + thumbBase + '&size=md 800w" sizes="400px" loading="lazy" decoding="async" onerror="this.style.display=\'none\'">';
+        html += '<img data-src="' + thumbBase + '&size=sm" data-srcset="' + thumbBase + '&size=sm 400w, ' + thumbBase + '&size=md 800w" sizes="400px" class="lazy-thumb" decoding="async" onerror="this.style.display=\'none\'">';
     }
     html += gpsIcon;
     html += badge;
@@ -2258,11 +2414,11 @@ window.addEventListener('scroll', function() {
     }
     _lastScrollY = scrollY;
 
-    if (!_isLoading) {
-        if (_canLoadMore && scrollY + winH >= docH - 600) loadAfter(_lastDate, _lastPath);
-        if (_canLoadPrev && scrollY < 800) {
-            loadBefore(_firstDate, _firstPath);
-        }
+    if (_canLoadMore && scrollY + winH >= docH - 2000) {
+        loadAfter(_lastDate, _lastPath);
+    }
+    if (!_isLoading && _canLoadPrev && scrollY < 800) {
+        loadBefore(_firstDate, _firstPath);
     }
 
     updateTimelinePosition();
