@@ -942,21 +942,23 @@ function _applyBatch(data) {
     appendGrid(data.photos, startIdx);
     updateInfo();
     saveFilters();
-    if (startIdx === 0) {
-        setTimeout(function() { updateTimelinePosition(); }, 100);
-        if (_needleMode && _restorePhotoId) {
-            var rid = _restorePhotoId;
-            _restorePhotoId = null;
-            _needleMode = false;
-            var scrollAttempts = 0;
-            function scrollToPhoto() {
-                var el = document.querySelector('.card[data-photo-id="' + CSS.escape(rid) + '"]');
-                if (el) el.scrollIntoView({ block: 'start' });
-                scrollAttempts++;
-                if (scrollAttempts < 5) setTimeout(scrollToPhoto, 400);
-            }
-            setTimeout(scrollToPhoto, 300);
-        }
+     if (startIdx === 0) {
+         setTimeout(function() { updateTimelinePosition(); }, 100);
+         if (_needleMode) {
+             if (_restorePhotoId) {
+                 var rid = _restorePhotoId;
+                 _restorePhotoId = null;
+                 var scrollAttempts = 0;
+                 function scrollToPhoto() {
+                     var el = document.querySelector('.card[data-photo-id="' + CSS.escape(rid) + '"]');
+                     if (el) el.scrollIntoView({ block: 'start' });
+                     scrollAttempts++;
+                     if (scrollAttempts < 5) setTimeout(scrollToPhoto, 400);
+                 }
+                 setTimeout(scrollToPhoto, 300);
+             }
+             _needleMode = false;
+         }
     }
     if (data.photos.length < totalResults) {
         _canLoadPrev = true;
@@ -2157,8 +2159,9 @@ function closePhotoModal() {
     _mPhotoId = '';
     _clearFaceBoxes();
     document.getElementById('photoModal').classList.remove('fs');
-    if (_ssTimer) { clearInterval(_ssTimer); _ssTimer = null; _ssDir = 0; }
-    document.getElementById('modalTopbar').classList.remove('playing');
+     if (_ssTimer) { clearInterval(_ssTimer); _ssTimer = null; _ssDir = 0; var lastPid = currentPhotos[_mIdx] && currentPhotos[_mIdx].photo_id; }
+     document.getElementById('modalTopbar').classList.remove('playing');
+     if (lastPid) { var c = document.querySelector('.card[data-photo-id="' + CSS.escape(lastPid) + '"]'); if (c) c.scrollIntoView({block:'center'}); }
 }
 
 function goToTimeline() {
