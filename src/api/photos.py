@@ -71,6 +71,7 @@ def _enrich_photo(p, photo_faces, persona_map, include_created=False, include_th
         "photo_type": p.get("photo_type", "photo"),
         "has_issues": bool(p.get("has_issues")),
         "issue_type": p.get("issue_type"),
+        "deleted": bool(p.get("deleted")),
         "exif_checked": bool(p.get("exif_checked")),
         "embedded": bool(p.get("embedded")),
         "exif_raw": p.get("exif_raw"),
@@ -358,6 +359,8 @@ async def search_photos(
     has_gps: Optional[bool] = None,
     no_date: Optional[bool] = None,
     has_description: Optional[bool] = None,
+    deleted: Optional[bool] = None,
+    deleted_only: Optional[bool] = None,
     sort: str = "date_desc",
     limit: int = 60,
     offset: int = 0,
@@ -383,6 +386,8 @@ async def search_photos(
         has_gps=has_gps,
         no_date=no_date,
         has_description=has_description,
+        deleted=deleted,
+        deleted_only=deleted_only,
         sort=sort,
         limit=limit,
         offset=offset,
@@ -669,6 +674,7 @@ async def get_map_photos():
             FROM photos
             WHERE gps_lat IS NOT NULL AND gps_lon IS NOT NULL
               AND gps_lat != 0 AND gps_lon != 0
+              AND deleted = 0
         """).fetchall()
         result = []
         for r in rows:
@@ -910,6 +916,58 @@ async def clear_gps(request: Request):
         "UPDATE photos SET gps_lat = NULL, gps_lon = NULL, manual_gps = 0 WHERE photo_id = ?",
         (real_id,)
     )
+    db.sqlite.commit()
+
+    return {"success": True}
+
+
+@router.post("/mark_deleted")
+async def mark_deleted(request: Request):
+    from database import DatabaseManager
+
+    body = await request.json()
+    photo_id = body.get("photo_id")
+
+    if not photo_id:
+        raise HTTPException(status_code=400, detail="photo_id is required")
+
+    db = DatabaseManager()
+    cur = db.sqlite.cursor()
+
+    row = cur.execute(
+        "SELECT photo_id FROM photos WHERE photo_id = ? OR path LIKE ?",
+        (photo_id, '%' + photo_id)
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Photo not found")
+
+    cur.execute("UPDATE photos SET deleted = 1 WHERE photo_id = ?", (row[0],))
+    db.sqlite.commit()
+
+    return {"success": True}
+
+
+@router.post("/undelete")
+async def undelete(request: Request):
+    from database import DatabaseManager
+
+    body = await request.json()
+    photo_id = body.get("photo_id")
+
+    if not photo_id:
+        raise HTTPException(status_code=400, detail="photo_id is required")
+
+    db = DatabaseManager()
+    cur = db.sqlite.cursor()
+
+    row = cur.execute(
+        "SELECT photo_id FROM photos WHERE photo_id = ? OR path LIKE ?",
+        (photo_id, '%' + photo_id)
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Photo not found")
+
+    cur.execute("UPDATE photos SET deleted = 0 WHERE photo_id = ?", (row[0],))
     db.sqlite.commit()
 
     return {"success": True}

@@ -58,6 +58,12 @@
         .card .badge.badge-rel { top: 4px; }
         .card .badge.badge-faces { top: 22px; }
         .card .badge.badge-only { top: 4px; }
+        .card .del-mark { position: absolute; bottom: 4px; right: 4px; width: 22px; height: 22px; background: rgba(0,0,0,.5); color: #8b949e; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; cursor: pointer; z-index: 2; opacity: 0; transition: opacity .15s; }
+        .card:hover .del-mark { opacity: 1; }
+        .card .del-mark:hover { background: rgba(218,54,51,.9); color: #fff; }
+        .card .undo-mark { position: absolute; bottom: 4px; right: 4px; padding: 2px 8px; background: rgba(35,134,54,.9); color: #fff; border-radius: 12px; font-size: 10px; font-weight: 600; cursor: pointer; z-index: 2; font-family: monospace; }
+        .card .undo-mark:hover { background: rgba(35,134,54,1); }
+        .card.deleted-card img { opacity: .45; filter: grayscale(.5); }
 
         .loading { text-align: center; padding: 40px; color: #8b949e; }
         .empty { text-align: center; padding: 60px 20px; color: #6e7681; font-size: 14px; }
@@ -250,6 +256,11 @@
         .light-theme .card .face-thumb { border-color: #d0d7de; }
         .light-theme .card .face-thumb.named { border-color: #1f883d; }
         .light-theme .card .badge { background: rgba(0,0,0,.5); }
+        .light-theme .card .del-mark { background: rgba(0,0,0,.35); color: #6e7681; }
+        .light-theme .card .del-mark:hover { background: rgba(207,34,46,.9); color: #fff; }
+        .light-theme .card .undo-mark { background: rgba(31,136,61,.9); }
+        .light-theme .card .undo-mark:hover { background: rgba(31,136,61,1); }
+        .light-theme .card.deleted-card img { opacity: .45; filter: grayscale(.5); }
         .light-theme .detail-panel { background: #f6f8fa; border-left: 1px solid #d0d7de; color: #24292f; }
         .light-theme .detail-panel h2 { color: #0969da; }
         .light-theme .detail-panel .dp-close { color: #57606a; }
@@ -377,6 +388,7 @@
         <label><input type="checkbox" id="chkHasDesc"> С описанием</label>
         <label><input type="checkbox" id="chkIssues"> С проблемами</label>
         <label><input type="checkbox" id="chkGps"> С GPS</label>
+        <label style="color:#f85149"><input type="checkbox" id="chkDeleted"> Удалённые</label>
         <select id="photoTypeSelect" onchange="doSearch()" style="min-width:100px">
             <option value="">Все типы</option>
             <option value="photo">Фото</option>
@@ -599,6 +611,7 @@ function getSearchParams() {
     var hasDesc = document.getElementById('chkHasDesc').checked;
     var issuesOnly = document.getElementById('chkIssues').checked;
     var gpsOnly = document.getElementById('chkGps').checked;
+    var deletedOnly = document.getElementById('chkDeleted').checked;
     var photoType = document.getElementById('photoTypeSelect').value;
     var params = 'limit=' + pageSize + '&sort=' + sort;
     if (q) params += '&q=' + encodeURIComponent(q);
@@ -609,6 +622,7 @@ function getSearchParams() {
     if (gpsOnly) params += '&has_gps=true';
     if (photoType) params += '&photo_type=' + encodeURIComponent(photoType);
     if (_noDateMode) params += '&no_date=true';
+    if (deletedOnly) params += '&deleted_only=true';
     return params;
 }
 
@@ -835,7 +849,7 @@ function buildCardHtml(p, idx) {
         var fcls = hasRel ? 'badge badge-faces' : 'badge badge-only';
         badge = '<div class="' + fcls + '">' + p.personas.length + ' лиц</div>';
     }
-     var html = '<div class="card" data-date="' + esc(p.date || '') + '" data-photo-id="' + esc(p.photo_id || '') + '" onclick="openDetail(' + idx + ')" ondblclick="event.stopPropagation();openViewer(' + idx + ');toggleFullscreen()">';
+     var html = '<div class="card' + (p.deleted ? ' deleted-card' : '') + '" data-date="' + esc(p.date || '') + '" data-photo-id="' + esc(p.photo_id || '') + '" onclick="openDetail(' + idx + ')" ondblclick="event.stopPropagation();openViewer(' + idx + ');toggleFullscreen()">';
     html += '<button class="expand-btn" onclick="event.stopPropagation();openViewer(' + idx + ')">&#x2922;</button>';
     var q = document.getElementById('searchInput').value.trim();
     if (q) html += '<button class="goto-btn" onclick="event.stopPropagation();goToTimelineFromCard(' + idx + ')" title="Найти в хронологии">&#x21E1;</button>';
@@ -845,6 +859,7 @@ function buildCardHtml(p, idx) {
     html += gpsIcon;
     html += badge;
     html += relBadge;
+    if (!p.deleted) html += '<div class="del-mark" onclick="event.stopPropagation();markDeleted(\'' + esc(p.photo_id || '') + '\')" title="Удалить">&#x2715;</div>';
     html += '<div class="overlay">';
     if (dateStr) html += '<div class="date">' + esc(dateStr) + '</div>';
     if (shortDesc) html += '<div class="desc">' + esc(shortDesc) + '</div>';
@@ -1044,6 +1059,10 @@ function openDetail(idx) {
     html += '<div class="dp-meta">Лица: ' + p.total_faces + '</div>';
     if (p.photo_type && p.photo_type !== 'photo') html += '<div class="dp-meta">Тип: ' + esc(p.photo_type) + '</div>';
     if (p.has_issues) html += '<div class="dp-meta" style="color:#f85149">Проблемы: ' + esc(p.issue_type || 'да') + '</div>';
+    if (p.deleted) {
+        html += '<div class="dp-meta" style="color:#f85149;font-weight:600">Удалена</div>';
+        html += '<button onclick="undeletePhoto(\'' + esc(p.photo_id) + '\')" style="padding:4px 12px;background:#238636;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-family:monospace;margin:4px 0">Восстановить</button>';
+    }
     html += '<div class="dp-meta">Индексация: ' + (p.embedded ? 'да' : 'нет') + '</div>';
     html += '<div class="dp-meta" style="word-break:break-all">Путь: ' + esc(p.photo_id || p.path) + '</div>';
     if (p.path) html += '<div class="dp-meta"><a href="#" onclick="goToCatalog(\'' + esc(p.path) + '\');return false" style="color:#58a6ff">Открыть в каталоге &#x2192;</a></div>';
@@ -1385,6 +1404,63 @@ function clearPhotoDate(photoId) {
             if (idx >= 0) openDetail(idx);
         } else {
             alert('Ошибка при удалении даты');
+        }
+    }).catch(function(e) { alert('Ошибка: ' + e.message); });
+}
+
+function markDeleted(photoId) {
+    fetch(API + '/photos/mark_deleted', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ photo_id: photoId })
+    }).then(function(r) { return r.json(); }).then(function(data) {
+        if (data.success) {
+            var p = currentPhotos.find(function(ph) { return ph.photo_id === photoId; });
+            if (p) p.deleted = true;
+            var card = document.querySelector('.card[data-photo-id="' + CSS.escape(photoId) + '"]');
+            if (card) {
+                card.classList.add('deleted-card');
+                var mark = card.querySelector('.del-mark');
+                if (mark) mark.remove();
+                var undo = document.createElement('div');
+                undo.className = 'undo-mark';
+                undo.setAttribute('onclick', "event.stopPropagation();undeletePhoto('" + photoId.replace(/'/g, "\\'") + "')");
+                undo.textContent = 'Отменить';
+                card.insertBefore(undo, card.querySelector('.overlay'));
+            }
+        } else {
+            alert('Ошибка');
+        }
+    }).catch(function(e) { alert('Ошибка: ' + e.message); });
+}
+
+function undeletePhoto(photoId) {
+    fetch(API + '/photos/undelete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ photo_id: photoId })
+    }).then(function(r) { return r.json(); }).then(function(data) {
+        if (data.success) {
+            var p = currentPhotos.find(function(ph) { return ph.photo_id === photoId; });
+            if (p) p.deleted = false;
+            var card = document.querySelector('.card[data-photo-id="' + CSS.escape(photoId) + '"]');
+            if (card) {
+                card.classList.remove('deleted-card');
+                var undo = card.querySelector('.undo-mark');
+                if (undo) undo.remove();
+                if (!card.querySelector('.del-mark')) {
+                    var mk = document.createElement('div');
+                    mk.className = 'del-mark';
+                    mk.setAttribute('onclick', "event.stopPropagation();markDeleted('" + photoId.replace(/'/g, "\\'") + "')");
+                    mk.setAttribute('title', 'Удалить');
+                    mk.innerHTML = '&#x2715;';
+                    card.insertBefore(mk, card.querySelector('.overlay'));
+                }
+            }
+            var idx = currentPhotos.findIndex(function(ph) { return ph.photo_id === photoId; });
+            if (idx >= 0) openDetail(idx);
+        } else {
+            alert('Ошибка');
         }
     }).catch(function(e) { alert('Ошибка: ' + e.message); });
 }
@@ -1841,6 +1917,7 @@ function clearFilters() {
         document.getElementById('chkHasDesc').checked = false;
     document.getElementById('chkIssues').checked = false;
     document.getElementById('chkGps').checked = false;
+    document.getElementById('chkDeleted').checked = false;
     document.getElementById('photoTypeSelect').value = '';
     activeYear = '';
     activePerson = '';
@@ -2033,6 +2110,7 @@ function saveFilters() {
         desc: document.getElementById('chkHasDesc').checked,
         issues: document.getElementById('chkIssues').checked,
         gps: document.getElementById('chkGps').checked,
+        deleted: document.getElementById('chkDeleted').checked,
         type: document.getElementById('photoTypeSelect').value,
         needleDate: _needleDateISO || null,
         photoId: _firstVisiblePhotoId || null,
@@ -2052,6 +2130,7 @@ function restoreFilters() {
         if (s.desc) document.getElementById('chkHasDesc').checked = true;
         if (s.issues) document.getElementById('chkIssues').checked = true;
         if (s.gps) document.getElementById('chkGps').checked = true;
+        if (s.deleted) document.getElementById('chkDeleted').checked = true;
         if (s.type) document.getElementById('photoTypeSelect').value = s.type;
         onModeChange();
         _restoreNeedleDate = s.needleDate || null;

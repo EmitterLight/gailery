@@ -141,6 +141,10 @@ class DatabaseManager:
             cur.execute("ALTER TABLE photos ADD COLUMN manual_date TEXT")
             self.sqlite.commit()
             logger.info("Migration: added manual_date column to photos table")
+        if 'deleted' not in columns:
+            cur.execute("ALTER TABLE photos ADD COLUMN deleted INTEGER DEFAULT 0")
+            self.sqlite.commit()
+            logger.info("Migration: added deleted column to photos table")
 
     def _open_vector_tables(self):
         if "photo_embeddings" not in self.vectordb.table_names():
@@ -250,10 +254,16 @@ class DatabaseManager:
                       has_faces=None, no_description=None, has_issues=None,
                       issue_type=None, photo_type=None, has_gps=None,
                       no_date=None, has_description=None,
+                      deleted=None, deleted_only=None,
                       sort="date_desc", limit=60, offset=0):
         ed = "COALESCE(manual_date, date)"
         sql = "SELECT *, " + ed + " as effective_date FROM photos WHERE 1=1"
         params = []
+
+        if deleted_only is True:
+            sql += " AND deleted = 1"
+        elif deleted is not True:
+            sql += " AND deleted = 0"
 
         if no_date is True:
             sql += f" AND ({ed} IS NULL OR length({ed}) < 4 OR substr({ed},1,4) = '0000')"
@@ -343,7 +353,7 @@ class DatabaseManager:
         rows = self.sqlite.execute(
             f"SELECT substr({ed},1,4) as year, substr({ed},1,7) as month, COUNT(*) as cnt "
             f"FROM photos WHERE {ed} IS NOT NULL AND length({ed}) >= 4 "
-            f"AND substr({ed},1,4) != '0000' "
+            f"AND substr({ed},1,4) != '0000' AND deleted = 0 "
             f"GROUP BY year, month ORDER BY year, month"
         ).fetchall()
         years = {}
@@ -353,11 +363,11 @@ class DatabaseManager:
             years[y] = years.get(y, 0) + cnt
             months[m] = months.get(m, 0) + cnt
         no_date = self.sqlite.execute(
-            "SELECT COUNT(*) FROM photos WHERE COALESCE(manual_date, date) IS NULL OR length(COALESCE(manual_date, date)) < 4 OR substr(COALESCE(manual_date, date),1,4) = '0000'"
+            "SELECT COUNT(*) FROM photos WHERE (COALESCE(manual_date, date) IS NULL OR length(COALESCE(manual_date, date)) < 4 OR substr(COALESCE(manual_date, date),1,4) = '0000') AND deleted = 0"
         ).fetchone()[0]
         if no_date > 0:
             years["no_date"] = no_date
-        total = self.count_photos()
+        total = self.count_photos(where="deleted = 0")
         return {"years": dict(sorted(years.items())), "months": dict(sorted(months.items())), "total": total}
 
     # ─── Faces ──────────────────────────────────────────
@@ -760,7 +770,8 @@ class DatabaseManager:
     # ─── Status helpers ─────────────────────────────────
 
     def get_status(self):
-        photos_total = self.count_photos()
+        photos_total = self.count_photos(where="deleted = 0")
+        photos_deleted = self.count_photos(where="deleted = 1")
         described = self.count_photos("description IS NOT NULL AND description != ''")
         faces_flagged = self.count_photos("faces_present = 1")
         exif_done = self.count_photos("exif_checked = 1")
@@ -776,6 +787,7 @@ class DatabaseManager:
 
         return {
             "photos_total": photos_total,
+            "photos_deleted": photos_deleted,
             "photos_described": described,
             "photos_faces_flagged": faces_flagged,
             "photos_exif_done": exif_done,
