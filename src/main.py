@@ -1,10 +1,11 @@
 """FastAPI application for Gailery Photo Gallery"""
 
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
+from urllib.parse import unquote, urlparse
 import logging
 import os
 
@@ -34,6 +35,52 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+
+class BfcacheFixMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            raw = scope.get("raw_path", b"").decode() if scope.get("raw_path") else ""
+            path = scope.get("path", "")
+            if "http://" in path or "https://" in path or "http%3A" in raw.lower() or "http%3A" in path.lower():
+                cleaned = raw.lstrip("/") if "http%3A" in raw.lower() else path.lstrip("/")
+                if not cleaned:
+                    cleaned = path.lstrip("/")
+                decoded = unquote(cleaned) if "http%3A" in cleaned.lower() else cleaned
+                parsed = urlparse(decoded)
+                new_path = parsed.path or "/"
+                logger.info(f"[BFCACHE-FIX] raw={raw!r} path={path!r} -> {new_path}")
+                scope["path"] = new_path
+                scope["raw_path"] = new_path.encode()
+                if parsed.query:
+                    scope["query_string"] = parsed.query.encode()
+            if scope.get("method") == "HEAD":
+                scope["method"] = "GET"
+                async def send_head(message):
+                    if message["type"] == "http.response.body":
+                        message["body"] = b""
+                    await send(message)
+                await self.app(scope, receive, send_head)
+                return
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(BfcacheFixMiddleware)
+
+
+@app.middleware("http")
+async def redirect_api_errors_for_browsers(request: Request, call_next):
+    response = await call_next(request)
+    if response.status_code >= 400:
+        accept = request.headers.get("accept", "")
+        if "text/html" in accept and request.url.path.startswith("/api/"):
+            from fastapi.responses import RedirectResponse
+            return RedirectResponse(url="/gallery")
+    return response
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -56,7 +103,7 @@ async def catalog_page():
     catalog_html = Path(__file__).parent.parent / "web" / "catalog.html"
     if catalog_html.exists():
         with open(catalog_html) as f:
-            return HTMLResponse(f.read())
+            return HTMLResponse(f.read(), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
     return {"error": "Page not found"}
 
 
@@ -67,7 +114,7 @@ async def gallery_page():
     gallery_html = Path(__file__).parent.parent / "web" / "gallery.html"
     if gallery_html.exists():
         with open(gallery_html) as f:
-            return HTMLResponse(f.read(), headers={"Cache-Control": "no-cache, no-store"})
+            return HTMLResponse(f.read(), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
     return {"error": "Page not found"}
 
 
@@ -78,7 +125,7 @@ async def persons_page():
     if persons_html.exists():
         from fastapi.responses import HTMLResponse
         with open(persons_html) as f:
-            return HTMLResponse(f.read())
+            return HTMLResponse(f.read(), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
     return {"error": "Page not found"}
 
 
@@ -89,7 +136,7 @@ async def monitor_page():
     monitor_html = Path(__file__).parent.parent / "web" / "photos.html"
     if monitor_html.exists():
         with open(monitor_html) as f:
-            return HTMLResponse(f.read())
+            return HTMLResponse(f.read(), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
     return {"error": "Page not found"}
 
 
@@ -100,7 +147,7 @@ async def pipeline_log():
     log_html = Path(__file__).parent.parent / "web" / "log.html"
     if log_html.exists():
         with open(log_html) as f:
-            return HTMLResponse(f.read())
+            return HTMLResponse(f.read(), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
     return {"error": "Page not found"}
 
 
@@ -111,7 +158,7 @@ async def control_page():
     ctrl_html = Path(__file__).parent.parent / "web" / "control.html"
     if ctrl_html.exists():
         with open(ctrl_html) as f:
-            return HTMLResponse(f.read())
+            return HTMLResponse(f.read(), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
     return {"error": "Page not found"}
 
 
@@ -375,6 +422,13 @@ async def logo_light():
         return FileResponse(str(p), media_type="image/png")
     raise HTTPException(status_code=404)
 
+@app.get("/favicon.ico")
+async def favicon():
+    p = web_dir / "logo-dark.png"
+    if p.exists():
+        return FileResponse(str(p), media_type="image/x-icon")
+    raise HTTPException(status_code=404)
+
 
 @app.get("/api/backup/download")
 async def backup_download():
@@ -494,6 +548,19 @@ async def maintenance_dedup_embeddings():
         return {"ok": True, "before": before_rows, "after": len(filtered), "removed": before_rows - len(filtered)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/{path:path}")
+async def spa_fallback(path: str, request: Request):
+    accept = request.headers.get("accept", "")
+    if "text/html" in accept:
+        from pathlib import Path
+        from fastapi.responses import HTMLResponse
+        gallery_html = Path(__file__).parent.parent / "web" / "gallery.html"
+        if gallery_html.exists():
+            with open(gallery_html) as f:
+                return HTMLResponse(f.read(), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+    raise HTTPException(status_code=404, detail="Not found")
 
 
 def main():
