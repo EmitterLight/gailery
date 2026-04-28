@@ -76,7 +76,6 @@ class DatabaseManager:
             );
             CREATE INDEX IF NOT EXISTS idx_photos_path ON photos(path);
             CREATE INDEX IF NOT EXISTS idx_photos_date ON photos(date);
-            CREATE INDEX IF NOT EXISTS idx_photos_effective_date ON photos(COALESCE(manual_date, date));
             CREATE INDEX IF NOT EXISTS idx_photos_faces ON photos(faces_present);
             CREATE INDEX IF NOT EXISTS idx_photos_exif ON photos(exif_checked);
             CREATE INDEX IF NOT EXISTS idx_photos_desc ON photos(description);
@@ -126,28 +125,99 @@ class DatabaseManager:
                 embedded INTEGER DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS idx_catalog_abs ON catalog_files(abs_path);
-            CREATE INDEX IF NOT EXISTS idx_catalog_ingested ON catalog_files(ingested);
-            CREATE INDEX IF NOT EXISTS idx_catalog_root ON catalog_files(root_id);
-        """)
+             CREATE INDEX IF NOT EXISTS idx_catalog_ingested ON catalog_files(ingested);
+             CREATE INDEX IF NOT EXISTS idx_catalog_root ON catalog_files(root_id);
+         """)
         self.sqlite.commit()
+
+        cur.execute("PRAGMA table_info(catalog_files)")
+        cf_columns = [row[1] for row in cur.fetchall()]
+        if 'content_hash' not in cf_columns:
+            cur.execute("ALTER TABLE catalog_files ADD COLUMN content_hash TEXT")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_catalog_hash ON catalog_files(content_hash)")
+            self.sqlite.commit()
+        if 'is_canonical' not in cf_columns:
+            cur.execute("ALTER TABLE catalog_files ADD COLUMN is_canonical INTEGER DEFAULT 1")
+            self.sqlite.commit()
 
         cur.execute("PRAGMA table_info(photos)")
         columns = [row[1] for row in cur.fetchall()]
         if 'manual_gps' not in columns:
             cur.execute("ALTER TABLE photos ADD COLUMN manual_gps INTEGER DEFAULT 0")
-            self.sqlite.commit()
-            logger.info("Migration: added manual_gps column to photos table")
         if 'manual_date' not in columns:
             cur.execute("ALTER TABLE photos ADD COLUMN manual_date TEXT")
-            self.sqlite.commit()
-            logger.info("Migration: added manual_date column to photos table")
         if 'deleted' not in columns:
             cur.execute("ALTER TABLE photos ADD COLUMN deleted INTEGER DEFAULT 0")
+        if 'rich_description' not in columns:
+            cur.execute("ALTER TABLE photos ADD COLUMN rich_description TEXT")
+        if 'embedded' not in columns:
+            cur.execute("ALTER TABLE photos ADD COLUMN embedded INTEGER DEFAULT 0")
+        if 'has_issues' not in columns:
+            cur.execute("ALTER TABLE photos ADD COLUMN has_issues INTEGER DEFAULT 0")
+        if 'issue_type' not in columns:
+            cur.execute("ALTER TABLE photos ADD COLUMN issue_type TEXT")
+        if 'photo_type' not in columns:
+            cur.execute("ALTER TABLE photos ADD COLUMN photo_type TEXT DEFAULT 'photo'")
+        if 'exif_raw' not in columns:
+            cur.execute("ALTER TABLE photos ADD COLUMN exif_raw TEXT")
+        if 'img_width' not in columns:
+            cur.execute("ALTER TABLE photos ADD COLUMN img_width INTEGER")
+        if 'img_height' not in columns:
+            cur.execute("ALTER TABLE photos ADD COLUMN img_height INTEGER")
+        if 'date_conflict' not in columns:
+            cur.execute("ALTER TABLE photos ADD COLUMN date_conflict INTEGER DEFAULT 0")
+        if 'thumbnail_path' not in columns:
+            cur.execute("ALTER TABLE photos ADD COLUMN thumbnail_path TEXT")
+        self.sqlite.commit()
+
+        cur.execute("PRAGMA table_info(catalog_roots)")
+        cr_columns = [row[1] for row in cur.fetchall()]
+        if 'enabled' not in cr_columns:
+            cur.execute("ALTER TABLE catalog_roots ADD COLUMN enabled INTEGER DEFAULT 1")
             self.sqlite.commit()
-            logger.info("Migration: added deleted column to photos table")
+
+        p_columns = [row[1] for row in cur.execute("PRAGMA table_info(photos)").fetchall()]
+        if 'root_id' not in p_columns:
+            cur.execute("ALTER TABLE photos ADD COLUMN root_id TEXT")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_photos_root_id ON photos(root_id)")
+            self.sqlite.commit()
+
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='changes'")
+        if not cur.fetchone():
+            cur.execute("""
+                CREATE TABLE changes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    photo_id TEXT,
+                    field TEXT,
+                    value TEXT,
+                    changed_at TEXT
+                )
+            """)
+            self.sqlite.commit()
+
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='photo_edits'")
+        if not cur.fetchone():
+            cur.execute("""
+                CREATE TABLE photo_edits (
+                    edit_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    content_hash TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    params TEXT NOT NULL,
+                    action_order INTEGER NOT NULL DEFAULT 0,
+                    enabled INTEGER DEFAULT 1,
+                    created_at TEXT
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_edits_hash ON photo_edits(content_hash)")
+            self.sqlite.commit()
+
+        cur.execute("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_photos_effective_date'")
+        if not cur.fetchone():
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_photos_effective_date ON photos(COALESCE(manual_date, date))")
+            self.sqlite.commit()
 
     def _open_vector_tables(self):
-        if "photo_embeddings" not in self.vectordb.table_names():
+        if "photo_embeddings" not in self.vectordb.list_tables().tables:
             schema = pa.schema([
                 pa.field("photo_id", pa.string()),
                 pa.field("search_text", pa.string()),
@@ -157,7 +227,7 @@ class DatabaseManager:
             ])
             self.vectordb.create_table("photo_embeddings", schema=schema)
 
-        if "face_vectors" not in self.vectordb.table_names():
+        if "face_vectors" not in self.vectordb.list_tables().tables:
             schema = pa.schema([
                 pa.field("face_id", pa.string()),
                 pa.field("embedding", pa.list_(pa.float32(), 512)),
@@ -248,6 +318,20 @@ class DatabaseManager:
             sql += f" WHERE {where}"
         return self.sqlite.execute(sql).fetchone()[0]
 
+    def _get_photo_share_path(self):
+        return PHOTO_SHARE_PATH
+
+    def _enabled_root_filter(self):
+        enabled_roots = [r for r in self.get_catalog_roots() if r.get("enabled", 1)]
+        if not enabled_roots:
+            roots = self.get_catalog_roots()
+            if not roots:
+                return "1=1", []
+            return "1=0", []
+        enabled_ids = [r["root_id"] for r in enabled_roots]
+        placeholders = ",".join("?" * len(enabled_ids))
+        return f"cf.root_id IN ({placeholders})", enabled_ids
+
     def search_photos(self, q=None, person=None, date_from=None, date_to=None,
                       date_after=None, date_before=None,
                       path_after=None, path_before=None,
@@ -255,10 +339,15 @@ class DatabaseManager:
                       issue_type=None, photo_type=None, has_gps=None,
                       no_date=None, has_description=None,
                       deleted=None, deleted_only=None,
+                      content_hash=None,
                       sort="date_desc", limit=60, offset=0):
         ed = "COALESCE(manual_date, date)"
-        sql = "SELECT *, " + ed + " as effective_date FROM photos WHERE 1=1"
+        sql = "SELECT photos.*, " + ed + " as effective_date, cf.content_hash FROM photos JOIN catalog_files cf ON cf.abs_path = photos.path WHERE cf.is_canonical = 1"
         params = []
+
+        root_filter, root_params = self._enabled_root_filter()
+        sql += f" AND {root_filter}"
+        params.extend(root_params)
 
         if deleted_only is True:
             sql += " AND deleted = 1"
@@ -311,6 +400,10 @@ class DatabaseManager:
         elif has_gps is False:
             sql += " AND (gps_lat IS NULL OR gps_lon IS NULL)"
 
+        if content_hash:
+            sql += " AND cf.content_hash LIKE ?"
+            params.append(f"%{content_hash}%")
+
         if person:
             matching_paths = self.sqlite.execute(
                 "SELECT DISTINCT p.path FROM photos p "
@@ -335,7 +428,8 @@ class DatabaseManager:
         }
         sql += f" ORDER BY {order_map.get(sort, 'effective_date DESC')}"
 
-        count_sql = sql.replace("SELECT *", "SELECT COUNT(*)", 1)
+        count_sql = sql.replace("SELECT photos.*, " + ed + " as effective_date", "SELECT COUNT(*)", 1)
+        count_sql = count_sql.split(" ORDER BY ")[0]
         total = self.sqlite.execute(count_sql, params).fetchone()[0]
 
         sql += " LIMIT ? OFFSET ?"
@@ -345,16 +439,24 @@ class DatabaseManager:
         return total, _rows_to_dicts(rows)
 
     def get_all_photos(self):
-        rows = self.sqlite.execute("SELECT * FROM photos").fetchall()
+        root_filter, root_params = self._enabled_root_filter()
+        rows = self.sqlite.execute(
+            f"SELECT photos.* FROM photos JOIN catalog_files cf ON cf.abs_path = photos.path "
+            f"WHERE cf.is_canonical = 1 AND {root_filter}",
+            root_params
+        ).fetchall()
         return _rows_to_dicts(rows)
 
     def get_date_histogram(self):
+        root_filter, root_params = self._enabled_root_filter()
         ed = "COALESCE(manual_date, date)"
         rows = self.sqlite.execute(
             f"SELECT substr({ed},1,4) as year, substr({ed},1,7) as month, COUNT(*) as cnt "
-            f"FROM photos WHERE {ed} IS NOT NULL AND length({ed}) >= 4 "
-            f"AND substr({ed},1,4) != '0000' AND deleted = 0 "
-            f"GROUP BY year, month ORDER BY year, month"
+            f"FROM photos JOIN catalog_files cf ON cf.abs_path = photos.path "
+            f"WHERE {ed} IS NOT NULL AND length({ed}) >= 4 "
+            f"AND substr({ed},1,4) != '0000' AND deleted = 0 AND cf.is_canonical = 1 AND {root_filter} "
+            f"GROUP BY year, month ORDER BY year, month",
+            root_params
         ).fetchall()
         years = {}
         months = {}
@@ -457,16 +559,16 @@ class DatabaseManager:
 
     def get_all_face_embeddings(self):
         faces = self.sqlite.execute(
-            "SELECT face_id, persona_id FROM faces"
+            "SELECT face_id, persona_id, photo_id FROM faces"
         ).fetchall()
-        vec_rows = self.face_vectors.search().select(["face_id", "embedding"]).limit(100000).to_list()
+        vec_rows = self.face_vectors.search().select(["face_id", "embedding"]).limit(10000000).to_list()
         vec_map = {v["face_id"]: v["embedding"] for v in vec_rows}
         result = []
         for f in faces:
-            fid, pid = f[0], f[1]
+            fid, pid, photo_id = f[0], f[1], f[2]
             emb = vec_map.get(fid)
             if emb:
-                result.append({"face_id": fid, "persona_id": pid, "embedding": emb})
+                result.append({"face_id": fid, "persona_id": pid, "photo_id": photo_id, "embedding": emb})
         return result
 
     def get_all_faces(self):
@@ -634,12 +736,15 @@ class DatabaseManager:
         for r in records:
             cur.execute(
                 "INSERT OR IGNORE INTO catalog_files (file_id,root_id,rel_path,abs_path,"
-                "parent_dir,ext,size,modified,ingested,described,exif_done,faces_done,embedded) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "parent_dir,ext,size,modified,content_hash,is_canonical,"
+                "ingested,described,exif_done,faces_done,embedded) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (r.get("file_id", str(uuid.uuid4())),
                  r.get("root_id"), r.get("rel_path"), r.get("abs_path"),
                  r.get("parent_dir"), r.get("ext"),
                  r.get("size", 0), r.get("modified"),
+                 r.get("content_hash"),
+                 int(r.get("is_canonical", True)),
                  int(r.get("ingested", False)),
                  int(r.get("described", False)),
                  int(r.get("exif_done", False)),
@@ -725,6 +830,48 @@ class DatabaseManager:
         except Exception:
             pass
 
+    def dedup_photo_embeddings(self):
+        """Remove duplicate photo_embeddings rows, keeping the last occurrence.
+        Uses safe delete + optimize (no drop_table to avoid data loss).
+        Returns (before_rows, after_rows, removed_count)."""
+        tbl = self.photo_embeddings
+        before_rows = tbl.count_rows()
+        data = tbl.to_arrow()
+        pids = data.column("photo_id").to_pylist()
+        seen = {}
+        for i, pid in enumerate(pids):
+            seen[pid] = i
+        dup_indices = set(range(len(pids))) - set(seen.values())
+        if not dup_indices:
+            return (before_rows, before_rows, 0)
+        dup_pids = [pids[i] for i in sorted(dup_indices)]
+        if dup_pids:
+            for offset in range(0, len(dup_pids), 500):
+                batch = dup_pids[offset:offset + 500]
+                id_list = ", ".join(f"'{pid}'" for pid in batch)
+                try:
+                    tbl.delete(f"photo_id IN ({id_list})")
+                except Exception:
+                    pass
+        after_rows = before_rows - len(dup_indices)
+        return (before_rows, after_rows, len(dup_indices))
+
+    def _optimize_table(self, tbl):
+        """Compact and cleanup LanceDB table to reclaim space."""
+        from datetime import timedelta
+        try:
+            tbl.optimize(cleanup_older_than=timedelta(seconds=0))
+        except Exception:
+            try:
+                tbl.compact_files()
+                tbl.cleanup_old_versions()
+            except Exception:
+                pass
+
+    def compact_photo_embeddings(self):
+        """Compact LanceDB fragments to reclaim space from soft-deleted rows."""
+        self._optimize_table(self.photo_embeddings)
+
     def search_photo_embeddings(self, query_vector, limit=20):
         return self.photo_embeddings.search(query_vector).limit(limit).to_list()
 
@@ -770,20 +917,62 @@ class DatabaseManager:
     # ─── Status helpers ─────────────────────────────────
 
     def get_status(self):
-        photos_total = self.count_photos(where="deleted = 0")
+        enabled_roots = [r for r in self.get_catalog_roots() if r.get("enabled", 1)]
+        enabled_ids = [r["root_id"] for r in enabled_roots]
+        rid_placeholders = ",".join("?" * len(enabled_ids)) if enabled_ids else ""
+
+        if enabled_ids:
+            catalog_total = self.sqlite.execute(
+                f"SELECT COUNT(*) FROM catalog_files WHERE root_id IN ({rid_placeholders})",
+                enabled_ids
+            ).fetchone()[0]
+            photos_total = self.sqlite.execute(
+                f"SELECT COUNT(*) FROM photos WHERE deleted = 0 AND root_id IN ({rid_placeholders})",
+                enabled_ids
+            ).fetchone()[0]
+            described = self.sqlite.execute(
+                f"SELECT COUNT(*) FROM photos WHERE description IS NOT NULL AND description != '' AND deleted = 0 AND root_id IN ({rid_placeholders})",
+                enabled_ids
+            ).fetchone()[0]
+            faces_flagged = self.sqlite.execute(
+                f"SELECT COUNT(*) FROM photos WHERE faces_present = 1 AND deleted = 0 AND root_id IN ({rid_placeholders})",
+                enabled_ids
+            ).fetchone()[0]
+            exif_done = self.sqlite.execute(
+                f"SELECT COUNT(*) FROM photos WHERE exif_checked = 1 AND deleted = 0 AND root_id IN ({rid_placeholders})",
+                enabled_ids
+            ).fetchone()[0]
+            embedded = self.sqlite.execute(
+                f"SELECT COUNT(*) FROM photos WHERE embedded = 1 AND deleted = 0 AND root_id IN ({rid_placeholders})",
+                enabled_ids
+            ).fetchone()[0]
+        else:
+            catalog_total = photos_total = described = faces_flagged = exif_done = embedded = 0
+
         photos_deleted = self.count_photos(where="deleted = 1")
-        described = self.count_photos("description IS NOT NULL AND description != ''")
-        faces_flagged = self.count_photos("faces_present = 1")
-        exif_done = self.count_photos("exif_checked = 1")
-        faces_processed = self.sqlite.execute(
-            "SELECT COUNT(DISTINCT photo_id) FROM faces"
-        ).fetchone()[0]
-        embedded = self.sqlite.execute("SELECT COUNT(*) FROM photos WHERE embedded = 1").fetchone()[0]
-        catalog_total = self.count_catalog_files()
+        faces_processed = faces_flagged
         personas_total = self.sqlite.execute("SELECT COUNT(*) FROM personas").fetchone()[0]
         faces_total = self.count_faces()
         with_persona = self.count_faces("persona_id IS NOT NULL")
         no_cluster = self.count_faces("persona_id IS NULL")
+
+        per_root = []
+        for r in enabled_roots:
+            rid = r["root_id"]
+            r_photos = self.sqlite.execute("SELECT COUNT(*) FROM photos WHERE root_id = ? AND deleted = 0", (rid,)).fetchone()[0]
+            r_described = self.sqlite.execute("SELECT COUNT(*) FROM photos WHERE root_id = ? AND description IS NOT NULL AND description != '' AND deleted = 0", (rid,)).fetchone()[0]
+            r_exif = self.sqlite.execute("SELECT COUNT(*) FROM photos WHERE root_id = ? AND exif_checked = 1 AND deleted = 0", (rid,)).fetchone()[0]
+            r_cat = self.sqlite.execute("SELECT COUNT(*) FROM catalog_files WHERE root_id = ?", (rid,)).fetchone()[0]
+            r_embedded = self.sqlite.execute("SELECT COUNT(*) FROM photos WHERE root_id = ? AND embedded = 1 AND deleted = 0", (rid,)).fetchone()[0]
+            per_root.append({
+                "root_id": rid,
+                "alias": r.get("alias", ""),
+                "catalog_total": r_cat,
+                "ingested": r_photos,
+                "described": r_described,
+                "exif_done": r_exif,
+                "embedded": r_embedded,
+            })
 
         return {
             "photos_total": photos_total,
@@ -803,7 +992,7 @@ class DatabaseManager:
             "catalog_exif_done": exif_done,
             "catalog_exif_not": photos_total - exif_done,
             "catalog_faces_done": faces_processed,
-            "catalog_faces_not": faces_flagged - faces_processed,
+            "catalog_faces_not": max(faces_flagged - faces_processed, 0),
             "photos_embedded": embedded,
             "photos_not_embedded": photos_total - embedded,
             "pct_ingested": round(min(photos_total, catalog_total) / max(catalog_total, 1) * 100, 2),
@@ -814,5 +1003,123 @@ class DatabaseManager:
             "faces_flagged_in_db": faces_flagged,
             "ingested_undescribed": photos_total - described,
             "ingested_no_exif": photos_total - exif_done,
-            "faces_not_done": faces_flagged - faces_processed,
+            "faces_not_done": max(faces_flagged - faces_processed, 0),
+            "per_root": per_root,
         }
+
+    def mark_canonical_duplicates(self):
+        """For each content_hash group with >1 file, mark one as canonical=1
+        and the rest as canonical=0. Prefers already-described files, then
+        shortest path. Returns (total_groups, total_copies)."""
+        cur = self.sqlite.cursor()
+        rows = cur.execute(
+            "SELECT content_hash, COUNT(*) as cnt FROM catalog_files "
+            "WHERE content_hash IS NOT NULL "
+            "GROUP BY content_hash HAVING COUNT(*) > 1"
+        ).fetchall()
+        if not rows:
+            return (0, 0)
+        total_groups = len(rows)
+        total_copies = 0
+        for (h, cnt) in rows:
+            files = cur.execute(
+                "SELECT file_id, abs_path, described, ingested "
+                "FROM catalog_files WHERE content_hash = ? ORDER BY "
+                "described DESC, ingested DESC, length(abs_path) ASC, abs_path ASC",
+                (h,)
+            ).fetchall()
+            canonical_id = files[0][0]
+            copy_ids = [f[0] for f in files[1:]]
+            if copy_ids:
+                placeholders = ",".join("?" for _ in copy_ids)
+                cur.execute(
+                    f"UPDATE catalog_files SET is_canonical = 0 WHERE file_id IN ({placeholders})",
+                    copy_ids
+                )
+                total_copies += len(copy_ids)
+        self.sqlite.commit()
+        return (total_groups, total_copies)
+
+    def get_duplicate_paths(self, content_hash, exclude_path=None):
+        """Get all abs_paths for non-canonical files with the same content_hash."""
+        cur = self.sqlite.cursor()
+        if exclude_path:
+            rows = cur.execute(
+                "SELECT abs_path FROM catalog_files "
+                "WHERE content_hash = ? AND is_canonical = 0 "
+                "ORDER BY abs_path",
+                (content_hash,)
+            ).fetchall()
+        else:
+            rows = cur.execute(
+                "SELECT abs_path FROM catalog_files "
+                "WHERE content_hash = ? AND is_canonical = 0 "
+                "ORDER BY abs_path",
+                (content_hash,)
+            ).fetchall()
+        return [r[0] for r in rows]
+
+    def is_path_canonical(self, abs_path):
+        """Check if a file path is the canonical representative for its content_hash.
+        Uses in-memory cache to avoid repeated queries."""
+        if not hasattr(self, '_canonical_cache'):
+            self._canonical_cache = {}
+            self._canonical_cache_loaded = False
+        if not self._canonical_cache_loaded:
+            cur = self.sqlite.cursor()
+            rows = cur.execute(
+                "SELECT abs_path, is_canonical FROM catalog_files WHERE content_hash IS NOT NULL"
+            ).fetchall()
+            for p, c in rows:
+                self._canonical_cache[p] = bool(c)
+            self._canonical_cache_loaded = True
+        return self._canonical_cache.get(abs_path, True)
+
+    def invalidate_canonical_cache(self):
+        """Invalidate the canonical cache after marking duplicates."""
+        if hasattr(self, '_canonical_cache'):
+            self._canonical_cache = {}
+            self._canonical_cache_loaded = False
+
+    def get_canonical_status(self):
+        """Get stats about canonical/duplicate files."""
+        cur = self.sqlite.cursor()
+        total = cur.execute("SELECT COUNT(*) FROM catalog_files WHERE content_hash IS NOT NULL").fetchone()[0]
+        canonical = cur.execute("SELECT COUNT(*) FROM catalog_files WHERE is_canonical = 1 AND content_hash IS NOT NULL").fetchone()[0]
+        copies = total - canonical
+        groups = cur.execute(
+            "SELECT COUNT(*) FROM (SELECT content_hash FROM catalog_files "
+            "WHERE content_hash IS NOT NULL GROUP BY content_hash HAVING COUNT(*) > 1)"
+        ).fetchone()[0]
+        return {"total_hashed": total, "canonical": canonical, "copies": copies, "duplicate_groups": groups}
+
+    def get_edits(self, content_hash):
+        cur = self.sqlite.cursor()
+        rows = cur.execute(
+            "SELECT edit_id, action, params, action_order, enabled FROM photo_edits "
+            "WHERE content_hash = ? AND enabled = 1 ORDER BY action_order",
+            (content_hash,)
+        ).fetchall()
+        return [{"edit_id": r[0], "action": r[1], "params": json.loads(r[2]), "action_order": r[3], "enabled": r[4]} for r in rows]
+
+    def add_edit(self, content_hash, action, params, action_order=0):
+        cur = self.sqlite.cursor()
+        cur.execute(
+            "INSERT INTO photo_edits (content_hash, action, params, action_order, enabled, created_at) VALUES (?,?,?, ?,1,?)",
+            (content_hash, action, json.dumps(params), action_order, datetime.now().isoformat())
+        )
+        self.sqlite.commit()
+        return cur.lastrowid
+
+    def remove_edit(self, edit_id):
+        cur = self.sqlite.cursor()
+        cur.execute("DELETE FROM photo_edits WHERE edit_id = ?", (edit_id,))
+        self.sqlite.commit()
+
+    def clear_edits(self, content_hash, action=None):
+        cur = self.sqlite.cursor()
+        if action:
+            cur.execute("DELETE FROM photo_edits WHERE content_hash = ? AND action = ?", (content_hash, action))
+        else:
+            cur.execute("DELETE FROM photo_edits WHERE content_hash = ?", (content_hash,))
+        self.sqlite.commit()

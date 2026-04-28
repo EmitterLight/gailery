@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional, List
 import logging
 import time
-from config import PHOTO_SHARE_PATH, THUMBNAILS_DIR, FLAG_DIR, LLAMA_CPP_DIR, PROJECT_ROOT
+from config import PHOTO_SHARE_PATH, THUMBNAILS_DIR, LLAMA_CPP_DIR, PROJECT_ROOT, LOG_FILE
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +75,9 @@ def _enrich_photo(p, photo_faces, persona_map, include_created=False, include_th
         "exif_checked": bool(p.get("exif_checked")),
         "embedded": bool(p.get("embedded")),
         "exif_raw": p.get("exif_raw"),
+        "is_canonical": p.get("is_canonical", True),
+        "duplicate_paths": p.get("duplicate_paths", []),
+        "content_hash": p.get("content_hash"),
     }
     if include_thumbnail:
         result["thumbnail_path"] = p.get("thumbnail_path")
@@ -113,8 +116,11 @@ async def get_photo(path: str):
 
 
 @router.get("/thumbnail")
-async def get_thumbnail(path: str, size: str = "sm", fit: bool = False):
-    photo_path = PHOTO_SHARE_PATH / path
+async def get_thumbnail(path: str = "", size: str = "sm", fit: bool = False, abs_path: str = ""):
+    if abs_path:
+        photo_path = Path(abs_path)
+    else:
+        photo_path = PHOTO_SHARE_PATH / path
     if not photo_path.exists():
         raise HTTPException(status_code=404, detail="Photo not found")
 
@@ -376,8 +382,14 @@ async def search_photos(
 
     db = DatabaseManager()
 
+    _hash_q = None
+    _text_q = q or None
+    if q and len(q) >= 4 and all(c in '0123456789abcdefABCDEF' for c in q):
+        _hash_q = q
+        _text_q = None
+
     total, photos = db.search_photos(
-        q=q or None,
+        q=_text_q,
         person=person or None,
         date_from=date_from or None,
         date_to=date_to or None,
@@ -395,6 +407,7 @@ async def search_photos(
         has_description=has_description,
         deleted=deleted,
         deleted_only=deleted_only,
+        content_hash=_hash_q,
         sort=sort,
         limit=limit,
         offset=offset,
@@ -409,33 +422,39 @@ async def search_photos(
         photo_faces.setdefault(f.get("photo_id", ""), []).append(f)
 
     result = [_enrich_photo(p, photo_faces, persona_map, include_created=True) for p in photos]
+
+    from database import DatabaseManager as _DB
+    _db = _DB()
+    for p in result:
+        abs_path = p.get("path", "")
+        hash_val = None
+        try:
+            hash_val = _db.sqlite.execute(
+                "SELECT content_hash FROM catalog_files WHERE abs_path = ? AND content_hash IS NOT NULL",
+                (abs_path,)
+            ).fetchone()
+            if hash_val:
+                hash_val = hash_val[0]
+                dup_paths = _db.get_duplicate_paths(hash_val)
+                p["duplicate_paths"] = dup_paths
+                p["edits"] = _db.get_edits(hash_val)
+            else:
+                p["duplicate_paths"] = []
+                p["edits"] = []
+        except Exception:
+            p["duplicate_paths"] = []
+            p["edits"] = []
+
     return {"total": total, "photos": result}
 
 
-PIPELINE_GPU_PROCS = ["face_pipeline", "faces.py", "faces", "vision_describe", "describe.py", "describe"]
-
-
-def _pause_pipeline():
-    import os
-    saved_flags = {}
-    for fname in os.listdir(FLAG_DIR):
-        path = os.path.join(FLAG_DIR, fname)
-        if os.path.isfile(path):
-            saved_flags[fname] = True
-            os.remove(path)
-    for pattern in PIPELINE_GPU_PROCS:
-        os.system(f"pkill -f '{pattern}' 2>/dev/null")
-    os.system("pkill -9 -f 'llama-server' 2>/dev/null")
-    time.sleep(2)
-    return saved_flags
-
-
-def _resume_pipeline(saved_flags):
-    import os
-    for fname in saved_flags:
-        path = os.path.join(FLAG_DIR, fname)
-        os.makedirs(FLAG_DIR, exist_ok=True)
-        open(path, 'w').close()
+def _get_mqtt_api():
+    try:
+        from mqtt_client import create_api_mqtt
+        from main import _get_api_mqtt
+        return _get_api_mqtt()
+    except Exception:
+        return None
 
 
 @router.get("/semantic_search")
@@ -465,8 +484,13 @@ async def semantic_search(q: str = "", limit: int = 20, threshold: float = 1.0):
 
     embed_port = 8102
     embed_server = None
-    saved_flags = _pause_pipeline()
-    logger.info(f"[SEMSEARCH] Pipeline paused, saved_flags={list(saved_flags.keys())}")
+    mq = _get_mqtt_api()
+    gpu_t0 = time.time()
+    if mq:
+        mq.request_gpu_for_api(worker_name="semantic_search")
+        logger.info(f"[SEMSEARCH] GPU acquired in {time.time()-gpu_t0:.1f}s")
+    else:
+        logger.warning("[SEMSEARCH] No MQTT, proceeding without GPU lock")
 
     q_emb = None
     try:
@@ -478,7 +502,8 @@ async def semantic_search(q: str = "", limit: int = 20, threshold: float = 1.0):
                 str(LLAMA_CPP_DIR / "build" / "bin" / "llama-server"),
                 "-m", str(PROJECT_ROOT / "gguf" / "Qwen3-Embedding-0.6B-F16.gguf"),
                 "--embedding", "--pooling", "last",
-                "-ngl", "99", "-c", "512",
+                "-ngl", "99", "--no-mmap",
+                "-c", "512",
                 "--port", str(embed_port), "-t", "4", "-np", "4",
             ],
             env=env,
@@ -523,8 +548,9 @@ async def semantic_search(q: str = "", limit: int = 20, threshold: float = 1.0):
             except Exception:
                 embed_server.kill()
                 logger.info("[SEMSEARCH] llama-server killed")
-        _resume_pipeline(saved_flags)
-        logger.info("[SEMSEARCH] Pipeline resumed")
+        if mq:
+            mq.release_gpu_from_api()
+            logger.info("[SEMSEARCH] GPU released via MQTT")
 
     if q_emb is None:
         logger.error("[SEMSEARCH] No embedding obtained")
@@ -567,6 +593,14 @@ async def semantic_search(q: str = "", limit: int = 20, threshold: float = 1.0):
             skipped_threshold += 1
             continue
         enriched = _enrich_photo(photo, photo_faces, persona_map, include_created=True, include_score=True, score=score)
+        hash_val = db.sqlite.execute(
+            "SELECT content_hash FROM catalog_files WHERE abs_path = ? AND content_hash IS NOT NULL",
+            (photo.get("path", ""),)
+        ).fetchone()
+        if hash_val:
+            enriched["duplicate_paths"] = db.get_duplicate_paths(hash_val[0])
+        else:
+            enriched["duplicate_paths"] = []
         out_list.append(enriched)
         if len(out_list) >= limit:
             break
@@ -601,6 +635,12 @@ async def enrich_description(photo_id: str):
         str(LLAMA_CPP_DIR / "build" / "bin"),
     ])
 
+    mq = _get_mqtt_api()
+    if mq:
+        mq.request_gpu_for_api(worker_name="enrich")
+        logger.info("[ENRICH] GPU acquired via MQTT")
+    else:
+        logger.warning("[ENRICH] No MQTT, proceeding without GPU lock")
     try:
         result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=90)
         db2 = DatabaseManager()
@@ -613,6 +653,10 @@ async def enrich_description(photo_id: str):
         return {"ok": False, "error": "timeout"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+    finally:
+        if mq:
+            mq.release_gpu_from_api()
+            logger.info("[ENRICH] GPU released via MQTT")
 
 
 @router.put("/{photo_id}/rich_description")
@@ -978,3 +1022,33 @@ async def undelete(request: Request):
     db.sqlite.commit()
 
     return {"success": True}
+
+
+@router.get("/edits/{content_hash}")
+async def get_edits(content_hash: str):
+    from database import DatabaseManager
+    db = DatabaseManager()
+    return {"edits": db.get_edits(content_hash), "content_hash": content_hash}
+
+
+@router.post("/edits/{content_hash}")
+async def save_edit(content_hash: str, request: Request):
+    from database import DatabaseManager
+    db = DatabaseManager()
+    body = await request.json()
+    action = body.get("action")
+    params = body.get("params", {})
+    if not action:
+        raise HTTPException(status_code=400, detail="action required")
+    if body.get("replace"):
+        db.clear_edits(content_hash, action)
+    edit_id = db.add_edit(content_hash, action, params)
+    return {"ok": True, "edit_id": edit_id}
+
+
+@router.delete("/edits/{edit_id}")
+async def delete_edit(edit_id: int):
+    from database import DatabaseManager
+    db = DatabaseManager()
+    db.remove_edit(edit_id)
+    return {"ok": True}

@@ -28,6 +28,15 @@ LOG_FILE = str(Path(__file__).parent / "logs" / "pipeline.log")
 SUPPORTED_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".raw", ".cr2", ".nef", ".arw", ".dng", ".heic"}
 
 
+def compute_file_hash(path, chunk_size=65536):
+    import xxhash
+    h = xxhash.xxh128()
+    with open(path, "rb") as f:
+        while chunk := f.read(chunk_size):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def log(msg):
     line = f"[{datetime.now().isoformat()}] [CATALOG] {msg}"
     pass  # log to file only
@@ -102,9 +111,14 @@ def scan_root(db, root_id):
             if rel_path in existing_map:
                 old = existing_map[rel_path]
                 if str(old.get("modified", "")) != mtime_str or old.get("size", 0) != file_size:
-                    db.update_catalog_file(old["file_id"], abs_path=abs_path, parent_dir=str(Path(rel_path).parent), ext=ext, size=file_size, modified=mtime_str)
+                    content_hash = compute_file_hash(abs_path) if file_size > 0 else None
+                    db.update_catalog_file(old["file_id"], abs_path=abs_path, parent_dir=str(Path(rel_path).parent), ext=ext, size=file_size, modified=mtime_str, content_hash=content_hash)
                     changed_count += 1
+                elif not old.get("content_hash") and file_size > 0:
+                    content_hash = compute_file_hash(abs_path)
+                    db.update_catalog_file(old["file_id"], content_hash=content_hash)
             else:
+                content_hash = compute_file_hash(abs_path) if file_size > 0 else None
                 new_files.append({
                     "file_id": str(uuid.uuid4()),
                     "root_id": root_id,
@@ -114,6 +128,7 @@ def scan_root(db, root_id):
                     "ext": ext,
                     "size": file_size,
                     "modified": mtime_str,
+                    "content_hash": content_hash,
                     "ingested": False,
                     "described": False,
                     "exif_done": False,
@@ -145,6 +160,11 @@ def scan_root(db, root_id):
     elapsed = time.time() - t0
 
     log(f"Scan done in {elapsed:.1f}s: {scanned} scanned, {new_count} new, {changed_count} changed, {deleted_count} deleted, {file_count} total")
+
+    groups, copies = db.mark_canonical_duplicates()
+    db.invalidate_canonical_cache()
+    if copies > 0:
+        log(f"Marked {copies} duplicate files (is_canonical=0) across {groups} groups")
 
 
 def show_stats(db):
@@ -234,6 +254,47 @@ def sync_ingest_flags(db):
     log(f"Synced {updated} file flags from photos table")
 
 
+def backfill_hashes(db, root_id=None):
+    """Compute content_hash for catalog files that don't have one yet."""
+    where = "content_hash IS NULL AND size > 0"
+    if root_id:
+        where += f" AND root_id = '{root_id}'"
+    files = db.get_catalog_files(where=where)
+    if not files:
+        print("All files already have content_hash")
+        return
+
+    print(f"Hashing {len(files)} files...")
+    t0 = time.time()
+    done = 0
+    batch = []
+    for f in files:
+        abs_path = f.get("abs_path", "")
+        if not Path(abs_path).exists():
+            continue
+        try:
+            h = compute_file_hash(abs_path)
+            batch.append((h, f["file_id"]))
+        except Exception:
+            pass
+        done += 1
+        if len(batch) >= 500:
+            db.sqlite.executemany("UPDATE catalog_files SET content_hash = ? WHERE file_id = ?", batch)
+            db.sqlite.commit()
+            batch = []
+            if done % 2000 == 0:
+                elapsed = time.time() - t0
+                print(f"  {done}/{len(files)} ({elapsed:.1f}s, {done/max(elapsed,1):.0f}/s)", flush=True)
+
+    if batch:
+        db.sqlite.executemany("UPDATE catalog_files SET content_hash = ? WHERE file_id = ?", batch)
+        db.sqlite.commit()
+
+    elapsed = time.time() - t0
+    log(f"Backfill hashes: {done} files in {elapsed:.1f}s ({done/max(elapsed,1):.0f}/s)")
+    print(f"Done: {done} hashes in {elapsed:.1f}s ({done/max(elapsed,1):.0f}/s)")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Scan and manage photo file catalog")
     parser.add_argument("--add", metavar="PATH", help="Register a new root directory and scan it")
@@ -241,26 +302,45 @@ def main():
     parser.add_argument("--scan", action="store_true", help="Re-scan all registered roots")
     parser.add_argument("--stats", action="store_true", help="Show catalog statistics")
     parser.add_argument("--sync", action="store_true", help="Sync ingest/describe flags from photos table")
+    parser.add_argument("--hash", action="store_true", help="Backfill content_hash for files without one")
     args = parser.parse_args()
 
     db = get_db()
 
+    try:
+        from mqtt_client import create_worker_mqtt
+        mq = create_worker_mqtt("scan_catalog")
+    except Exception:
+        mq = None
+
     if args.add:
         root_id = add_root(db, args.add, args.alias)
         scan_root(db, root_id)
+        if mq:
+            mq.shutdown()
         return
 
     if args.scan:
         roots = db.get_catalog_roots()
         if not roots:
             print("No roots registered. Use --add <path> first.")
-            return
-        for root in roots:
-            scan_root(db, root["root_id"])
+        else:
+            for root in roots:
+                scan_root(db, root["root_id"])
+        if mq:
+            mq.shutdown()
         return
 
     if args.sync:
         sync_ingest_flags(db)
+        if mq:
+            mq.shutdown()
+        return
+
+    if args.hash:
+        backfill_hashes(db)
+        if mq:
+            mq.shutdown()
         return
 
     show_stats(db)

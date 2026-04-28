@@ -50,6 +50,10 @@ def clear_flag():
         pass
 
 
+def stopped():
+    return not os.path.exists(FLAG_FILE)
+
+
 def read_exif(photo_path):
     try:
         from PIL import Image
@@ -101,10 +105,15 @@ def read_exif(photo_path):
     return result if any(result.values()) else None
 
 
-def get_uningested(db, year=None, dir_filter=None):
+def get_uningested(db, year=None, dir_filter=None, root_id=None):
     """Get catalog files not yet ingested, optionally filtered."""
     all_files = db.get_catalog_files()
-    candidates = [f for f in all_files if not f.get("ingested")]
+    enabled_roots = {r["root_id"] for r in db.get_catalog_roots() if r.get("enabled", 1)}
+    if root_id:
+        all_files = [f for f in all_files if f.get("root_id") == root_id]
+    else:
+        all_files = [f for f in all_files if f.get("root_id") in enabled_roots]
+    candidates = [f for f in all_files if not f.get("ingested") and f.get("is_canonical", 1)]
 
     if year:
         candidates = [f for f in candidates if year in f.get("parent_dir", "")]
@@ -179,6 +188,7 @@ def ingest(catalog_files, db, total_catalog, read_exif_flag=False, dry_run=False
             "description": None,
             "faces_present": False,
             "date_conflict": int(date_conflict),
+            "root_id": cf.get("root_id"),
         })
         ingested_ids.append(cf["file_id"])
         added += 1
@@ -223,13 +233,21 @@ def main():
                         help="Only files under this directory substring")
     parser.add_argument("--dry-run", action="store_true",
                         help="Show what would be added without writing")
+    parser.add_argument("--root", type=str, default="",
+                        help="Only ingest files from this root_id")
     args = parser.parse_args()
 
     from database import DatabaseManager
     db = DatabaseManager()
     set_flag()
 
-    candidates = get_uningested(db, year=args.year or None, dir_filter=args.dir or None)
+    try:
+        from mqtt_client import create_worker_mqtt
+        mq = create_worker_mqtt("ingest")
+    except Exception:
+        mq = None
+
+    candidates = get_uningested(db, year=args.year or None, dir_filter=args.dir or None, root_id=args.root or None)
     total_catalog = db.count_catalog_files()
     total_not_ingested = len(candidates)
     log(f"Catalog: {total_catalog} files, {total_not_ingested} not ingested")
@@ -251,6 +269,8 @@ def main():
 
     ingest(candidates, db, total_catalog=total_catalog, read_exif_flag=args.exif, dry_run=args.dry_run)
     clear_flag()
+    if mq:
+        mq.shutdown()
     return 0
 
 

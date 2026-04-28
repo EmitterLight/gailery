@@ -57,9 +57,17 @@
         .light-theme .add-dialog { background: #ffffff; border-color: #d0d7de; color: #24292f; }
         .light-theme .add-dialog input { background: #f6f8fa; color: #24292f; border-color: #d0d7de; }
         .light-theme .add-dialog input:focus { border-color: #0969da; }
+        .light-theme .add-dialog .ad-up { background: #eaeef2; color: #24292f; border-color: #d0d7de; }
+        .light-theme .add-dialog .ad-up:hover { background: #d0d7de; }
+        .light-theme .add-dialog .ad-cwd { color: #57606a; }
+        .light-theme .add-dialog .ad-dir-list { background: #f6f8fa; border-color: #d0d7de; }
+        .light-theme .add-dialog .ad-dir-item { color: #24292f; }
+        .light-theme .add-dialog .ad-dir-item:hover { background: #eaeef2; }
+        .light-theme .add-dialog .ad-dir-item.selected { background: #0969da; color: #fff; }
         .light-theme .root-menu-item:hover { background: #eaeef2; }
         .light-theme .root-menu-item.active { background: #d0d7de; color: #0969da; }
-        .light-theme .root-menu-item .rm-path { color: #57606a; }
+        .light-theme .root-menu-item.disabled .rm-alias { color: #8c949e; }
+        .light-theme .root-menu-item.disabled .rm-path { color: #d0d7de; }
 
         h1 { padding: 14px 20px; background: #161b22; border-bottom: 1px solid #30363d; font-size: 16px; color: #58a6ff; display: flex; align-items: center; justify-content: space-between; position: relative; flex-shrink: 0; }
         h1 .nav { font-size: 13px; padding-right: 50px; }
@@ -93,11 +101,15 @@
         .t-root-item .t-icon { color: #e3b341; }
         .t-loading { color: #484f58; font-size: 10px; padding: 2px 0 2px 40px; }
 
-        .root-menu-item { padding: 6px 10px; cursor: pointer; border-radius: 4px; font-size: 11px; }
+        .root-menu-item { padding: 6px 10px; cursor: pointer; border-radius: 4px; font-size: 11px; display: flex; align-items: flex-start; gap: 8px; }
         .root-menu-item:hover { background: #21262d; }
         .root-menu-item.active { background: #30363d; }
+        .root-menu-item .rm-check { margin-top: 2px; width: 16px; height: 16px; cursor: pointer; accent-color: #58a6ff; flex-shrink: 0; }
+        .root-menu-item .rm-info { flex: 1; min-width: 0; }
         .root-menu-item .rm-alias { color: #58a6ff; font-size: 12px; font-weight: bold; }
         .root-menu-item .rm-path { color: #6e7681; font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .root-menu-item.disabled .rm-alias { color: #484f58; }
+        .root-menu-item.disabled .rm-path { color: #30363d; }
 
         .main-panel { flex: 1; display: flex; flex-direction: column; min-height: 0; background: #0d1117; }
 
@@ -183,11 +195,21 @@
 
         .add-dialog { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,.7); z-index: 1002; justify-content: center; align-items: center; }
         .add-dialog.show { display: flex; }
-        .add-dialog .ad-box { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; width: 420px; color: #c9d1d9; font-size: 13px; }
+        .add-dialog .ad-box { background: #1c2128; border: 2px solid #58a6ff; border-radius: 8px; padding: 20px; width: 480px; max-width: 90vw; color: #c9d1d9; font-size: 13px; }
         .add-dialog .ad-box h3 { color: #58a6ff; font-size: 14px; margin-bottom: 12px; }
         .add-dialog .ad-box label { display: block; color: #8b949e; font-size: 11px; margin-bottom: 3px; margin-top: 8px; }
         .add-dialog .ad-box input { width: 100%; background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; padding: 6px 8px; font-family: monospace; font-size: 12px; }
         .add-dialog .ad-box input:focus { outline: none; border-color: #58a6ff; }
+        .add-dialog .ad-browse { margin-bottom: 10px; }
+        .add-dialog .ad-path-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+        .add-dialog .ad-up { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; cursor: pointer; font-size: 14px; padding: 4px 8px; }
+        .add-dialog .ad-up:hover { background: #30363d; }
+        .add-dialog .ad-cwd { color: #8b949e; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+        .add-dialog .ad-dir-list { max-height: 240px; overflow-y: auto; border: 1px solid #30363d; border-radius: 4px; background: #0d1117; }
+        .add-dialog .ad-dir-item { padding: 6px 10px; cursor: pointer; font-size: 12px; color: #c9d1d9; display: flex; align-items: center; gap: 6px; }
+        .add-dialog .ad-dir-item:hover { background: #21262d; }
+        .add-dialog .ad-dir-item.selected { background: #1f6feb; color: #fff; }
+        .add-dialog .ad-dir-item .di-icon { color: #e3b341; }
         .add-dialog .ad-btns { margin-top: 14px; display: flex; gap: 8px; }
         .add-dialog .ad-btns button { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
         .ad-ok { background: #238636; color: #fff; }
@@ -341,19 +363,6 @@
         </div>
     </div>
 
-    <div class="add-dialog" id="addDialog" onclick="hideAddDialog()">
-        <div class="ad-box" onclick="event.stopPropagation()">
-            <h3>Добавить источник</h3>
-            <label>Путь к папке</label>
-            <input type="text" id="newRootPath" placeholder="/photos">
-            <label>Псевдоним (необязательно)</label>
-            <input type="text" id="newRootAlias" placeholder="Фото">
-            <div class="ad-btns">
-                <button class="ad-ok" onclick="addRoot()">Добавить и сканировать</button>
-                <button class="ad-cancel" onclick="hideAddDialog()">Отмена</button>
-            </div>
-        </div>
-    </div>
 
 <script>
 var API = '/api';
@@ -382,13 +391,100 @@ function fmtSize(bytes) {
     return (bytes / 1073741824).toFixed(1) + ' ГБ';
 }
 
-function showAddDialog() { document.getElementById('addDialog').classList.add('show'); }
-function hideAddDialog() { document.getElementById('addDialog').classList.remove('show'); }
+var _browsePath = '/';
+var _selectedPath = '';
+
+function showAddDialog() {
+    var existing = document.getElementById('addDialog');
+    if (existing) existing.remove();
+
+    var overlay = document.createElement('div');
+    overlay.id = 'addDialog';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);z-index:1002;display:flex;justify-content:center;align-items:center;';
+    overlay.onclick = function() { overlay.remove(); };
+
+    var box = document.createElement('div');
+    box.style.cssText = 'background:#1c2128;border:2px solid #58a6ff;border-radius:8px;padding:20px;width:480px;max-width:90vw;color:#c9d1d9;font-size:13px;';
+    box.onclick = function(e) { e.stopPropagation(); };
+
+    box.innerHTML = '<h3 style="color:#58a6ff;font-size:16px;margin:0 0 12px">Добавить источник</h3>' +
+        '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">' +
+            '<button id="browseUpBtn" style="background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:4px;cursor:pointer;font-size:14px;padding:4px 8px">⬆</button>' +
+            '<span id="browseCwd" style="color:#8b949e;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">/</span>' +
+        '</div>' +
+        '<div id="browseList" style="max-height:240px;overflow-y:auto;border:1px solid #30363d;border-radius:4px;background:#0d1117;margin-bottom:10px"></div>' +
+        '<label style="display:block;color:#8b949e;font-size:11px;margin-bottom:3px">Псевдоним (необязательно)</label>' +
+        '<input type="text" id="newRootAlias" placeholder="Фото" style="width:100%;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:4px;padding:6px 8px;font-family:monospace;font-size:12px;box-sizing:border-box">' +
+        '<div style="margin-top:14px;display:flex;gap:8px">' +
+            '<button id="addRootBtn" style="padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:12px;background:#238636;color:#fff">Добавить и сканировать</button>' +
+            '<button id="cancelRootBtn" style="padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:12px;background:#21262d;color:#c9d1d9">Отмена</button>' +
+        '</div>';
+
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    _browsePath = '/';
+    _selectedPath = '';
+    document.getElementById('newRootAlias').value = '';
+    browseDirs('/');
+
+    document.getElementById('browseUpBtn').onclick = browseUp;
+    document.getElementById('addRootBtn').onclick = addRoot;
+    document.getElementById('cancelRootBtn').onclick = function() { overlay.remove(); };
+}
+
+function hideAddDialog() {
+    var el = document.getElementById('addDialog');
+    if (el) el.remove();
+}
+
+function browseDirs(path) {
+    _browsePath = path;
+    document.getElementById('browseCwd').textContent = path || '/';
+    fetch(API + '/catalog/browse?path=' + encodeURIComponent(path)).then(function(r) { return r.json(); }).then(function(data) {
+        var list = document.getElementById('browseList');
+        list.innerHTML = '';
+        var dirs = data.dirs || [];
+        if (!dirs.length) {
+            list.innerHTML = '<div style="padding:10px;color:#484f58;font-size:11px;">Папок нет</div>';
+        }
+        for (var i = 0; i < dirs.length; i++) {
+            var d = dirs[i];
+            var item = document.createElement('div');
+            item.className = 'ad-dir-item';
+            if (d.path === _selectedPath) item.classList.add('selected');
+            item.setAttribute('data-path', d.path);
+            item.innerHTML = '<span class="di-icon">📁</span>' + esc(d.name);
+            item.onclick = (function(dp) { return function() {
+                _selectedPath = dp;
+                var items = document.querySelectorAll('.ad-dir-item');
+                for (var j = 0; j < items.length; j++) items[j].classList.remove('selected');
+                this.classList.add('selected');
+                browseDirs(dp);
+            }; })(d.path);
+            list.appendChild(item);
+        }
+    });
+}
+
+function browseUp() {
+    var parts = _browsePath.replace(/\/+$/, '').split('/');
+    parts.pop();
+    var parent = parts.join('/') || '/';
+    _selectedPath = parent;
+    browseDirs(parent);
+}
 
 function addRoot() {
-    var path = document.getElementById('newRootPath').value.trim();
+    var path = _selectedPath || _browsePath;
     var alias = document.getElementById('newRootAlias').value.trim();
-    if (!path) return;
+    if (!path || path === '/') {
+        alert('Выберите папку');
+        return;
+    }
+    var addBtn = document.getElementById('addRootBtn');
+    addBtn.textContent = 'Добавление...';
+    addBtn.disabled = true;
     fetch(API + '/catalog/add_root', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -397,10 +493,16 @@ function addRoot() {
         if (res.ok) {
             fetch(API + '/catalog/scan/' + res.root_id, { method: 'POST' });
             hideAddDialog();
-loadRoots();
+            loadRoots();
         } else {
             alert('Ошибка: ' + (res.error || 'неизвестно'));
+            addBtn.textContent = 'Добавить и сканировать';
+            addBtn.disabled = false;
         }
+    }).catch(function(e) {
+        alert('Ошибка: ' + e.message);
+        addBtn.textContent = 'Добавить и сканировать';
+        addBtn.disabled = false;
     });
 }
 
@@ -502,9 +604,13 @@ function loadRoots() {
             var r = roots[i];
             var total = r.file_count || 0;
             var pct = total > 0 ? Math.round(r.described / total * 100) : 0;
-            html += '<div class="root-menu-item" onclick="selectRoot(\'' + r.root_id + '\',\'' + esc(r.alias) + '\')" oncontextmenu="event.preventDefault();deleteRoot(\'' + r.root_id + '\',\'' + esc(r.alias) + '\')">';
+            var en = r.enabled !== false && r.enabled !== 0;
+            html += '<div class="root-menu-item' + (en ? '' : ' disabled') + '" onclick="' + (en ? "selectRoot('" + r.root_id + "','" + esc(r.alias) + "')" : '') + '" oncontextmenu="event.preventDefault();deleteRoot(\'' + r.root_id + '\',\'' + esc(r.alias) + '\')">';
+            html += '<input type="checkbox" class="rm-check" ' + (en ? 'checked' : '') + ' onclick="event.stopPropagation();toggleRoot(\'' + r.root_id + '\')" title="Вкл/Выкл индексацию">';
+            html += '<div class="rm-info">';
             html += '<div class="rm-alias">' + esc(r.alias) + '</div>';
             html += '<div class="rm-path">' + esc(r.root_path) + '</div>';
+            html += '</div>';
             html += '</div>';
             html += '<div class="t-children" id="rtree_' + r.root_id + '"></div>';
         }
@@ -515,6 +621,12 @@ function loadRoots() {
         initCatalog();
     }).catch(function() {
         document.getElementById('sidebarTree').innerHTML = '<div class="loading">Ошибка</div>';
+    });
+}
+
+function toggleRoot(rootId) {
+    fetch(API + '/catalog/root/' + rootId + '/toggle', { method: 'POST' }).then(function(r) { return r.json(); }).then(function(res) {
+        if (res.ok) loadRoots();
     });
 }
 
@@ -658,7 +770,12 @@ function showPhotoDetail(idx) {
     document.getElementById('detailPanelTitle').textContent = 'Фото';
     var body = document.getElementById('detailPanelBody');
     var fname = (f.rel_path || '').split('/').pop();
-    var thumbUrl = f.rel_path ? (API + '/photos/thumbnail?path=' + encodeURIComponent(f.rel_path) + '&size=md') : '';
+    var thumbUrl = '';
+    if (f.abs_path) {
+        thumbUrl = API + '/photos/thumbnail?abs_path=' + encodeURIComponent(f.abs_path) + '&size=md';
+    } else if (f.rel_path) {
+        thumbUrl = API + '/photos/thumbnail?path=' + encodeURIComponent(f.rel_path) + '&size=md';
+    }
     var html = '';
     if (thumbUrl) html += '<img src="' + thumbUrl + '" style="width:100%;border-radius:6px;margin-bottom:12px" loading="lazy" onerror="this.style.display=\'none\'">';
     html += '<div class="dp-label">Имя файла</div><div class="dp-value">' + esc(fname) + '</div>';
@@ -718,7 +835,12 @@ function renderContent(tree) {
         for (var i = 0; i < tree.files.length; i++) {
             var f = tree.files[i];
             var fname = (f.rel_path || '').split('/').pop();
-            var thumbUrl = f.rel_path ? (API + '/photos/thumbnail?path=' + encodeURIComponent(f.rel_path) + '&size=sm') : '';
+            var thumbUrl = '';
+            if (f.abs_path) {
+                thumbUrl = API + '/photos/thumbnail?abs_path=' + encodeURIComponent(f.abs_path) + '&size=sm';
+            } else if (f.rel_path) {
+                thumbUrl = API + '/photos/thumbnail?path=' + encodeURIComponent(f.rel_path) + '&size=sm';
+            }
 
             html += '<div class="photo-card" onclick="showPhotoDetail(' + i + ')" ondblclick="openPhoto(' + i + ')">';
             html += '<img src="' + thumbUrl + '" loading="lazy" onerror="this.style.display=\'none\'">';

@@ -277,12 +277,19 @@ def main():
     db = DatabaseManager()
     set_flag()
     try:
-        return _main(db, args)
+        from mqtt_client import create_worker_mqtt
+        mq = create_worker_mqtt("exif")
+    except Exception:
+        mq = None
+    try:
+        return _main(db, args, mq)
     finally:
         clear_flag()
+        if mq:
+            mq.shutdown()
 
 
-def _main(db, args):
+def _main(db, args, mq=None):
 
     if args.recheck:
         need_exif = db.get_all_photos()
@@ -290,7 +297,7 @@ def _main(db, args):
         rows = db.sqlite.execute(
             "SELECT photo_id, path FROM photos WHERE exif_checked = 0 ORDER BY path"
         ).fetchall()
-        need_exif = [{"photo_id": r[0], "path": r[1]} for r in rows]
+        need_exif = [{"photo_id": r[0], "path": r[1]} for r in rows if db.is_path_canonical(r[1])]
 
     log(f"Found {len(need_exif)} photos to check for EXIF (threads={EXIF_READ_THREADS})")
 

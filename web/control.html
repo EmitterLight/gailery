@@ -49,10 +49,16 @@
         .maint-sbox { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 8px 10px; }
         .maint-sbox .sv { font-size: 16px; font-weight: bold; color: #58a6ff; }
         .maint-sbox .sl { font-size: 10px; color: #6e7681; }
+        .maint-sbox.legacy .sv { color: #f85149; }
+        .maint-sbox.total .sv { color: #d29922; }
+        .maint-sbox.total { border-color: #d29922; }
         .light-theme .maint-sec { background: #f6f8fa; border-color: #d0d7de; }
         .light-theme .maint-sec h3 { color: #9a6700; }
         .light-theme .maint-sbox { background: #fff; border-color: #d0d7de; }
         .light-theme .maint-sbox .sv { color: #0969da; }
+        .light-theme .maint-sbox.legacy .sv { color: #cf222e; }
+        .light-theme .maint-sbox.total .sv { color: #9a6700; }
+        .light-theme .maint-sbox.total { border-color: #9a6700; }
         .light-theme .pipeline-banner.running .pb-pipeline-time { color: #1f883d; }
         .light-theme .pb-status.s-idle { background: #eaeef2; color: #57606a; }
         .light-theme .pb-status.s-run { background: rgba(31,136,61,.15); color: #1f883d; border-color: #1f883d; }
@@ -186,6 +192,13 @@
         .pb-ctrl { display: flex; gap: 8px; align-items: center; margin-top: 12px; padding-top: 12px; border-top: 1px solid #21262d; }
         .pb-ctrl label { font-size: 11px; color: #8b949e; }
         .pb-ctrl input { width: 70px; background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; padding: 4px 8px; font-family: monospace; font-size: 12px; }
+        .ctrl-select { width: auto; background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; padding: 4px 8px; font-family: monospace; font-size: 12px; }
+        .src-section { margin-top:12px; border-top:1px solid #21262d; padding-top:10px; }
+        .src-title { color:#8b949e; font-size:11px; margin-bottom:6px; }
+        .src-row { display:flex; gap:12px; margin-bottom:4px; font-size:11px; }
+        .src-alias { color:#58a6ff; min-width:80px; }
+        .src-counts { color:#c9d1d9; }
+        .src-details { color:#8b949e; }
         .btn { padding: 6px 16px; border: none; border-radius: 4px; cursor: pointer; font-family: monospace; font-size: 12px; font-weight: bold; }
         .btn-go { background: #238636; color: #fff; }
         .btn-go:hover { background: #2ea043; }
@@ -195,6 +208,41 @@
         .btn-stop:disabled { background: #21262d; color: #484f58; cursor: default; }
 
         .tasks { margin-bottom: 20px; }
+
+        .workers-panel { margin: 0; padding: 16px 20px; background: #161b22; border-bottom: 1px solid #30363d; }
+        .workers-panel h3 { color: #58a6ff; font-size: 14px; margin-bottom: 12px; }
+        .workers-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
+        .wcard { background: #0d1117; border: 1px solid #21262d; border-radius: 6px; padding: 10px; font-size: 12px; }
+        .wcard-name { font-weight: bold; color: #c9d1d9; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; }
+        .wcard-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+        .wcard-dot.alive { background: #3fb950; box-shadow: 0 0 6px #3fb950; }
+        .wcard-dot.dead { background: #f85149; }
+        .wcard-dot.idle { background: #484f58; }
+        .wcard-dot.done { background: #58a6ff; }
+        .wcard-row { color: #8b949e; font-size: 11px; margin-top: 2px; }
+        .wcard-row b { color: #c9d1d9; }
+        .wcard-gpu { color: #d29922; font-weight: bold; }
+        .crash-log { margin-top:6px; max-height:200px; overflow-y:auto; font-size:11px; color:#f0883e; font-family:monospace; padding:8px; background:#0d1117; border:1px solid #21262d; border-radius:4px; }
+        .ctrl-select { background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:4px 8px; font-size:12px; font-family:monospace; }
+        .light-theme .workers-panel { background: #f6f8fa; border-color: #d0d7de; }
+        .light-theme .workers-panel h3 { color: #0969da; }
+        .light-theme .wcard { background: #ffffff; border-color: #d0d7de; }
+        .light-theme .wcard-name { color: #24292f; }
+        .light-theme .wcard-dot.alive { background: #1f883d; box-shadow: 0 0 4px #1f883d; }
+        .light-theme .wcard-dot.dead { background: #cf222e; }
+        .light-theme .wcard-dot.idle { background: #afb8c1; }
+        .light-theme .wcard-dot.done { background: #0969da; }
+        .light-theme .wcard-row { color: #57606a; }
+        .light-theme .wcard-row b { color: #24292f; }
+        .light-theme .wcard-gpu { color: #9a6700; }
+        .light-theme .crash-log { background:#ffffff; border-color:#d0d7de; color:#9a6700; }
+        .light-theme .ctrl-select { background:#ffffff; color:#24292f; border-color:#d0d7de; }
+        .light-theme .ctrl-select:focus { border-color:#0969da; }
+        .light-theme .src-section { border-color:#d0d7de; }
+        .light-theme .src-title { color:#57606a; }
+        .light-theme .src-alias { color:#0969da; }
+        .light-theme .src-counts { color:#24292f; }
+        .light-theme .src-details { color:#57606a; }
         .task { background: #161b22; border: 1px solid #21262d; border-radius: 8px; margin-bottom: 8px; overflow: hidden; }
         .task-head { display: grid; grid-template-columns: 36px 1fr auto auto; align-items: center; padding: 10px 14px; gap: 10px; cursor: pointer; }
         .task-icon { font-size: 18px; text-align: center; }
@@ -322,7 +370,18 @@
         </div>
         <div class="mm-foot"><button class="mm-theme" onclick="toggleTheme();updateMmTheme()"><span class="mm-theme-ico" id="mmThemeIco">☀</span><span id="mmThemeLbl">Дневная тема</span></button></div>
     </div>
-    <div class="main">
+     <div class="workers-panel" id="workersPanel">
+            <h3>&#128225; Воркеры MQTT <span id="watchdogInfo" style="color:#6e7681;font-weight:normal;font-size:11px"></span></h3>
+            <div id="workersGrid" class="workers-grid"></div>
+            <div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <span id="watchdogStatus" style="font-size:12px"></span>
+                <button class="btn btn-go" style="font-size:11px;padding:3px 10px" id="btnCrashLog" onclick="toggleCrashLog()">Журнал срабатываний</button>
+                <span id="crashCount" style="font-size:11px;color:#f0883e"></span>
+            </div>
+             <div id="crashLog" class="crash-log" style="display:none"></div>
+        </div>
+
+     <div class="main">
         <div class="summary" id="summary"></div>
 
         <div class="pipeline-banner idle" id="pipelineBanner">
@@ -337,6 +396,8 @@
             <div class="pb-ctrl">
                 <label>Лимит:</label>
                 <input type="number" id="chainLimit" value="100" min="0">
+                <label style="margin-left:8px">Источник:</label>
+                <select id="chainRoot" class="ctrl-select" onchange="loadStatus()"></select>
                 <button class="btn btn-go" id="btnStart" onclick="runChain()">Запустить цепочку</button>
                 <button class="btn btn-stop" id="btnStop" onclick="stopAll()" disabled>Остановить всё</button>
                 <span style="color:#6e7681;font-size:11px" id="chainInfo"></span>
@@ -364,7 +425,25 @@
                 <button class="btn btn-go" onclick="maintDedup()">Удалить дубли эмбеддингов</button>
                 <span class="maint-info">LanceDB: убрать повторные записи</span>
             </div>
-            <div class="backup-status" id="maintStatus"></div>
+        </div>
+
+        <div class="maint-sec">
+            <h3>&#128279; Контроль хешей файлов</h3>
+            <div id="hashStats" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px"></div>
+            <div class="maint-row">
+                <button class="btn btn-go" id="btnHashStart" onclick="hashBackfill()">Запустить расчёт хешей</button>
+                <button class="btn btn-stop" id="btnHashStop" onclick="hashBackfillStop()" disabled>Остановить</button>
+                <span class="maint-info">xxHash128 для всех файлов без хеша</span>
+            </div>
+            <div class="maint-row">
+                <button class="btn btn-go" onclick="hashFindDuplicates()">Найти дубликаты файлов</button>
+                <span class="maint-info">Бит-в-бит совпадения по content_hash</span>
+            </div>
+            <div class="backup-status" id="hashStatus"></div>
+            <div id="dupList" style="max-height:300px;overflow:auto;margin-top:8px;font-size:12px"></div>
+        </div>
+
+        <div class="backup-status" id="maintStatus"></div>
         </div>
 
         <div class="tasks" id="tasks"></div>
@@ -439,13 +518,26 @@ function fmtPct(v){
 
 function renderSummary(){
     if(!st.photos_total) return;
+    var h = '';
     var ct = st.catalog_total || 0;
-    var h='';
     h+='<div class="sbox"><div class="sv">'+(st.catalog_ingested||0)+'</div><div class="sl">Внесено из '+ct+'</div></div>';
     h+='<div class="sbox"><div class="sv">'+(st.catalog_described||0)+'</div><div class="sl">Описано из '+(st.catalog_ingested||0)+'</div></div>';
     h+='<div class="sbox"><div class="sv">'+(st.catalog_faces_done||0)+'</div><div class="sl">Лица из '+(st.faces_flagged_in_db||0)+'</div></div>';
     h+='<div class="sbox"><div class="sv">'+(st.catalog_exif_done||0)+'</div><div class="sl">EXIF из '+(st.catalog_ingested||0)+'</div></div>';
     h+='<div class="sbox"><div class="sv">'+(st.photos_embedded||0)+'</div><div class="sl">Индекс из '+(st.photos_total||0)+'</div></div>';
+    if (st.per_root && st.per_root.length > 1) {
+        h+='<div class="src-section">';
+        h+='<div class="src-title">По источникам:</div>';
+        for (var i = 0; i < st.per_root.length; i++) {
+            var r = st.per_root[i];
+            h+='<div class="src-row">';
+            h+='<span class="src-alias">'+esc(r.alias)+'</span>';
+            h+='<span class="src-counts">'+r.ingested+' / '+r.catalog_total+'</span>';
+            h+='<span class="src-details">D:'+r.described+' E:'+r.exif_done+' I:'+r.embedded+'</span>';
+            h+='</div>';
+        }
+        h+='</div>';
+    }
     document.getElementById('summary').innerHTML = h;
 }
 
@@ -670,6 +762,20 @@ function getParam(key){
     return el ? el.value : '';
 }
 
+function loadRoots(){
+    fetch(API+'/catalog/roots').then(function(r){return r.json()}).then(function(roots){
+        var sel = document.getElementById('chainRoot');
+        if (!sel) return;
+        sel.innerHTML = '<option value="">Все включённые</option>';
+        for (var i = 0; i < roots.length; i++) {
+            var r = roots[i];
+            if (r.enabled) {
+                sel.innerHTML += '<option value="' + r.root_id + '">' + esc(r.alias) + '</option>';
+            }
+        }
+    });
+}
+
 function runStep(step){
     var params = {step: step};
     TASKS.forEach(function(t){
@@ -702,7 +808,9 @@ function stopStep(step){
 
 function runChain(){
     var lim = document.getElementById('chainLimit').value;
+    var rootId = document.getElementById('chainRoot').value;
     var params = {step:'chain', ingest_limit:lim, desc_limit:lim, batch_size:getParam('batch_size')||10, exif:getParam('exif')||'1'};
+    if (rootId) params.root_id = rootId;
     fetch(API+'/../api/control/start',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
@@ -829,9 +937,36 @@ function fmtBytes(b){
 function loadMaintStats(){
     fetch(API+'/maintenance/stats').then(function(r){return r.json()}).then(function(d){
         var h = '';
-        h += '<div class="maint-sbox"><div class="sv">'+fmtBytes(d.sqlite_size)+'</div><div class="sl">SQLite (gallery.db)</div></div>';
-        h += '<div class="maint-sbox"><div class="sv">'+fmtBytes(d.embeddings_size)+'</div><div class="sl">Эмбеддинги (LanceDB)</div></div>';
-        h += '<div class="maint-sbox"><div class="sv">'+fmtBytes(d.data_total)+'</div><div class="sl">Всего данных</div></div>';
+        // SQLite
+        var sqliteMain = d['gallery.db'] || 0;
+        var sqliteWAL = d['gallery.db-wal'] || 0;
+        h += '<div class="maint-sbox"><div class="sv">'+fmtBytes(sqliteMain)+'</div><div class="sl">gallery.db</div></div>';
+        if(sqliteWAL > 1048576) h += '<div class="maint-sbox"><div class="sv">'+fmtBytes(sqliteWAL)+'</div><div class="sl">gallery.db-wal</div></div>';
+        // Legacy DB
+        var legacyDb = d['gailray.db'] || 0;
+        var legacyWAL = d['gailray.db-wal'] || 0;
+        if(legacyDb > 0) h += '<div class="maint-sbox legacy"><div class="sv">'+fmtBytes(legacyDb + legacyWAL)+'</div><div class="sl">gailray.db (устарела)</div></div>';
+        // LanceDB tables
+        var lanceNames = {
+            'photo_embeddings':'Эмбеддинги',
+            'face_vectors':'Векторы лиц',
+            'faces':'Лица (legacy)',
+            'personas':'Персоны',
+            'photos':'Фото (legacy)',
+            'catalog_files':'Каталог файлов',
+            'catalog_roots':'Каталог корней'
+        };
+        var lt = d.lance_tables || {};
+        var lanceOrder = ['photo_embeddings','face_vectors','personas','faces','photos','catalog_files','catalog_roots'];
+        for(var i=0;i<lanceOrder.length;i++){
+            var k = lanceOrder[i];
+            if(lt[k] !== undefined && lt[k] > 0){
+                var cls = (k === 'faces' || k === 'photos') ? ' legacy' : '';
+                h += '<div class="maint-sbox'+cls+'"><div class="sv">'+fmtBytes(lt[k])+'</div><div class="sl">'+(lanceNames[k]||k)+'</div></div>';
+            }
+        }
+        // Total
+        h += '<div class="maint-sbox total"><div class="sv">'+fmtBytes(d.data_total)+'</div><div class="sl">Всего данных</div></div>';
         document.getElementById('maintSizes').innerHTML = h;
     }).catch(function(){});
 }
@@ -866,9 +1001,235 @@ function maintDedup(){
     });
 }
 
-loadStatus(); loadLog(); loadMaintStats();
-setInterval(loadStatus, 3000);
-setInterval(loadLog, 5000);
+var hashWorkerPid = 0;
+
+function loadHashStats(){
+    fetch(API+'/catalog/hash_status').then(function(r){return r.json()}).then(function(d){
+        var total = d.total_files || 0;
+        var withH = d.with_hash || 0;
+        var withoutH = d.without_hash || 0;
+        var zeroByte = d.zero_byte || 0;
+        var pendingH = d.pending_hash || 0;
+        var dupGroups = d.duplicate_groups || 0;
+        var dupFiles = d.duplicate_files || 0;
+        var pct = total > 0 ? Math.round(withH / total * 100) : 0;
+        var h = '';
+        h += '<div class="maint-sbox"><div class="sv">'+withH+' / '+total+'</div><div class="sl">С хешем ('+pct+'%)</div></div>';
+        if(pendingH > 0){
+            h += '<div class="maint-sbox"><div class="sv" style="color:#f0883e">'+pendingH+'</div><div class="sl">Ждут хеширования</div></div>';
+        }
+        if(zeroByte > 0){
+            h += '<div class="maint-sbox" style="border-color:#f85149"><div class="sv" style="color:#f85149">'+zeroByte+'</div><div class="sl">Повреждены (0 байт)</div></div>';
+        }
+        if(dupGroups > 0){
+            h += '<div class="maint-sbox" style="border-color:#f85149"><div class="sv" style="color:#f85149">'+dupGroups+'</div><div class="sl">Групп дублей ('+dupFiles+' файлов)</div></div>';
+        }
+        document.getElementById('hashStats').innerHTML = h;
+        if(withoutH === 0){
+            document.getElementById('btnHashStart').disabled = true;
+        }
+    }).catch(function(){});
+    fetch(API+'/catalog/hash_backfill_status').then(function(r){return r.json()}).then(function(d){
+        if(d.running && d.pids && d.pids.length > 0){
+            hashWorkerPid = d.pids[0];
+            document.getElementById('btnHashStart').disabled = true;
+            document.getElementById('btnHashStop').disabled = false;
+            var el = document.getElementById('hashStatus');
+            el.className = 'backup-status ok';
+            el.textContent = 'Воркер работает (PID '+hashWorkerPid+')';
+            pollHashWorker();
+        }
+    }).catch(function(){});
+}
+
+function hashBackfill(){
+    var el = document.getElementById('hashStatus');
+    el.className = 'backup-status'; el.textContent = 'Запуск расчёта хешей...';
+    fetch(API+'/catalog/hash_backfill',{method:'POST'}).then(function(r){
+        if(!r.ok) return r.json().then(function(d){ throw new Error(d.detail); });
+        return r.json();
+    }).then(function(d){
+        hashWorkerPid = d.pid;
+        el.className = 'backup-status ok';
+        el.textContent = 'Воркер запущен (PID '+d.pid+')';
+        document.getElementById('btnHashStart').disabled = true;
+        document.getElementById('btnHashStop').disabled = false;
+        pollHashWorker();
+    }).catch(function(e){
+        el.className = 'backup-status err'; el.textContent = 'Ошибка: '+e.message;
+    });
+}
+
+function hashBackfillStop(){
+    if(!hashWorkerPid) return;
+    var el = document.getElementById('hashStatus');
+    fetch(API+'/catalog/hash_backfill_stop',{method:'POST'}).then(function(r){
+        if(!r.ok) return r.json().then(function(d){ throw new Error(d.detail); });
+        return r.json();
+    }).then(function(d){
+        el.className = 'backup-status ok';
+        el.textContent = 'Воркер остановлен (killed PIDs: '+(d.killed||[]).join(', ')+')';
+        hashWorkerPid = 0;
+        document.getElementById('btnHashStart').disabled = false;
+        document.getElementById('btnHashStop').disabled = true;
+        loadHashStats();
+    }).catch(function(e){
+        el.className = 'backup-status err'; el.textContent = 'Ошибка: '+e.message;
+    });
+}
+
+function pollHashWorker(){
+    fetch(API+'/catalog/hash_backfill_status').then(function(r){return r.json()}).then(function(d){
+        if(!d.running){
+            var el = document.getElementById('hashStatus');
+            el.className = 'backup-status ok';
+            el.textContent = 'Расчёт хешей завершён';
+            hashWorkerPid = 0;
+            document.getElementById('btnHashStart').disabled = false;
+            document.getElementById('btnHashStop').disabled = true;
+            loadHashStats();
+            return;
+        }
+        if(d.pids && d.pids.length > 0) hashWorkerPid = d.pids[0];
+        loadHashStats();
+        setTimeout(pollHashWorker, 5000);
+    }).catch(function(){
+        setTimeout(pollHashWorker, 10000);
+    });
+}
+
+function hashFindDuplicates(){
+    var el = document.getElementById('hashStatus');
+    var dl = document.getElementById('dupList');
+    el.className = 'backup-status'; el.textContent = 'Поиск дубликатов...';
+    dl.innerHTML = '';
+    fetch(API+'/catalog/duplicates?limit=100').then(function(r){
+        if(!r.ok) return r.json().then(function(d){ throw new Error(d.detail); });
+        return r.json();
+    }).then(function(d){
+        var groups = d.duplicates || [];
+        if(groups.length === 0){
+            el.className = 'backup-status ok';
+            el.textContent = 'Дубликатов не найдено';
+            return;
+        }
+        el.className = 'backup-status ok';
+        el.textContent = 'Найдено '+groups.length+' групп дубликатов';
+        var h = '';
+        for(var i=0;i<groups.length;i++){
+            var g = groups[i];
+            h += '<div style="margin-bottom:8px;padding:6px;background:#21262d;border:1px solid #30363d;border-radius:4px">';
+            h += '<b style="color:#f0883e">'+g.count+' копий</b> <span style="color:#6e7681">'+g.hash+'</span>';
+            for(var j=0;j<g.paths.length;j++){
+                var p = g.paths[j].replace(/\\/g,'/');
+                var short = p.split('/').slice(-2).join('/');
+                h += '<div style="padding-left:12px;color:#8b949e;word-break:break-all" title="'+p+'">'+short+'</div>';
+            }
+            h += '</div>';
+        }
+        dl.innerHTML = h;
+        loadHashStats();
+    }).catch(function(e){
+        el.className = 'backup-status err'; el.textContent = 'Ошибка: '+e.message;
+    });
+}
+
+var WORKER_NAMES = ['ingest','describe','faces','exif','embed','pipeline','thumbnails','scan_catalog','enrich'];
+var WORKER_LABELS = {ingest:'Наполнение',describe:'Описание',faces:'Лица',exif:'EXIF',embed:'Индексация',pipeline:'Пайплайн',thumbnails:'Превью',scan_catalog:'Каталог',enrich:'Обогащение'};
+
+function loadWorkers(){
+    fetch(API+'/../api/mqtt/workers').then(function(r){return r.json()}).then(function(d){
+        var w = d.workers || {};
+        var anyAlive = false, anyDead = false;
+        var h = '';
+        for(var i=0;i<WORKER_NAMES.length;i++){
+            var name = WORKER_NAMES[i];
+            var s = w[name] || {status:'idle',alive:false,gpu_held:false};
+            var dotCls = s.alive ? 'alive' : (s.status==='dead' ? 'dead' : (s.status==='done' ? 'done' : 'idle'));
+            var label = WORKER_LABELS[name] || name;
+            if(s.alive) anyAlive = true;
+            if(s.status==='dead') anyDead = true;
+            h += '<div class="wcard">';
+            h += '<div class="wcard-name"><span>'+esc(label)+'</span><span class="wcard-dot '+dotCls+'" title="'+esc(s.status)+'"></span></div>';
+            h += '<div class="wcard-row">Статус: <b>'+esc(s.status||'idle')+'</b></div>';
+            if(s.pid) h += '<div class="wcard-row">PID: <b>'+s.pid+'</b></div>';
+            if(s.progress) h += '<div class="wcard-row">'+s.progress.done+'/'+s.progress.total+' ('+s.progress.pct.toFixed(1)+'%)</div>';
+            if(s.gpu_held) h += '<div class="wcard-row wcard-gpu">GPU</div>';
+            h += '</div>';
+        }
+        document.getElementById('workersGrid').innerHTML = h;
+        window._lastWorkers = w;
+        var info = document.getElementById('watchdogInfo');
+        if(anyDead) info.textContent = '⚠ есть падения — смотри лог ниже';
+        else if(anyAlive) info.textContent = '✓ процессы работают';
+        else info.textContent = '';
+    }).catch(function(){});
+}
+
+var _crashLogVisible = false;
+function toggleCrashLog(){
+    _crashLogVisible = !_crashLogVisible;
+    var el = document.getElementById('crashLog');
+    var btn = document.getElementById('btnCrashLog');
+    if(_crashLogVisible){
+        el.style.display = 'block';
+        btn.textContent = 'Скрыть журнал';
+        loadCrashes();
+    } else {
+        el.style.display = 'none';
+        btn.textContent = 'Журнал срабатываний';
+    }
+}
+
+function loadCrashes(){
+    fetch(API+'/../api/watchdog/crashes').then(function(r){return r.json()}).then(function(d){
+        var crashes = d.crashes || [];
+        var countEl = document.getElementById('crashCount');
+        var statusEl = document.getElementById('watchdogStatus');
+        if(crashes.length > 0){
+            countEl.textContent = crashes.length + ' срабатываний';
+        } else {
+            countEl.textContent = '';
+        }
+        try {
+            var resp = fetch(API+'/../api/mqtt/workers').then(function(){});
+        } catch(e){}
+        var alive = false;
+        try { for(var n in (window._lastWorkers||{})) { if(window._lastWorkers[n]&&window._lastWorkers[n].status==='running') alive=true; } } catch(e){}
+        if(!document.getElementById('watchdogDot')){
+            var dot = document.createElement('span');
+            dot.id = 'watchdogDot';
+            dot.className = 'wcard-dot';
+            dot.style.marginRight = '4px';
+            statusEl.parentNode.insertBefore(dot, statusEl);
+        }
+        var dotEl = document.getElementById('watchdogDot');
+        var wdRunning = crashes.length > 0 || true;
+        dotEl.className = 'wcard-dot ' + (wdRunning ? 'alive' : 'idle');
+        statusEl.innerHTML = '<span style="color:#8b949e">Сторож: </span><b style="color:' + (crashes.length > 0 ? '#f0883e' : '#3fb950') + '">' + (crashes.length > 0 ? crashes.length + ' инцидентов' : 'норма') + '</b>';
+        if(_crashLogVisible){
+            var el = document.getElementById('crashLog');
+            if(crashes.length === 0){
+                el.innerHTML = '<span style="color:#6e7681">Срабатываний нет — все процессы работают штатно</span>';
+            } else {
+                el.innerHTML = crashes.map(function(c){
+                    var t = esc(c);
+                    if(t.indexOf('LWT DEAD')>=0) return '<span style="color:#f85149">'+t+'</span>';
+                    if(t.indexOf('RESTART')>=0) return '<span style="color:#d29922">'+t+'</span>';
+                    if(t.indexOf('RECOVERY')>=0) return '<span style="color:#3fb950">'+t+'</span>';
+                    if(t.indexOf('STALE')>=0) return '<span style="color:#f0883e">'+t+'</span>';
+                    return t;
+                }).join('<br>');
+            }
+        }
+    }).catch(function(){});
+}
+
+ loadStatus(); loadLog(); loadMaintStats(); loadRoots(); loadHashStats(); loadWorkers(); loadCrashes();
+ setInterval(loadStatus, 3000);
+ setInterval(loadLog, 5000);
+ setInterval(loadWorkers, 5000);
+ setInterval(loadCrashes, 15000);
 setInterval(function(){
     for(var i=0; i<STEPS.length; i++){
         var ts = taskState[STEPS[i].id];

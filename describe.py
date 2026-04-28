@@ -50,7 +50,10 @@ def clear_flag():
 def count_undescribed():
     from database import DatabaseManager
     db = DatabaseManager()
-    return db.count_photos("description IS NULL OR description = ''")
+    return db.sqlite.execute(
+        "SELECT COUNT(*) FROM photos p JOIN catalog_files cf ON cf.abs_path = p.path "
+        "WHERE (p.description IS NULL OR p.description = '') AND p.deleted = 0 AND cf.is_canonical = 1"
+    ).fetchone()[0]
 
 
 def main():
@@ -58,6 +61,7 @@ def main():
     parser.add_argument("--limit", type=int, default=60, help="Max photos to describe (0=all)")
     parser.add_argument("--batch-size", type=int, default=6, help="VLM batch size (parallel slots)")
     parser.add_argument("--all", action="store_true", help="Describe all undescribed photos")
+    parser.add_argument("--dir", type=str, default="", help="Only describe photos under this directory")
     args = parser.parse_args()
 
     count = count_undescribed()
@@ -68,14 +72,21 @@ def main():
     log(f"Found {count} undescribed photos")
     set_flag()
 
+    try:
+        from mqtt_client import create_worker_mqtt
+        mq = create_worker_mqtt("describe")
+    except Exception:
+        mq = None
+
     limit = 0 if args.all else args.limit
     t0 = time.time()
 
     cmd = [
         sys.executable, str(Path(__file__).parent / "vision_describe.py"),
-        str(PHOTO_SHARE_PATH),
         "--batch-size", str(args.batch_size),
     ]
+    if args.dir:
+        cmd.append(args.dir)
     if limit > 0:
         cmd += ["--limit", str(limit)]
 
@@ -98,6 +109,8 @@ def main():
     described = count - remaining
     log(f"Done: {described} described in {elapsed:.0f}s ({described/max(elapsed,1):.1f}/s)")
     clear_flag()
+    if mq:
+        mq.shutdown()
     return result.returncode
 
 

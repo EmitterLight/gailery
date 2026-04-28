@@ -14,6 +14,11 @@ VENV_PYTHON = os.environ.get("GALLERY_VENV_PYTHON", str(PROJECT_ROOT / "venv" / 
 LOG_FILE = LOGS_DIR / "pipeline.log"
 FLAG_DIR = DATA_DIR / "pipeline_flags"
 
+MQTT_HOST = os.environ.get("GALLERY_MQTT_HOST", "127.0.0.1")
+MQTT_PORT = int(os.environ.get("GALLERY_MQTT_PORT", "1883"))
+MQTT_WS_PORT = int(os.environ.get("GALLERY_MQTT_WS_PORT", "9001"))
+GPU_LOCK_TIMEOUT = int(os.environ.get("GALLERY_GPU_LOCK_TIMEOUT", "120"))
+
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 THUMBNAILS_DIR.mkdir(parents=True, exist_ok=True)
 LOGS_DIR.mkdir(parents=True, exist_ok=True)

@@ -71,6 +71,8 @@ def get_undetected_photos(db, limit=0):
         photo_id = str(Path(path).relative_to(PHOTO_SHARE_PATH)) if path.startswith(str(PHOTO_SHARE_PATH) + "/") else path
         if photo_id in face_photo_ids:
             continue
+        if not db.is_path_canonical(path):
+            continue
         undetected.append(p)
 
     if limit and limit > 0:
@@ -185,9 +187,15 @@ def run_detection(photos):
         import lancedb as _ldb
         _db = _ldb.connect(str(Path(__file__).parent / "data" / "lancedb"))
         _tbl = _db.open_table('face_vectors')
-        _lt = _tbl.to_lance()
-        _lt.optimize.compact_files()
-        _lt.cleanup_old_versions(older_than=0)
+        from datetime import timedelta as _td
+        try:
+            _tbl.optimize(cleanup_older_than=_td(seconds=0))
+        except Exception:
+            try:
+                _tbl.compact_files()
+                _tbl.cleanup_old_versions()
+            except Exception:
+                pass
         import os as _os
         _data_dir = str(Path(__file__).parent / "data" / "lancedb" / "face_vectors.lance" / "data")
         _nfrags = len([f for f in _os.listdir(_data_dir) if f.endswith('.lance')])
@@ -215,18 +223,30 @@ def main():
     db = DatabaseManager()
     set_flag()
     try:
-        return _main(db, args)
+        from mqtt_client import create_worker_mqtt
+        mq = create_worker_mqtt("faces")
+    except Exception:
+        mq = None
+    try:
+        return _main(db, args, mq)
     finally:
         clear_flag()
+        if mq:
+            mq.shutdown()
 
 
-def _main(db, args):
+def _main(db, args, mq=None):
+
+    if mq:
+        mq.publish_gpu_held(True)
 
     photos = get_undetected_photos(db, limit=args.limit)
     if not photos:
         log("No photos need face detection")
         if not args.no_cluster:
             run_clustering()
+        if mq:
+            mq.publish_gpu_held(False)
         return 0
 
     log(f"Found {len(photos)} photos needing face detection")
@@ -235,7 +255,8 @@ def _main(db, args):
     if not args.no_cluster:
         run_clustering()
 
-    clear_flag()
+    if mq:
+        mq.publish_gpu_held(False)
     return 0
 
 

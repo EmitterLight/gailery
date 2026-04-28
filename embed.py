@@ -188,7 +188,7 @@ def get_unembedded_photos_sql(db, limit=0, offset=0):
     rows = cur.execute(sql).fetchall()
     cols = ["photo_id", "path", "description", "date",
             "camera_make", "camera_model", "gps_lat", "gps_lon", "faces_present"]
-    return [dict(zip(cols, r)) for r in rows]
+    return [dict(zip(cols, r)) for r in rows if db.is_path_canonical(r[1])]
 
 
 def main():
@@ -202,12 +202,19 @@ def main():
     db = DatabaseManager()
     set_flag()
     try:
-        return _main(db, args)
+        from mqtt_client import create_worker_mqtt
+        mq = create_worker_mqtt("embed")
+    except Exception:
+        mq = None
+    try:
+        return _main(db, args, mq)
     finally:
         clear_flag()
+        if mq:
+            mq.shutdown()
 
 
-def _main(db, args):
+def _main(db, args, mq=None):
 
     all_faces = db.get_all_faces()
     all_personas = db.get_all_personas()
@@ -239,6 +246,9 @@ def _main(db, args):
     PREFIX = str(PHOTO_SHARE_PATH) + "/"
     tokenizer, model, device = load_model()
 
+    if mq:
+        mq.publish_gpu_held(True)
+
     batch_texts = []
     batch_meta = []
     lance_buffer = []
@@ -251,6 +261,15 @@ def _main(db, args):
     offset = 0
 
     while True:
+        if mq and (mq.stopped() or mq.paused()):
+            if mq.stopped():
+                break
+            if mq.paused():
+                mq.publish_gpu_held(False)
+            mq.wait_while_paused()
+            if not mq.stopped():
+                mq.publish_gpu_held(True)
+            continue
         if stopped():
             break
 
@@ -266,6 +285,13 @@ def _main(db, args):
                 break
 
         for p in chunk:
+            if mq and (mq.stopped() or mq.paused()):
+                if mq.stopped():
+                    break
+                mq.publish_gpu_held(False)
+                mq.wait_while_paused()
+                if not mq.stopped():
+                    mq.publish_gpu_held(True)
             if stopped():
                 break
 
@@ -363,6 +389,15 @@ def _main(db, args):
         log("Vector index created on photo_embeddings")
     except Exception as e:
         log(f"Index creation note: {e}")
+
+    try:
+        db.compact_photo_embeddings()
+        log("Compacted photo_embeddings LanceDB fragments")
+    except Exception as e:
+        log(f"Compact note: {e}")
+
+    if mq:
+        mq.publish_gpu_held(False)
 
     return 0
 

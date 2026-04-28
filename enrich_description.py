@@ -307,6 +307,7 @@ def start_server():
             LLAMA_SERVER_BIN,
             "-m", MODEL_PATH,
             "-ngl", "99",
+            "--no-mmap",
             "-c", "8192",
             "--port", str(LLAMA_PORT),
             "-t", "4",
@@ -343,8 +344,10 @@ def kill_orphan_servers():
             pid = int(pid_str)
             if pid != os.getpid():
                 try:
-                    os.kill(pid, 9)
-                except ProcessLookupError:
+                    cmdline = open(f"/proc/{pid}/cmdline", "rb").read().decode(errors="replace")
+                    if f"--port {LLAMA_PORT}" in cmdline or f"--port\n{LLAMA_PORT}" in cmdline:
+                        os.kill(pid, 9)
+                except (ProcessLookupError, FileNotFoundError):
                     pass
     except Exception:
         pass
@@ -555,12 +558,20 @@ def main():
     from database import DatabaseManager
     db = DatabaseManager()
 
+    try:
+        from mqtt_client import create_worker_mqtt
+        mq = create_worker_mqtt("enrich")
+    except Exception:
+        mq = None
+
     if args.photo:
         result = enrich_photo(db, args.photo)
         if result:
             print(f"RICH: {result}")
         else:
             print("FAILED")
+        if mq:
+            mq.shutdown()
         return
 
     rows = db.sqlite.execute(
@@ -583,6 +594,8 @@ def main():
             done += 1
 
     log(f"Enrichment done: {done}/{len(photos)}")
+    if mq:
+        mq.shutdown()
 
 
 if __name__ == "__main__":

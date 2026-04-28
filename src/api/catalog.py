@@ -6,6 +6,8 @@ import logging
 
 from database import DatabaseManager
 from config import VENV_PYTHON, LOG_FILE, PROJECT_ROOT, PHOTO_SHARE_PATH
+
+SUPPORTED_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".raw", ".cr2", ".nef", ".arw", ".dng", ".heic"}
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -36,6 +38,7 @@ async def get_roots():
                 "root_path": r["root_path"],
                 "alias": r.get("alias", ""),
                 "scanned_at": r.get("scanned_at"),
+                "enabled": bool(r.get("enabled", 1)),
                 "file_count": len(files),
                 "total_size": sum(f.get("size", 0) for f in files),
                 "ingested": ingested,
@@ -136,8 +139,13 @@ async def catalog_stats():
 
 @router.get("/tree")
 async def get_tree(root_id: str = "", path: str = "", limit: int = 200, offset: int = 0):
+    import os
+    from pathlib import Path
     try:
         db = DatabaseManager()
+        root = db.get_catalog_root(root_id) if root_id else None
+        root_path = root["root_path"] if root else ""
+
         if root_id:
             files = db.get_catalog_files(root_id=root_id)
         else:
@@ -147,6 +155,51 @@ async def get_tree(root_id: str = "", path: str = "", limit: int = 200, offset: 
             filtered = [f for f in files if f.get("parent_dir", "").startswith(path)]
         else:
             filtered = files
+
+        db_has_data = len(filtered) > 0
+
+        if not db_has_data and root_path and os.path.isdir(root_path):
+            scan_base = os.path.join(root_path, path) if path else root_path
+            if os.path.isdir(scan_base):
+                subdirs_list = []
+                direct_files = []
+                try:
+                    for entry in sorted(os.scandir(scan_base), key=lambda e: e.name.lower()):
+                        if entry.name.startswith("."):
+                            continue
+                        if entry.is_dir():
+                            sub_files = [f for f in os.scandir(entry.path) if not f.name.startswith(".")]
+                            photo_count = sum(1 for f in sub_files if Path(f.name).suffix.lower() in SUPPORTED_EXTS)
+                            subdirs_list.append({
+                                "name": entry.name,
+                                "total": photo_count,
+                                "ingested": 0, "described": 0, "exif_done": 0,
+                                "faces_done": 0, "embedded": 0, "pct_done": 0,
+                            })
+                        elif entry.is_file() and Path(entry.name).suffix.lower() in SUPPORTED_EXTS:
+                            try:
+                                sz = entry.stat().st_size
+                            except OSError:
+                                sz = 0
+                            direct_files.append({
+                                "file_id": "",
+                                "rel_path": os.path.relpath(entry.path, root_path) if root_path else entry.name,
+                                "abs_path": entry.path,
+                                "ext": Path(entry.name).suffix.lower(),
+                                "file_size": sz,
+                                "ingested": False, "described": False, "exif_done": False,
+                                "faces_done": False, "embedded": False, "description": None,
+                            })
+                except PermissionError:
+                    pass
+
+                return {
+                    "path": path,
+                    "subdirs": subdirs_list,
+                    "total_files": len(direct_files),
+                    "files": direct_files[offset:offset + limit],
+                    "scanned": False,
+                }
 
         subdirs = {}
         direct_files = []
@@ -188,6 +241,7 @@ async def get_tree(root_id: str = "", path: str = "", limit: int = 200, offset: 
             result_files.append({
                 "file_id": f["file_id"],
                 "rel_path": f["rel_path"],
+                "abs_path": f.get("abs_path", ""),
                 "ext": f.get("ext", ""),
                 "file_size": f.get("size", 0),
                 "ingested": bool(f.get("ingested")),
@@ -218,6 +272,7 @@ async def get_tree(root_id: str = "", path: str = "", limit: int = 200, offset: 
             "subdirs": subdirs_list,
             "total_files": total_files,
             "files": result_files,
+            "scanned": True,
         }
     except Exception as e:
         logger.error(f"Failed to get tree: {e}")
@@ -244,6 +299,23 @@ async def delete_root(root_id: str):
         return {"ok": True}
     except Exception as e:
         logger.error(f"Failed to delete root: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/root/{root_id}/toggle")
+async def toggle_root(root_id: str):
+    try:
+        db = DatabaseManager()
+        root = db.get_catalog_root(root_id)
+        if not root:
+            raise HTTPException(status_code=404, detail="Root not found")
+        new_val = 0 if root.get("enabled", 1) else 1
+        db.update_catalog_root(root_id, enabled=new_val)
+        return {"ok": True, "enabled": bool(new_val)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to toggle root: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -283,4 +355,143 @@ async def locate_photo(path: str = ""):
         return {"found": False}
     except Exception as e:
         logger.error(f"Failed to locate photo: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/browse")
+async def browse_dirs(path: str = ""):
+    import os
+    from pathlib import Path
+    try:
+        base = Path(path) if path else Path("/")
+        if not base.is_dir():
+            base = Path("/")
+        entries = []
+        for entry in sorted(base.iterdir()):
+            if entry.is_dir() and not entry.name.startswith("."):
+                try:
+                    entries.append({
+                        "name": entry.name,
+                        "path": str(entry),
+                    })
+                except PermissionError:
+                    pass
+        return {"path": str(base), "dirs": entries}
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Permission denied")
+    except Exception as e:
+        logger.error(f"Failed to browse dirs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/hash_status")
+async def hash_status():
+    try:
+        db = DatabaseManager()
+        total = db.count_catalog_files()
+        with_hash = db.sqlite.execute(
+            "SELECT COUNT(*) FROM catalog_files WHERE content_hash IS NOT NULL"
+        ).fetchone()[0]
+        without_hash = total - with_hash
+        zero_byte = db.sqlite.execute(
+            "SELECT COUNT(*) FROM catalog_files WHERE content_hash IS NULL AND size = 0"
+        ).fetchone()[0]
+        pending_hash = without_hash - zero_byte
+        duplicates = db.sqlite.execute(
+            "SELECT COUNT(*) FROM (SELECT content_hash FROM catalog_files "
+            "WHERE content_hash IS NOT NULL GROUP BY content_hash HAVING COUNT(*) > 1)"
+        ).fetchone()[0]
+        dup_files = db.sqlite.execute(
+            "SELECT COUNT(*) FROM catalog_files WHERE content_hash IN "
+            "(SELECT content_hash FROM catalog_files WHERE content_hash IS NOT NULL "
+            "GROUP BY content_hash HAVING COUNT(*) > 1)"
+        ).fetchone()[0]
+        return {
+            "total_files": total,
+            "with_hash": with_hash,
+            "without_hash": without_hash,
+            "zero_byte": zero_byte,
+            "pending_hash": pending_hash,
+            "duplicate_groups": duplicates,
+            "duplicate_files": dup_files,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/hash_backfill")
+async def hash_backfill():
+    import subprocess, os
+    try:
+        venv_python = os.environ.get("GALLERY_VENV_PYTHON", str(PROJECT_ROOT / "venv" / "bin" / "python3"))
+        script = str(PROJECT_ROOT / "scan_catalog.py")
+        proc = subprocess.Popen(
+            [venv_python, script, "--hash"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        return {"ok": True, "pid": proc.pid}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/duplicates")
+async def find_duplicates(limit: int = 50):
+    try:
+        db = DatabaseManager()
+        rows = db.sqlite.execute(
+            "SELECT content_hash, COUNT(*) as cnt, "
+            "GROUP_CONCAT(abs_path, '|') as paths "
+            "FROM catalog_files WHERE content_hash IS NOT NULL "
+            "GROUP BY content_hash HAVING COUNT(*) > 1 "
+            "ORDER BY cnt DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+        result = []
+        for r in rows:
+            paths = r[2].split("|") if r[2] else []
+            result.append({
+                "hash": r[0],
+                "count": r[1],
+                "paths": paths,
+            })
+        return {"duplicates": result, "total_groups": len(result)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/hash_backfill_stop")
+async def hash_backfill_stop():
+    import os, signal
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["pgrep", "-f", "scan_catalog.py.*--hash"],
+            capture_output=True, text=True
+        )
+        pids = result.stdout.strip().split("\n") if result.stdout.strip() else []
+        killed = []
+        for pid_str in pids:
+            try:
+                pid = int(pid_str.strip())
+                os.kill(pid, signal.SIGTERM)
+                killed.append(pid)
+            except (ValueError, ProcessLookupError):
+                pass
+        return {"ok": True, "killed": killed}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/hash_backfill_status")
+async def hash_backfill_status():
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", "scan_catalog.py.*--hash"],
+            capture_output=True, text=True
+        )
+        pids = result.stdout.strip().split("\n") if result.stdout.strip() else []
+        running = [int(p.strip()) for p in pids if p.strip().isdigit()]
+        return {"running": len(running) > 0, "pids": running}
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

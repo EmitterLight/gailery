@@ -195,8 +195,30 @@ async def health():
     }
 
 
+_status_cache = {"data": None, "ts": 0}
+_STATUS_TTL = 5
+_api_mqtt = None
+
+
+def _get_api_mqtt():
+    global _api_mqtt
+    if _api_mqtt is None:
+        try:
+            from mqtt_client import create_api_mqtt
+            _api_mqtt = create_api_mqtt()
+        except Exception:
+            _api_mqtt = False
+    return _api_mqtt if _api_mqtt else None
+
+
 @app.get("/api/status")
 async def get_status():
+    import time as _time
+    now = _time.time()
+    cache_key = "_all"
+    if _status_cache.get(cache_key) and (now - _status_cache[cache_key]["ts"]) < _STATUS_TTL:
+        return _status_cache[cache_key]["data"]
+
     import subprocess
     from database import DatabaseManager
     from datetime import datetime
@@ -208,34 +230,56 @@ async def get_status():
     flag_dir = str(FLAG_DIR)
     os.makedirs(flag_dir, exist_ok=True)
 
+    mq = _get_api_mqtt()
+    mqtt_states = mq.get_worker_states() if mq else {}
+
     procs = {"vlm": False, "face_pipeline": False, "embed": False}
-    for key, fname in [("vlm", "describe"), ("face_pipeline", "faces"), ("embed", "embed")]:
-        procs[key] = os.path.exists(os.path.join(flag_dir, fname))
+    for key, worker_name in [("vlm", "describe"), ("face_pipeline", "faces"), ("embed", "embed")]:
+        if mq and mq.is_worker_alive(worker_name):
+            procs[key] = True
+        elif os.path.exists(os.path.join(flag_dir, worker_name)):
+            procs[key] = True
 
     current_step = "idle"
     step_details = ""
     step_started_at = None
     pipeline_started_at = None
-    pipeline_flag = os.path.join(flag_dir, "pipeline")
-    if os.path.exists(pipeline_flag):
-        try:
-            import datetime as dt
-            mtime = os.path.getmtime(pipeline_flag)
-            pipeline_started_at = dt.datetime.fromtimestamp(mtime, tz=dt.timezone.utc).isoformat()
-        except Exception:
-            pass
-    for proc_name, fname in [("DESCRIBE", "describe"), ("INGEST", "ingest"), ("FACES", "faces"), ("EXIF", "exif"), ("EMBED", "embed"), ("PIPELINE", "pipeline")]:
-        fpath = os.path.join(flag_dir, fname)
-        if os.path.exists(fpath):
-            current_step = proc_name.lower()
-            step_details = proc_name
+
+    mqtt_step = mq.get_current_step() if mq else "idle"
+    if mqtt_step != "idle":
+        current_step = mqtt_step
+        step_details = mqtt_step.upper()
+    else:
+        pipeline_flag = os.path.join(flag_dir, "pipeline")
+        if os.path.exists(pipeline_flag):
             try:
                 import datetime as dt
-                mtime = os.path.getmtime(fpath)
-                step_started_at = dt.datetime.fromtimestamp(mtime, tz=dt.timezone.utc).isoformat()
+                mtime = os.path.getmtime(pipeline_flag)
+                pipeline_started_at = dt.datetime.fromtimestamp(mtime, tz=dt.timezone.utc).isoformat()
             except Exception:
                 pass
-            break
+        for proc_name, fname in [("DESCRIBE", "describe"), ("INGEST", "ingest"), ("FACES", "faces"), ("EXIF", "exif"), ("EMBED", "embed"), ("PIPELINE", "pipeline")]:
+            fpath = os.path.join(flag_dir, fname)
+            if os.path.exists(fpath):
+                current_step = proc_name.lower()
+                step_details = proc_name
+                try:
+                    import datetime as dt
+                    mtime = os.path.getmtime(fpath)
+                    step_started_at = dt.datetime.fromtimestamp(mtime, tz=dt.timezone.utc).isoformat()
+                except Exception:
+                    pass
+                break
+
+    if mq and current_step != "idle":
+        pipeline_state = mqtt_states.get("pipeline", {})
+        if pipeline_state.get("status") == "running" and pipeline_state.get("pid"):
+            try:
+                import datetime as dt
+                mtime = os.path.getmtime(f"/proc/{pipeline_state['pid']}")
+                pipeline_started_at = dt.datetime.fromtimestamp(mtime, tz=dt.timezone.utc).isoformat()
+            except Exception:
+                pass
 
     status["processes"] = procs
     status["current_step"] = current_step
@@ -243,6 +287,15 @@ async def get_status():
     status["step_started_at"] = step_started_at
     status["pipeline_started_at"] = pipeline_started_at
     status["server_time"] = datetime.now().isoformat()
+
+    if mq:
+        mqtt_progress = {}
+        for name in ["ingest", "describe", "faces", "exif", "embed"]:
+            prog = mqtt_states.get(name, {}).get("progress")
+            if prog:
+                mqtt_progress[name] = f"[{name.upper()}] {prog.get('done',0)}/{prog.get('total',0)} ({prog.get('pct',0):.1f}%)"
+        if mqtt_progress:
+            status["mqtt_progress"] = mqtt_progress
 
     try:
         log_path = str(LOG_FILE)
@@ -315,7 +368,47 @@ async def get_status():
         status["faces_phase"] = ""
         status["faces_detail"] = ""
 
+    _status_cache[cache_key] = {"data": status, "ts": now}
     return status
+
+
+@app.get("/api/mqtt/workers")
+async def mqtt_workers():
+    mq = _get_api_mqtt()
+    if not mq:
+        return {"workers": {}, "gpu_lock": None}
+    states = mq.get_worker_states()
+    result = {}
+    for name, state in states.items():
+        alive = mq.is_worker_alive(name)
+        result[name] = {
+            "status": state.get("status", "idle"),
+            "pid": state.get("pid"),
+            "progress": state.get("progress"),
+            "gpu_held": state.get("gpu_held", False),
+            "alive": alive,
+        }
+    import json as _json
+    lock_data = None
+    try:
+        lock_raw = states.get("__gpu_lock__")
+    except Exception:
+        pass
+    return {"workers": result, "current_step": mq.get_current_step()}
+
+
+@app.get("/api/watchdog/crashes")
+async def watchdog_crashes():
+    try:
+        with open(str(LOG_FILE), "r") as f:
+            lines = f.readlines()
+    except Exception:
+        return {"crashes": []}
+    crashes = []
+    for line in reversed(lines[-500:]):
+        if "[WATCHDOG]" in line and ("DEAD" in line or "STALE" in line or "RESTART" in line or "RECOVERY" in line):
+            crashes.append(line.strip())
+    return {"crashes": crashes[:50]}
 
 
 @app.post("/api/control/start")
@@ -326,14 +419,26 @@ async def control_start(body: dict):
     _pr = str(PROJECT_ROOT)
     cmd = None
 
+    mq = _get_api_mqtt()
+
     if step == "ingest":
         n = body.get("ingest_limit", 100)
         exif = "--exif" if body.get("exif") == "1" else ""
-        cmd = f"/usr/bin/nohup {VENV_PYTHON} {_pr}/ingest.py --random {n} {exif} >> {_lf} 2>&1 &"
+        root = f"--root {body['root_id']}" if body.get("root_id") else ""
+        cmd = f"/usr/bin/nohup {VENV_PYTHON} {_pr}/ingest.py --random {n} {exif} {root} >> {_lf} 2>&1 &"
     elif step == "describe":
         n = body.get("desc_limit", 60)
         bs = body.get("batch_size", 6)
-        cmd = f"/usr/bin/nohup {VENV_PYTHON} {_pr}/describe.py --limit {n} --batch-size {bs} >> {_lf} 2>&1 &"
+        root_dir = ""
+        if body.get("root_id"):
+            try:
+                db_temp = DatabaseManager()
+                r = db_temp.get_catalog_root(body["root_id"])
+                if r:
+                    root_dir = f"--dir {r['root_path']}"
+            except Exception:
+                pass
+        cmd = f"/usr/bin/nohup {VENV_PYTHON} {_pr}/describe.py --limit {n} --batch-size {bs} {root_dir} >> {_lf} 2>&1 &"
     elif step == "faces":
         cmd = f"/usr/bin/nohup {VENV_PYTHON} {_pr}/faces.py >> {_lf} 2>&1 &"
     elif step == "exif":
@@ -344,7 +449,8 @@ async def control_start(body: dict):
         n = body.get("ingest_limit", 100)
         dl = body.get("desc_limit", 60)
         bs = body.get("batch_size", 6)
-        cmd = f"/usr/bin/nohup {VENV_PYTHON} {_pr}/pipeline.py --ingest {n} --describe {dl} --batch-size {bs} >> {_lf} 2>&1 &"
+        root = f"--root {body['root_id']}" if body.get("root_id") else ""
+        cmd = f"/usr/bin/nohup {VENV_PYTHON} {_pr}/pipeline.py --ingest {n} --describe {dl} --batch-size {bs} {root} >> {_lf} 2>&1 &"
 
     if cmd:
         os.system("pkill -9 -f 'llama-server' 2>/dev/null")
@@ -352,12 +458,17 @@ async def control_start(body: dict):
         with open(_lf, "a") as f:
             f.write(f"[{datetime.now().isoformat()}] [CONTROL] Starting: {step}\n")
         os.system(cmd)
+        if mq:
+            mq.send_start(step, body)
         return {"ok": True, "step": step}
     return {"ok": False, "error": "unknown step"}
 
 
 @app.post("/api/control/stop")
 async def control_stop():
+    mq = _get_api_mqtt()
+    if mq:
+        mq.send_stop("all")
     for pattern in ["llama-server", "vision_describe", "face_pipeline", "faces.py", "faces", "ingest.py", "ingest", "exif.py", "exif", "embed.py", "embed", "pipeline.py", "describe.py", "describe"]:
         try:
             os.system(f"pkill -f '{pattern}' 2>/dev/null")
@@ -492,21 +603,49 @@ async def backup_upload(file: UploadFile = File(...)):
 async def maintenance_stats():
     import os
     stats = {}
-    db_path = DATA_DIR / "gallery.db"
-    if db_path.exists():
-        stats["sqlite_size"] = os.path.getsize(str(db_path))
-    lance_path = LANCEDB_PATH / "photo_embeddings.lance"
-    if lance_path.exists():
-        total = 0
-        for root, dirs, files in os.walk(str(lance_path)):
-            for f in files:
-                total += os.path.getsize(os.path.join(root, f))
-        stats["embeddings_size"] = total
     total_data = 0
-    for root, dirs, files in os.walk(str(DATA_DIR)):
-        for f in files:
-            total_data += os.path.getsize(os.path.join(root, f))
+
+    # SQLite files
+    for name in ["gallery.db", "gallery.db-wal", "gallery.db-shm",
+                 "gailray.db", "gailray.db-wal", "gailray.db-shm"]:
+        p = DATA_DIR / name
+        if p.exists():
+            s = os.path.getsize(str(p))
+            stats[name] = s
+            total_data += s
+
+    # LanceDB tables
+    lance_tables = {}
+    if LANCEDB_PATH.exists():
+        for entry in os.listdir(LANCEDB_PATH):
+            ep = LANCEDB_PATH / entry
+            if ep.is_dir() and ep.suffix == ".lance":
+                total = 0
+                for root, dirs, files in os.walk(str(ep)):
+                    for f in files:
+                        total += os.path.getsize(os.path.join(root, f))
+                lance_tables[entry.replace(".lance", "")] = total
+                total_data += total
+    stats["lance_tables"] = lance_tables
+
+    # Other files in data/
+    for entry in os.listdir(DATA_DIR):
+        ep = DATA_DIR / entry
+        if ep.is_dir() and entry != "lancedb":
+            total = 0
+            for root, dirs, files in os.walk(str(ep)):
+                for f in files:
+                    total += os.path.getsize(os.path.join(root, f))
+            if total > 0:
+                stats["dir_" + entry] = total
+                total_data += total
+
     stats["data_total"] = total_data
+
+    # Compact legacy flags
+    stats["has_legacy_db"] = (DATA_DIR / "gailray.db").exists()
+    stats["has_legacy_faces_lance"] = lance_tables.get("faces", 0) > 0 and lance_tables.get("face_vectors", 0) > 0
+
     return stats
 
 
@@ -527,25 +666,11 @@ async def maintenance_vacuum():
 
 @app.post("/api/maintenance/dedup_embeddings")
 async def maintenance_dedup_embeddings():
-    import lancedb
-    import pyarrow as pa
     try:
-        db = lancedb.connect(str(LANCEDB_PATH))
-        tbl = db.open_table("photo_embeddings")
-        data = tbl.to_arrow()
-        before_rows = len(data)
-        pids = data.column("photo_id").to_pylist()
-        seen = {}
-        for i, pid in enumerate(pids):
-            seen[pid] = i
-        keep = sorted(seen.values())
-        if len(keep) == before_rows:
-            return {"ok": True, "before": before_rows, "after": before_rows, "removed": 0}
-        filtered = data.take(keep)
-        db.drop_table("photo_embeddings")
-        new_tbl = db.create_table("photo_embeddings", filtered)
-        new_tbl.create_index(metric="cosine", vector_column_name="embedding")
-        return {"ok": True, "before": before_rows, "after": len(filtered), "removed": before_rows - len(filtered)}
+        from database import DatabaseManager
+        db = DatabaseManager()
+        before, after, removed = db.dedup_photo_embeddings()
+        return {"ok": True, "before": before, "after": after, "removed": removed}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

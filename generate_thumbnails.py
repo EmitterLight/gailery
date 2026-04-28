@@ -131,6 +131,11 @@ def main():
     )
 
     set_flag()
+    try:
+        from mqtt_client import create_worker_mqtt
+        mq = create_worker_mqtt("thumbnails")
+    except Exception:
+        mq = None
     t0 = time.time()
 
     from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -166,6 +171,8 @@ def main():
         f"({done / max(elapsed, 1):.0f}/s)"
     )
     clear_flag()
+    if mq:
+        mq.shutdown()
     return 0 if failed == 0 else 1
 
 

@@ -1,0 +1,21 @@
+[Unit]
+Description=Gailray Pipeline Worker
+After=network.target mosquitto.service
+Wants=mosquitto.service
+
+[Service]
+EnvironmentFile=/opt/gailray/.env
+Type=simple
+User=root
+WorkingDirectory=/opt/gailray
+Environment="PATH=/opt/gailray/venv/bin:/usr/bin:/bin"
+Environment="PYTHONPATH=/opt/gailray/src"
+ExecStart=/opt/gailray/venv/bin/python3 /opt/gailray/pipeline.py
+Restart=on-failure
+RestartSec=30
+
+StandardOutput=append:/opt/gailray/logs/pipeline-stdout.log
+StandardError=append:/opt/gailray/logs/pipeline-error.log
+
+[Install]
+WantedBy=multi-user.target

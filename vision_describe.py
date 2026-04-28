@@ -81,6 +81,7 @@ def start_llama_server():
             "-m", MODEL_PATH,
             "--mmproj", MMPROJ_PATH,
             "-ngl", "99",
+            "--no-mmap",
             "-c", str(CTX_SIZE),
             "--image-max-tokens", "512",
             "--port", str(LLAMA_PORT),
@@ -121,9 +122,11 @@ def kill_orphan_servers():
             pid = int(pid_str)
             if pid != os.getpid():
                 try:
-                    os.kill(pid, 9)
-                    log(f"Killed orphan llama-server pid={pid}")
-                except ProcessLookupError:
+                    cmdline = open(f"/proc/{pid}/cmdline", "rb").read().decode(errors="replace")
+                    if f"--port {LLAMA_PORT}" in cmdline or f"--port\n{LLAMA_PORT}" in cmdline:
+                        os.kill(pid, 9)
+                        log(f"Killed orphan llama-server on port {LLAMA_PORT} pid={pid}")
+                except (ProcessLookupError, FileNotFoundError):
                     pass
     except Exception:
         pass
@@ -281,11 +284,22 @@ def get_db():
 
 def get_undescribed_photos(db, photo_dir, limit=0):
     cur = db.sqlite.cursor()
-    sql = "SELECT path FROM photos WHERE description IS NULL OR description = '' ORDER BY path"
+    where_extra = ""
+    params = []
+    if photo_dir:
+        where_extra = " AND cf.abs_path LIKE ?"
+        params.append(str(photo_dir) + "/%")
+    sql = ("SELECT p.path FROM photos p JOIN catalog_files cf ON cf.abs_path = p.path "
+           "WHERE (p.description IS NULL OR p.description = '') AND p.deleted = 0 "
+           "AND cf.is_canonical = 1" + where_extra + " ORDER BY p.path")
     if limit > 0:
         sql += f" LIMIT {limit}"
-    rows = cur.execute(sql).fetchall()
-    return [Path(r[0]) for r in rows if Path(r[0]).exists()]
+    rows = cur.execute(sql, params).fetchall()
+    result = []
+    for r in rows:
+        if Path(r[0]).exists():
+            result.append(Path(r[0]))
+    return result
 
 
 def save_description(db, photo_path, parsed):
@@ -432,16 +446,26 @@ def process_directory(photo_dir, batch_size=BATCH_SIZE, limit=0):
 
 def main():
     parser = argparse.ArgumentParser(description="Batch image description - Qwen3.5-4B via llama.cpp")
-    parser.add_argument("path", help="Directory with photos or single photo path")
+    parser.add_argument("path", nargs="?", default="", help="Directory with photos or single photo path")
     parser.add_argument("--single", action="store_true", help="Process single photo")
     parser.add_argument("--batch-size", type=int, default=BATCH_SIZE, help=f"Batch size (default: {BATCH_SIZE})")
     parser.add_argument("--limit", type=int, default=0, help="Limit number of photos (0=all)")
     args = parser.parse_args()
 
+    try:
+        from mqtt_client import create_worker_mqtt
+        mq = create_worker_mqtt("describe")
+        mq.publish_gpu_held(True)
+    except Exception:
+        mq = None
+
     if args.single:
         process_single(args.path)
     else:
         process_directory(args.path, batch_size=args.batch_size, limit=args.limit)
+
+    if mq:
+        mq.shutdown()
 
 
 if __name__ == "__main__":
