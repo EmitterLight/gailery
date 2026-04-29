@@ -527,10 +527,9 @@ def run_llm(db, photo_data):
                     "content": result,
                 })
 
-            # After tool results, always ask for final answer WITHOUT tools
-            messages.append({"role": "user", "content": "Напиши итоговое обогащённое описание фото. Не вызывай инструменты."})
-            log("Asking for final answer after tool results")
-            msg_final = llm_request(server, messages, use_tools=False)
+            # After tool results, let model continue (may call more tools or give final answer)
+            log("Continuing after tool results")
+            msg_final = llm_request(server, messages, use_tools=True)
             content = (msg_final.get("content", "") or "").strip()
             reasoning = (msg_final.get("reasoning_content", "") or "").strip()
 
