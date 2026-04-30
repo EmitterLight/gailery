@@ -786,7 +786,7 @@ async def enrich_description(photo_id: str):
     else:
         logger.warning("[ENRICH] No MQTT, proceeding without GPU lock")
     try:
-        result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=90)
+        result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=300)
         db2 = DatabaseManager()
         updated = db2.get_photo(photo_id)
         if not updated:

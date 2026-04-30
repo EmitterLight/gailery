@@ -101,13 +101,13 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "search_family_facts",
-            "description": "Search family facts: relationships, dates, events. Query by name or keyword.",
+            "description": "Search family facts: relationships, birth dates, events. Query by person's full name or surname. Returns matching lines.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "Name or keyword, e.g. 'Иванова Виктория' or 'крёстный'"
+                        "description": "Full name or surname to search, e.g. 'Иванова Алиса Сергеевна' or 'Парчайкина'"
                     }
                 },
                 "required": ["query"]
@@ -322,8 +322,10 @@ def execute_tool(db, tool_name, arguments):
         if not facts_text:
             return json.dumps({"results": []})
         matches = []
+        query_words = [w for w in query.split() if len(w) > 2]
         for line in facts_text.split("\n"):
-            if query in line.lower():
+            line_lower = line.lower()
+            if any(w in line_lower for w in query_words):
                 matches.append(line.strip())
         result = {"results": matches[:10]}
         log(f"Tool search_family_facts({query}) -> {len(matches)} matches")
@@ -402,9 +404,11 @@ def stop_server(proc):
 def llm_request(server, messages, use_tools=True):
     data = {
         "messages": messages,
-        "max_tokens": 2048,
-        "temperature": 0.4,
-        "chat_template_kwargs": {"enable_thinking": False},
+        "max_tokens": 8192,
+        "temperature": 0.7,
+        "top_p": 0.8,
+        "presence_penalty": 1.5,
+        "chat_template_kwargs": {"enable_thinking": True},
     }
     if use_tools:
         data["tools"] = TOOLS
@@ -439,20 +443,6 @@ def run_llm(db, photo_data):
     try:
         faces_text = format_faces(photo_data["faces"])
 
-        facts_text = db.get_setting("family_facts", "")
-        facts_lines = []
-        if facts_text:
-            for f in photo_data["faces"]:
-                name = f.get("name")
-                if name and name != "(без имени)":
-                    for line in facts_text.split("\n"):
-                        if name.lower() in line.lower():
-                            facts_lines.append(line.strip())
-        facts_section = ""
-        if facts_lines:
-            unique = list(dict.fromkeys(facts_lines))
-            facts_section = "\n\nФакты о людях на фото (используй для связей и возраста):\n" + "\n".join(unique)
-
         user_msg = f"""Базовое описание:
 {photo_data['description']}
 
@@ -461,7 +451,7 @@ def run_llm(db, photo_data):
 Дата: {photo_data['date']}
 
 Распознанные лица (x - координата слева-направо, меньше = левее):
-{faces_text}{facts_section}"""
+{faces_text}"""
 
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -532,10 +522,36 @@ def run_llm(db, photo_data):
             msg_final = llm_request(server, messages, use_tools=True)
             content = (msg_final.get("content", "") or "").strip()
             reasoning = (msg_final.get("reasoning_content", "") or "").strip()
+            new_tool_calls = msg_final.get("tool_calls", [])
 
-            if not content and reasoning:
-                log(f"Thinking only after tools ({len(reasoning)} chars)")
-                content = reasoning
+            if new_tool_calls:
+                # Model wants to call more tools — continue the loop
+                log(f"Model calls {len(new_tool_calls)} more tools after results")
+                if content:
+                    messages.append({"role": "assistant", "content": content, "tool_calls": new_tool_calls})
+                else:
+                    messages.append({"role": "assistant", "content": None, "tool_calls": new_tool_calls})
+                for tc in new_tool_calls:
+                    fn_name = tc["function"]["name"]
+                    fn_args = json.loads(tc["function"]["arguments"]) if isinstance(tc["function"]["arguments"], str) else tc["function"]["arguments"]
+                    tc_id = tc.get("id", "call_1")
+                    log(f"  Tool call: {fn_name}({fn_args})")
+                    print(f"  [Tool] {fn_name}({fn_args})")
+                    result = execute_tool(db, fn_name, fn_args)
+                    print(f"  [Result] {result[:200]}")
+                    messages.append({"role": "tool", "tool_call_id": tc_id, "content": result})
+                # Ask again for final or more tools
+                msg_final2 = llm_request(server, messages, use_tools=False)
+                content = (msg_final2.get("content", "") or "").strip()
+
+            if not content:
+                log("No content after tools, retrying without thinking")
+                clean_msgs = [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": user_msg},
+                ]
+                msg_clean = llm_request(server, clean_msgs, use_tools=False)
+                content = (msg_clean.get("content", "") or "").strip()
 
             if content.startswith("<function=") or content.startswith("<parameter>"):
                 log("XML hallucination after tools, retrying clean")
