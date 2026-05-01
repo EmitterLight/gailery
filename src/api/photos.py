@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Response, Request
 from pathlib import Path
 from typing import Optional, List
 import logging
+import os
 import time
 from config import PHOTO_SHARE_PATH, THUMBNAILS_DIR, LLAMA_CPP_DIR, PROJECT_ROOT, LOG_FILE
 
@@ -638,11 +639,52 @@ def _get_mqtt_api():
         return None
 
 
+_embed_model = None
+_embed_tokenizer = None
+_embed_lock = None
+
+
+def _get_embed_model():
+    global _embed_model, _embed_tokenizer, _embed_lock
+    import torch
+    from transformers import AutoModel, AutoTokenizer
+    if _embed_lock is None:
+        import threading
+        _embed_lock = threading.Lock()
+    with _embed_lock:
+        if _embed_model is None:
+            os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+            _embed_tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-Embedding-0.6B")
+            _embed_model = AutoModel.from_pretrained("Qwen/Qwen3-Embedding-0.6B", dtype=torch.float16).cuda().eval()
+            logger.info("[SEMSEARCH] Embedding model loaded on GPU")
+        return _embed_model, _embed_tokenizer
+
+
+def _unload_embed_model():
+    global _embed_model, _embed_tokenizer
+    import torch
+    if _embed_model is not None:
+        del _embed_model
+        del _embed_tokenizer
+        _embed_model = None
+        _embed_tokenizer = None
+        torch.cuda.empty_cache()
+        logger.info("[SEMSEARCH] Embedding model unloaded, GPU memory released")
+
+
+def _embed_query(query_text):
+    import torch
+    model, tokenizer = _get_embed_model()
+    tok = tokenizer([query_text], padding=True, truncation=True, max_length=512, return_tensors="pt").to("cuda")
+    with torch.no_grad():
+        out = model(**tok)
+        emb = out.last_hidden_state[:, -1, :]
+        emb = torch.nn.functional.normalize(emb, p=2, dim=1)
+    return emb[0].cpu().numpy().tolist()
+
+
 @router.get("/semantic_search")
 async def semantic_search(q: str = "", limit: int = 20, threshold: float = 1.0):
-    import json
-    import subprocess
-    import urllib.request
     from database import DatabaseManager
 
     if not q:
@@ -655,16 +697,6 @@ async def semantic_search(q: str = "", limit: int = 20, threshold: float = 1.0):
     task = "Retrieve photographs matching the description, including people, places, events, and scenes"
     query_text = "Instruct: " + task + "\nQuery: " + q
 
-    _vnvidia = str(PROJECT_ROOT / "venv" / "lib" / "python3.12" / "site-packages" / "nvidia")
-    LD_LIBRARY_PATH = ":".join([
-        _vnvidia + "/cublas/lib",
-        _vnvidia + "/cuda_runtime/lib",
-        "/usr/local/cuda-12.6/targets/x86_64-linux/lib",
-        str(LLAMA_CPP_DIR / "build" / "bin"),
-    ])
-
-    embed_port = 8102
-    embed_server = None
     mq = _get_mqtt_api()
     gpu_acquired = False
     gpu_t0 = time.time()
@@ -680,60 +712,13 @@ async def semantic_search(q: str = "", limit: int = 20, threshold: float = 1.0):
 
     q_emb = None
     try:
-        import os
-        env = os.environ.copy()
-        env["LD_LIBRARY_PATH"] = LD_LIBRARY_PATH
-        embed_server = subprocess.Popen(
-            [
-                str(LLAMA_CPP_DIR / "build" / "bin" / "llama-server"),
-                "-m", str(PROJECT_ROOT / "gguf" / "Qwen3-Embedding-0.6B-F16.gguf"),
-                "--embedding", "--pooling", "last",
-                "-ngl", "99", "--no-mmap",
-                "-c", "512",
-                "--port", str(embed_port), "-t", "4", "-np", "4",
-            ],
-            env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-        )
-        logger.info(f"[SEMSEARCH] llama-server started pid={embed_server.pid}")
-        started = False
-        for i in range(60):
-            try:
-                resp = urllib.request.urlopen(f"http://localhost:{embed_port}/health", timeout=3)
-                if json.loads(resp.read()).get("status") == "ok":
-                    started = True
-                    logger.info(f"[SEMSEARCH] llama-server ready ({i+1}s)")
-                    break
-            except Exception:
-                time.sleep(1)
-
-        if not started:
-            stderr = embed_server.stderr.read().decode()[:500] if embed_server.stderr else ""
-            logger.error(f"[SEMSEARCH] llama-server FAILED to start. stderr: {stderr}")
-            return {"total": 0, "photos": [], "query": q, "error": "embedding server failed to start"}
-
-        req = urllib.request.Request(
-            f"http://localhost:{embed_port}/v1/embeddings",
-            data=json.dumps({"input": [query_text], "model": "qwen3-embedding"}).encode(),
-            headers={"Content-Type": "application/json"},
-        )
-        resp = urllib.request.urlopen(req, timeout=30)
-        result = json.loads(resp.read())
-        q_emb = result["data"][0]["embedding"]
+        q_emb = _embed_query(query_text)
         logger.info(f"[SEMSEARCH] Got embedding size={len(q_emb)}")
     except Exception as e:
         logger.error(f"[SEMSEARCH] Error getting embedding: {e}")
+        _unload_embed_model()
         return {"total": 0, "photos": [], "query": q, "error": str(e)}
     finally:
-        if embed_server is not None:
-            try:
-                embed_server.terminate()
-                embed_server.wait(timeout=5)
-                logger.info("[SEMSEARCH] llama-server terminated")
-            except Exception:
-                embed_server.kill()
-                logger.info("[SEMSEARCH] llama-server killed")
         if mq and gpu_acquired:
             mq.release_gpu_from_api()
             logger.info("[SEMSEARCH] GPU released via MQTT")

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 embed.py - Generate text embeddings for semantic search.
-Uses llama-server + GGUF model (Qwen3-Embedding-0.6B-F16.gguf).
+Uses Qwen3-Embedding-0.6B via transformers with GPU batching.
 Stores vectors in LanceDB.
 
 Usage:
@@ -14,27 +14,30 @@ import argparse
 import hashlib
 import json
 import os
-import subprocess
 import sys
 import time
-import urllib.request
 from datetime import datetime
 from pathlib import Path
+
+import numpy as np
+import torch
+from transformers import AutoModel, AutoTokenizer
 
 VENV_PYTHON = os.environ.get("GALLERY_VENV_PYTHON", str(Path(__file__).parent / "venv" / "bin" / "python3"))
 if os.path.exists(VENV_PYTHON) and sys.executable != VENV_PYTHON:
     os.execv(VENV_PYTHON, [VENV_PYTHON, __file__] + sys.argv[1:])
 
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
-from config import PHOTO_SHARE_PATH, LLAMA_CPP_DIR, MODELS_DIR
+from config import PHOTO_SHARE_PATH
 LOG_FILE = str(Path(__file__).parent / "logs" / "pipeline.log")
 FLAG_FILE = str(Path(__file__).parent / "data" / "pipeline_flags" / "embed")
 
-EMBED_PORT = 8102
-GGUF_MODEL = str(MODELS_DIR / "gguf" / "Qwen3-Embedding-0.6B-F16.gguf")
+HF_MODEL = "Qwen/Qwen3-Embedding-0.6B"
+EMBED_BATCH_SIZE = 64
+EMBED_MAX_LENGTH = 512
 LANCE_FLUSH_SIZE = 2048
 LOG_INTERVAL = 10
-EMBED_BATCH_SIZE = 32
+SEARCH_TEXT_MAX_LEN = 900
 
 
 def _fmt_dur(secs):
@@ -77,75 +80,14 @@ def stopped():
     return not os.path.exists(FLAG_FILE)
 
 
-def start_embed_server():
-    if not Path(GGUF_MODEL).exists():
-        log(f"GGUF model not found: {GGUF_MODEL}")
-        return None
-
-    env = os.environ.copy()
-    env["CUDA_VISIBLE_DEVICES"] = "0"
-    _vnvidia = str(Path(__file__).parent / "venv" / "lib" / "python3.12" / "site-packages" / "nvidia")
-    env["LD_LIBRARY_PATH"] = ":".join([
-        _vnvidia + "/cublas/lib",
-        _vnvidia + "/cuda_runtime/lib",
-        "/usr/local/cuda-12.6/targets/x86_64-linux/lib",
-        str(LLAMA_CPP_DIR / "build" / "bin"),
-    ])
-
-    proc = subprocess.Popen(
-        [
-            str(LLAMA_CPP_DIR / "build" / "bin" / "llama-server"),
-            "-m", GGUF_MODEL,
-            "--embedding", "--pooling", "last",
-            "-ngl", "99", "--no-mmap",
-            "-c", "512",
-            "--port", str(EMBED_PORT), "-t", "4", "-np", "32",
-        ],
-        env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-    )
-    log(f"llama-server started pid={proc.pid} port={EMBED_PORT}")
-
-    for i in range(60):
-        try:
-            resp = urllib.request.urlopen(f"http://localhost:{EMBED_PORT}/health", timeout=3)
-            if json.loads(resp.read()).get("status") == "ok":
-                log(f"llama-server ready ({i+1}s)")
-                return proc
-        except Exception:
-            pass
-        time.sleep(1)
-
-    log("llama-server failed to start")
+def _extract_description(desc):
+    if not desc or not desc.lstrip().startswith("{"):
+        return desc
     try:
-        proc.kill()
-    except Exception:
-        pass
-    return None
-
-
-def encode_batch(texts, max_length=512):
-    vectors = []
-    for i in range(0, len(texts), EMBED_BATCH_SIZE):
-        chunk = texts[i:i + EMBED_BATCH_SIZE]
-        chunk = [t[:2000] if len(t) > 2000 else t for t in chunk]
-        payload = json.dumps({"input": chunk}).encode()
-        req = urllib.request.Request(
-            f"http://localhost:{EMBED_PORT}/v1/embeddings",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-        )
-        try:
-            resp = urllib.request.urlopen(req, timeout=120)
-            data = json.loads(resp.read())
-            for item in data.get("data", []):
-                vectors.append(item["embedding"])
-        except Exception as e:
-            log(f"encode error ({len(chunk)} texts): {e}")
-            for _ in chunk:
-                vectors.append([0.0] * 1024)
-    return vectors
+        obj = json.loads(desc)
+        return obj.get("description") or obj.get("text") or desc
+    except (json.JSONDecodeError, AttributeError):
+        return desc
 
 
 def build_search_text(photo, faces_for_photo, persona_map):
@@ -163,7 +105,7 @@ def build_search_text(photo, faces_for_photo, persona_map):
     if face_names:
         parts.append(", ".join(face_names))
 
-    desc = photo.get("description")
+    desc = _extract_description(photo.get("description"))
     if desc:
         parts.append(desc)
 
@@ -198,11 +140,44 @@ def build_search_text(photo, faces_for_photo, persona_map):
     if lat is not None and lon is not None:
         parts.append(f"{lat:.4f}, {lon:.4f}")
 
-    return " | ".join(parts)
+    text = " | ".join(parts)
+    if len(text) > SEARCH_TEXT_MAX_LEN:
+        text = text[:SEARCH_TEXT_MAX_LEN]
+    return text
 
 
 def compute_meta_hash(search_text):
     return hashlib.md5(search_text.encode()).hexdigest()[:12]
+
+
+class EmbedEngine:
+    def __init__(self):
+        os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+        log(f"Loading {HF_MODEL}...")
+        self.tokenizer = AutoTokenizer.from_pretrained(HF_MODEL)
+        self.model = AutoModel.from_pretrained(HF_MODEL, dtype=torch.float16).cuda().eval()
+        log(f"Model loaded on {torch.cuda.get_device_name(0)}")
+
+    def encode(self, texts):
+        all_vecs = []
+        for i in range(0, len(texts), EMBED_BATCH_SIZE):
+            chunk = texts[i:i + EMBED_BATCH_SIZE]
+            tok = self.tokenizer(
+                chunk, padding=True, truncation=True,
+                max_length=EMBED_MAX_LENGTH, return_tensors="pt",
+            ).to("cuda")
+            with torch.no_grad():
+                out = self.model(**tok)
+                emb = out.last_hidden_state[:, -1, :]
+                emb = torch.nn.functional.normalize(emb, p=2, dim=1)
+            all_vecs.append(emb.cpu().numpy())
+        return np.concatenate(all_vecs, axis=0)
+
+    def cleanup(self):
+        del self.model
+        del self.tokenizer
+        torch.cuda.empty_cache()
+        log("GPU memory released")
 
 
 def get_unembedded_photos_sql(db, limit=0, offset=0):
@@ -228,7 +203,6 @@ def main():
     parser = argparse.ArgumentParser(description="Generate text embeddings for semantic search")
     parser.add_argument("--limit", type=int, default=0, help="Max photos (0=all)")
     parser.add_argument("--force", action="store_true", help="Re-embed all photos")
-    parser.add_argument("--batch-size", type=int, default=EMBED_BATCH_SIZE, help="Embedding batch size")
     args = parser.parse_args()
 
     from database import DatabaseManager
@@ -271,8 +245,6 @@ def _main(db, args, mq=None):
 
     total_to_embed = total_unembedded if not args.force else len(photos)
 
-    PREFIX = str(PHOTO_SHARE_PATH) + "/"
-
     if mq:
         log("Acquiring GPU...")
         if not mq.acquire_gpu(timeout=60):
@@ -280,27 +252,21 @@ def _main(db, args, mq=None):
             return 1
         log("GPU acquired")
 
-    log("Starting embed server...")
-    embed_server = start_embed_server()
-    if not embed_server:
-        log("Failed to start embedding server")
-        if mq:
-            mq.release_gpu()
-        return 1
-    log("Embed server started, beginning processing...")
-
-    batch_texts = []
-    batch_meta = []
-    lance_buffer = []
-    embedded = 0
-    skipped = 0
-    t0 = time.time()
-    last_log_t = t0
-    processed = 0
-    fetch_size = 5000
-    offset = 0
-
+    engine = None
     try:
+        engine = EmbedEngine()
+
+        batch_texts = []
+        batch_meta = []
+        lance_buffer = []
+        embedded = 0
+        skipped = 0
+        t0 = time.time()
+        last_log_t = t0
+        processed = 0
+        fetch_size = 5000
+        offset = 0
+
         while True:
             if mq and (mq.stopped() or mq.paused()):
                 if mq.stopped():
@@ -378,13 +344,13 @@ def _main(db, args, mq=None):
                     "embedded_at": datetime.now().isoformat(),
                 })
 
-                if len(batch_texts) >= args.batch_size:
-                    vectors = encode_batch(batch_texts)
-                    for meta, vec in zip(batch_meta, vectors):
+                if len(batch_texts) >= EMBED_BATCH_SIZE:
+                    vectors = engine.encode(batch_texts)
+                    for j, meta in enumerate(batch_meta):
                         lance_buffer.append({
                             "photo_id": meta["photo_id"],
                             "search_text": meta["search_text"],
-                            "embedding": vec,
+                            "embedding": vectors[j].tolist(),
                             "meta_hash": meta["meta_hash"],
                             "embedded_at": meta["embedded_at"],
                         })
@@ -420,12 +386,12 @@ def _main(db, args, mq=None):
                     break
 
         if batch_texts:
-            vectors = encode_batch(batch_texts)
-            for meta, vec in zip(batch_meta, vectors):
+            vectors = engine.encode(batch_texts)
+            for j, meta in enumerate(batch_meta):
                 lance_buffer.append({
                     "photo_id": meta["photo_id"],
                     "search_text": meta["search_text"],
-                    "embedding": vec,
+                    "embedding": vectors[j].tolist(),
                     "meta_hash": meta["meta_hash"],
                     "embedded_at": meta["embedded_at"],
                 })
@@ -459,9 +425,8 @@ def _main(db, args, mq=None):
         import traceback
         traceback.print_exc()
     finally:
-        if embed_server:
-            embed_server.kill()
-            log("llama-server stopped")
+        if engine:
+            engine.cleanup()
         if mq:
             mq.release_gpu()
 
