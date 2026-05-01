@@ -34,7 +34,7 @@ EMBED_PORT = 8102
 GGUF_MODEL = str(MODELS_DIR / "gguf" / "Qwen3-Embedding-0.6B-F16.gguf")
 LANCE_FLUSH_SIZE = 2048
 LOG_INTERVAL = 10
-EMBED_BATCH_SIZE = 64
+EMBED_BATCH_SIZE = 32
 
 
 def _fmt_dur(secs):
@@ -84,6 +84,13 @@ def start_embed_server():
 
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = "0"
+    _vnvidia = str(Path(__file__).parent / "venv" / "lib" / "python3.12" / "site-packages" / "nvidia")
+    env["LD_LIBRARY_PATH"] = ":".join([
+        _vnvidia + "/cublas/lib",
+        _vnvidia + "/cuda_runtime/lib",
+        "/usr/local/cuda-12.6/targets/x86_64-linux/lib",
+        str(LLAMA_CPP_DIR / "build" / "bin"),
+    ])
 
     proc = subprocess.Popen(
         [
@@ -91,7 +98,8 @@ def start_embed_server():
             "-m", GGUF_MODEL,
             "--embedding", "--pooling", "last",
             "-ngl", "99", "--no-mmap",
-            "--port", str(EMBED_PORT), "-t", "4", "-np", str(EMBED_BATCH_SIZE),
+            "-c", "512",
+            "--port", str(EMBED_PORT), "-t", "4", "-np", "32",
         ],
         env=env,
         stdout=subprocess.DEVNULL,
@@ -118,20 +126,25 @@ def start_embed_server():
 
 
 def encode_batch(texts, max_length=512):
-    payload = json.dumps({
-        "input": texts,
-        "max_length": max_length,
-    }).encode()
-    req = urllib.request.Request(
-        f"http://localhost:{EMBED_PORT}/v1/embeddings",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-    )
-    resp = urllib.request.urlopen(req, timeout=120)
-    data = json.loads(resp.read())
     vectors = []
-    for item in data.get("data", []):
-        vectors.append(item["embedding"])
+    for i in range(0, len(texts), EMBED_BATCH_SIZE):
+        chunk = texts[i:i + EMBED_BATCH_SIZE]
+        chunk = [t[:2000] if len(t) > 2000 else t for t in chunk]
+        payload = json.dumps({"input": chunk}).encode()
+        req = urllib.request.Request(
+            f"http://localhost:{EMBED_PORT}/v1/embeddings",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            resp = urllib.request.urlopen(req, timeout=120)
+            data = json.loads(resp.read())
+            for item in data.get("data", []):
+                vectors.append(item["embedding"])
+        except Exception as e:
+            log(f"encode error ({len(chunk)} texts): {e}")
+            for _ in chunk:
+                vectors.append([0.0] * 1024)
     return vectors
 
 
@@ -441,6 +454,10 @@ def _main(db, args, mq=None):
         except Exception as e:
             log(f"Compact note: {e}")
 
+    except Exception as e:
+        log(f"FATAL: {e}")
+        import traceback
+        traceback.print_exc()
     finally:
         if embed_server:
             embed_server.kill()
