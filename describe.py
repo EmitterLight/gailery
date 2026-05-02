@@ -67,34 +67,39 @@ def count_undescribed():
     ).fetchone()[0]
 
 
-def _describe_ollama(img_path, ollama_url, ollama_model):
-    import requests
+def _prepare_ollama_image(img_path):
     from PIL import Image
-    import io
-
     img = Image.open(img_path)
     max_dim = max(img.size)
     if max_dim > 1280:
         scale = 1280 / max_dim
         new_size = (int(img.size[0] * scale), int(img.size[1] * scale))
         img = img.resize(new_size, Image.LANCZOS)
-
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+    import io
     buf = io.BytesIO()
     img.save(buf, format='JPEG', quality=85)
-    img_b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+    return base64.b64encode(buf.getvalue()).decode('utf-8')
 
-    body = {
+
+def _describe_ollama_request(img_b64, ollama_url, ollama_model):
+    import urllib.request
+    body = json.dumps({
         "model": ollama_model,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": "Проанализируй эту фотографию.", "images": [img_b64]},
         ],
         "stream": False,
+        "think": False,
         "keep_alive": "5m",
-    }
-    r = requests.post(f"{ollama_url}/api/chat", json=body, timeout=120)
-    r.raise_for_status()
-    msg = r.json().get("message", {}).get("content", "")
+        "options": {"temperature": 0.1, "num_predict": 256, "num_gpu": 20, "num_ctx": 2048},
+    }).encode()
+    req = urllib.request.Request(f"{ollama_url}/api/chat", data=body,
+        headers={"Content-Type": "application/json"})
+    resp = urllib.request.urlopen(req, timeout=120)
+    msg = json.loads(resp.read()).get("message", {}).get("content", "")
     try:
         data = json.loads(msg)
         desc = data.get("description", "")
@@ -163,7 +168,8 @@ def main():
         t0 = time.time()
 
         if be == "ollama":
-            return _main_ollama(db=None, limit=limit, dir_filter=args.dir, mq=mq, t0=t0)
+            return _main_ollama(db=None, limit=limit, dir_filter=args.dir, mq=mq, t0=t0,
+                                batch_size=args.batch_size)
         else:
             return _main_local(args, mq=mq, t0=t0)
     finally:
@@ -201,46 +207,89 @@ def _main_local(args, mq, t0):
     return result.returncode
 
 
-def _main_ollama(db, limit, dir_filter, mq, t0):
-    import requests
+def _main_ollama(db, limit, dir_filter, mq, t0, batch_size=6):
+    import urllib.request
     from config import OLLAMA_DESCRIBE_MODEL, OLLAMA_BASE_URL
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     url = OLLAMA_BASE_URL.rstrip('/')
     model = OLLAMA_DESCRIBE_MODEL
+    batch_size = batch_size or 6
 
     db, rows = _get_photos_to_describe(limit=limit, dir_filter=dir_filter)
-    total = len(rows)
-    described = 0
-    last_log_t = t0
 
-    for i, row in enumerate(rows):
-        photo_id, path = row
-        if mq and mq.stopped():
-            break
-        if not os.path.exists(path):
-            log(f"  SKIP (missing): {Path(path).name}")
+    # Preload model with correct VRAM params
+    log(f"Preloading {model} with num_gpu=20 num_ctx=2048...")
+    try:
+        body = json.dumps({"model": model, "keep_alive": "5m",
+            "options": {"num_gpu": 20, "num_ctx": 2048}}).encode()
+        urllib.request.urlopen(urllib.request.Request(
+            f"{url}/api/generate", data=body,
+            headers={"Content-Type": "application/json"}), timeout=30)
+        log("Model preloaded")
+    except Exception as e:
+        log(f"Preload failed (will load on first request): {e}")
+
+    # Filter valid paths and prepare images FIRST (like vision_describe.py describe_batch)
+    prepared = []
+    for pid, p in rows:
+        if not os.path.exists(p):
+            log(f"  SKIP (missing): {Path(p).name}")
             continue
-
         try:
-            desc, has_faces = _describe_ollama(path, url, model)
-            _save_description(db, photo_id, path, desc, has_faces)
-            described += 1
+            fsize = os.path.getsize(p)
+            if fsize < 1024:
+                log(f"  SKIP (too small): {Path(p).name}")
+                continue
+            img_b64 = _prepare_ollama_image(p)
+            prepared.append((pid, p, img_b64))
         except Exception as e:
-            log(f"  ERROR: {Path(path).name}: {e}")
+            log(f"  SKIP (image error): {Path(p).name}: {e}")
 
-        now = time.time()
-        if now - last_log_t >= 10:
-            elapsed = now - t0
-            rate = described / max(elapsed, 1)
-            pct = described / max(total, 1) * 100
-            log(f"  [{described}/{total}] {pct:.1f}% | {elapsed:.0f}с, {rate:.1f}/с")
-            last_log_t = now
+    total = len(prepared)
+
+    # Process in parallel batches — only HTTP requests in pool
+    for batch_start in range(0, total, batch_size):
+        batch = prepared[batch_start:batch_start + batch_size]
+        batch_num = batch_start // batch_size + 1
+        total_batches = (total + batch_size - 1) // batch_size
+
+        t_batch = time.time()
+        with ThreadPoolExecutor(max_workers=len(batch)) as pool:
+            futs = {}
+            for photo_id, path, img_b64 in batch:
+                futs[pool.submit(_describe_ollama_request, img_b64, url, model)] = (photo_id, path)
+
+            for fut in as_completed(futs):
+                photo_id, path = futs[fut]
+                try:
+                    desc, has_faces = fut.result()
+                    _save_description(db, photo_id, path, desc, has_faces)
+                    described += 1
+                    log(f"  [{described}/{total}] {Path(path).name}")
+                except Exception as e:
+                    log(f"  ERROR: {Path(path).name}: {e}")
+                    failed += 1
+
+                if mq and mq.stopped():
+                    pool.shutdown(cancel_futures=True)
+                    break
+
+        dt_batch = time.time() - t_batch
+        elapsed = time.time() - t0
+        rate = described / max(elapsed, 1)
+        pct = described / max(total, 1) * 100
+        log(f"  Batch {batch_num}/{total_batches}: {dt_batch:.1f}s | [{described}/{total}] {pct:.1f}% | {elapsed:.0f}с, {rate:.2f}/с")
 
     elapsed = time.time() - t0
-    log(f"Done (Ollama): {described} described in {elapsed:.0f}s ({described/max(elapsed,1):.1f}/s)")
+    log(f"Done (Ollama): {described} described, {failed} failed in {elapsed:.0f}s ({described/max(elapsed,1):.2f}/s)")
 
-    # Unload Ollama model to free VRAM
+    # Unload model
     try:
-        requests.post(f"{url}/api/generate", json={"model": model, "keep_alive": "0s"}, timeout=10)
+        body = json.dumps({"model": model, "keep_alive": 0}).encode()
+        urllib.request.urlopen(urllib.request.Request(
+            f"{url}/api/generate", data=body,
+            headers={"Content-Type": "application/json"}), timeout=10)
         log("Ollama model unloaded, VRAM freed")
     except Exception:
         pass
