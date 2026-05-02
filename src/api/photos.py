@@ -6,6 +6,7 @@ from typing import Optional, List
 import logging
 import os
 import time
+import threading
 from config import PHOTO_SHARE_PATH, THUMBNAILS_DIR, LLAMA_CPP_DIR, PROJECT_ROOT, LOG_FILE
 
 logger = logging.getLogger(__name__)
@@ -646,7 +647,6 @@ _embed_lock = None
 def _get_embed_engine():
     global _embed_engine, _embed_lock
     if _embed_lock is None:
-        import threading
         _embed_lock = threading.Lock()
     with _embed_lock:
         if _embed_engine is None:
@@ -654,8 +654,10 @@ def _get_embed_engine():
             from pathlib import Path
             sys.path.insert(0, str(Path(__file__).parent.parent.parent))
             from embed import EmbedEngine
-            _embed_engine = EmbedEngine()
-            logger.info("[SEMSEARCH] EmbedEngine loaded (llama-cpp-python GPU)")
+            import config
+            be = config.search_backend or config.OLLAMA_MODE
+            _embed_engine = EmbedEngine(backend=be)
+            logger.info(f"[SEMSEARCH] EmbedEngine loaded, backend={be}")
         return _embed_engine
 
 
@@ -690,7 +692,7 @@ async def semantic_search(q: str = "", limit: int = 20, threshold: float = 1.0):
     mq = _get_mqtt_api()
     gpu_acquired = False
     gpu_t0 = time.time()
-    if mq:
+    if mq and _embed_engine is None:
         gpu_acquired = mq.request_gpu_gentle(worker_name="semantic_search", timeout=120)
         if gpu_acquired:
             logger.info(f"[SEMSEARCH] GPU acquired gently in {time.time()-gpu_t0:.1f}s")

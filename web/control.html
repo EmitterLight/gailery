@@ -1850,11 +1850,9 @@ function ollamaCheck(){
         if(allOk){
             info.innerHTML += ' <span style=\"color:#3fb950;margin-left:8px\">Все модели на месте</span>';
             saveBtn.style.display = 'inline-block';
-            fetch(API+'/settings/ollama_mode',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:'ollama'})});
         } else {
             info.innerHTML += ' <span style=\"color:#d29922;margin-left:8px\">Не хватает моделей</span>';
             saveBtn.style.display = 'none';
-            fetch(API+'/settings/ollama_mode',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:'local'})});
         }
     }).catch(function(e){
         info.innerHTML='<span style=\"color:#f85149\">&#10007; Ошибка: '+e+'</span>';
@@ -1872,29 +1870,36 @@ function formatBytes(b){ if(!b)return '?'; var u=['B','KB','MB','GB'],i=0; while
 
 // --- Task routing ---
 var DUAL_TASKS = [
-    {id:'embed', name:'Семантическая индексация', modelId:'qwen3-embed', ollamaModel:'qwen3-embedding:0.6b'},
-    {id:'semantic_search', name:'Семантический поиск', modelId:'qwen3-embed', ollamaModel:'qwen3-embedding:0.6b'},
+    {id:'embed', name:'Семантическая индексация', modelId:'qwen3-embed', ollamaModel:'qwen3-embedding:0.6b', backendKey:'embed_backend'},
+    {id:'semantic_search', name:'Семантический поиск', modelId:'qwen3-embed', ollamaModel:'qwen3-embedding:0.6b', backendKey:'search_backend'},
 ];
 function loadRouting(){
+    try {
     var url = document.getElementById('ollamaUrl').value;
     var prom = url ? fetch(API+'/../api/proxy/ollama_models?url='+encodeURIComponent(url)).then(r=>r.json()).catch(function(){return{models:[]}}) : Promise.resolve({models:[]});
+    var backendProms = DUAL_TASKS.map(function(t){ return fetch(API+'/settings/'+t.backendKey).then(r=>r.json()).catch(function(){return{value:''}}); });
     Promise.all([
-        fetch(API+'/models').then(r=>r.json()),
-        fetch(API+'/settings/ollama_mode').then(r=>r.json()).then(function(v){ return (v && v.value) || 'local'; }),
+        fetch(API+'/models').then(r=>r.json()).catch(function(){return{models:[]}}),
+        Promise.all(backendProms),
         prom
-    ]).then(function(r){ return {localModels:r[0], ollamaMode:r[1]||'local', ollamaModels:r[2].models||[]}; }).then(function(data){
+    ]).then(function(r){
+        var backendMap = {};
+        (r[1]||[]).forEach(function(v,i){ backendMap[DUAL_TASKS[i].id] = (v && v.value) || 'local'; });
+        return {localModels:r[0], backends:backendMap, ollamaModels:r[2].models||[]};
+    }).then(function(data){
         var localPresent = {};
         (data.localModels.models||[]).forEach(function(m){ localPresent[m.id] = m.present||false; });
         var ollamaNames = {};
-        data.ollamaModels.forEach(function(m){ ollamaNames[m.name] = true; });
+        (data.ollamaModels||[]).forEach(function(m){ ollamaNames[m.name] = true; });
 
         var sec = document.getElementById('routingSec');
         var list = document.getElementById('routingList');
+        if(!sec || !list) return;
         var h = '';
         DUAL_TASKS.forEach(function(t){
             var localOk = localPresent[t.modelId] || false;
             var ollamaOk = ollamaNames[t.ollamaModel] || false;
-            var mode = data.ollamaMode;
+            var mode = data.backends[t.id] || 'local';
             var isOllama = mode === 'ollama';
 
             var lc = localOk ? '#3fb950' : '#f85149';
@@ -1936,10 +1941,13 @@ function loadRouting(){
         });
         list.innerHTML = h;
         sec.style.display = 'block';
-    });
+    }).catch(function(e){ console.error('loadRouting failed:', e); });
+    } catch(e){ console.error('loadRouting JS error:', e); }
 }
 function switchBackend(taskId, mode){
-    fetch(API+'/settings/ollama_mode',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:mode})})
+    var task = DUAL_TASKS.find(function(t){return t.id===taskId;});
+    var key = task ? task.backendKey : 'ollama_mode';
+    fetch(API+'/settings/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:mode})})
     .then(function(){ loadRouting(); });
 }
 

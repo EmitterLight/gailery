@@ -164,8 +164,11 @@ class EmbedEngine:
         cls._silent_cb = CB(lambda level, text, ud: None)
         llama_cpp.llama_log_set(cls._silent_cb, ctypes.c_void_p(0))
 
-    def __init__(self):
-        self._mode = getattr(app_config, 'OLLAMA_MODE', 'local')
+    def __init__(self, backend=None):
+        if backend:
+            self._mode = backend
+        else:
+            self._mode = getattr(app_config, 'embed_backend', '') or getattr(app_config, 'OLLAMA_MODE', 'local')
         if self._mode == "ollama":
             self._init_ollama()
         else:

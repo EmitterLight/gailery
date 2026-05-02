@@ -67,20 +67,26 @@ BATCH_SIZE = 32
 MAX_WORKERS = 4
 
 # Ollama dual-circuit
-OLLAMA_MODE = os.environ.get("OLLAMA_MODE", "local")  # "local" | "ollama"
+OLLAMA_MODE = os.environ.get("OLLAMA_MODE", "local")  # legacy, use embed_backend/search_backend
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_EMBED_MODEL = os.environ.get("OLLAMA_EMBED_MODEL", "qwen3-embedding:0.6b")
-OLLAMA_EMBED_CHUNK = int(os.environ.get("OLLAMA_EMBED_CHUNK", "64"))
+OLLAMA_EMBED_CHUNK = int(os.environ.get("OLLAMA_EMBED_CHUNK", "128"))
+
+# Per-task backend (overrides OLLAMA_MODE if set)
+embed_backend = os.environ.get("embed_backend", "")  # "local" | "ollama" | ""
+search_backend = os.environ.get("search_backend", "")  # "local" | "ollama" | ""
 
 def _apply_ollama_overrides():
     global OLLAMA_MODE, OLLAMA_BASE_URL, OLLAMA_EMBED_MODEL, OLLAMA_EMBED_CHUNK
+    global embed_backend, search_backend
     try:
         from database import DatabaseManager
         db = DatabaseManager()
         for key, var in [("ollama_mode", "OLLAMA_MODE"), ("ollama_base_url", "OLLAMA_BASE_URL"),
-                         ("ollama_embed_model", "OLLAMA_EMBED_MODEL"), ("ollama_embed_chunk", "OLLAMA_EMBED_CHUNK")]:
+                         ("ollama_embed_model", "OLLAMA_EMBED_MODEL"), ("ollama_embed_chunk", "OLLAMA_EMBED_CHUNK"),
+                         ("embed_backend", "embed_backend"), ("search_backend", "search_backend")]:
             val = db.get_setting(key)
-            if val:
+            if val is not None and val != "":
                 if var == "OLLAMA_EMBED_CHUNK":
                     globals()[var] = int(val)
                 else:
