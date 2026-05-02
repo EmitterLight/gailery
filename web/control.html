@@ -1872,6 +1872,7 @@ function formatBytes(b){ if(!b)return '?'; var u=['B','KB','MB','GB'],i=0; while
 var DUAL_TASKS = [
     {id:'embed', name:'Семантическая индексация', modelId:'qwen3-embed', ollamaModel:'qwen3-embedding:0.6b', backendKey:'embed_backend'},
     {id:'semantic_search', name:'Семантический поиск', modelId:'qwen3-embed', ollamaModel:'qwen3-embedding:0.6b', backendKey:'search_backend'},
+    {id:'describe', name:'Описание фото', modelId:'qwen3-vlm', ollamaModel:'qwen3.5:4b', backendKey:'describe_backend'},
 ];
 function loadRouting(){
     try {

@@ -34,7 +34,7 @@ else:
 - [x] **embed** — семантическая индексация (transformers/llama-cpp-python vs Ollama)
 - [x] **semantic_search** — поиск (через EmbedEngine, оба режима)
 - [ ] **enrich_description** — обогащение описаний (llama.cpp vs Ollama)
-- [ ] **describe** — описание фото (llama-server vs Ollama/VLM)
+- [x] **describe** — описание фото (llama-server vs Ollama/VLM)
 - [ ] **exif** — не требует GPU, всегда локально
 
 ### Что НЕ двухконтурно (всегда локально)

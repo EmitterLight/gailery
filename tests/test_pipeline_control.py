@@ -347,3 +347,11 @@ class TestOllamaEmbedAI:
         assert _fix_ollama_url("192.168.1.1:11434") == "http://192.168.1.1:11434"
         assert _fix_ollama_url("ollama.localnet") == "http://ollama.localnet:11434"
         assert _fix_ollama_url("http://host:12345") == "http://host:12345"
+
+    def test_describe_backend_setting(self, app_client):
+        resp = app_client.put("/api/settings/describe_backend", json={"value": "ollama"})
+        assert resp.status_code == 200
+        resp2 = app_client.get("/api/settings/describe_backend")
+        assert resp2.json()["value"] == "ollama"
+        resp = app_client.put("/api/settings/describe_backend", json={"value": "local"})
+        assert resp.status_code == 200

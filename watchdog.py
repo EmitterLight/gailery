@@ -313,7 +313,7 @@ def main():
                         mq.publish(_topic("watchdog", "mode"), mode, retain=True)
                     except Exception:
                         pass
-                log_incident(f"HEARTBEAT: pipeline={'active' if is_pipeline_active() else 'dead'}, mode={mode}")
+                # no heartbeat log when sleeping - just sleep silently
                 time.sleep(CHECK_INTERVAL)
                 continue
 

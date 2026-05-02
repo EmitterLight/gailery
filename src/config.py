@@ -75,16 +75,20 @@ OLLAMA_EMBED_CHUNK = int(os.environ.get("OLLAMA_EMBED_CHUNK", "128"))
 # Per-task backend (overrides OLLAMA_MODE if set)
 embed_backend = os.environ.get("embed_backend", "")  # "local" | "ollama" | ""
 search_backend = os.environ.get("search_backend", "")  # "local" | "ollama" | ""
+describe_backend = os.environ.get("describe_backend", "")  # "local" | "ollama" | ""
+OLLAMA_DESCRIBE_MODEL = os.environ.get("OLLAMA_DESCRIBE_MODEL", "qwen3.5:4b")
 
 def _apply_ollama_overrides():
-    global OLLAMA_MODE, OLLAMA_BASE_URL, OLLAMA_EMBED_MODEL, OLLAMA_EMBED_CHUNK
-    global embed_backend, search_backend
+    global OLLAMA_MODE, OLLAMA_BASE_URL, OLLAMA_EMBED_MODEL, OLLAMA_EMBED_CHUNK, OLLAMA_DESCRIBE_MODEL
+    global embed_backend, search_backend, describe_backend
     try:
         from database import DatabaseManager
         db = DatabaseManager()
         for key, var in [("ollama_mode", "OLLAMA_MODE"), ("ollama_base_url", "OLLAMA_BASE_URL"),
                          ("ollama_embed_model", "OLLAMA_EMBED_MODEL"), ("ollama_embed_chunk", "OLLAMA_EMBED_CHUNK"),
-                         ("embed_backend", "embed_backend"), ("search_backend", "search_backend")]:
+                         ("ollama_describe_model", "OLLAMA_DESCRIBE_MODEL"),
+                         ("embed_backend", "embed_backend"), ("search_backend", "search_backend"),
+                         ("describe_backend", "describe_backend")]:
             val = db.get_setting(key)
             if val is not None and val != "":
                 if var == "OLLAMA_EMBED_CHUNK":
