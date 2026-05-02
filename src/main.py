@@ -10,6 +10,7 @@ import logging
 import importlib
 import sys
 import os
+import requests
 
 from database import DatabaseManager
 from config import LANCEDB_PATH, LOG_FILE, FLAG_DIR, VENV_PYTHON, PROJECT_ROOT, DATA_DIR
@@ -430,6 +431,47 @@ async def watchdog_crashes():
     no_restart = (FLAG_DIR / "no_restart").exists()
     mode = "sleeping" if no_restart else "active"
     return {"crashes": crashes[:50], "no_restart": no_restart, "mode": mode}
+
+
+@app.get("/api/proxy/ollama_check")
+async def ollama_check(url: str = ""):
+    url = _fix_ollama_url(url)
+    try:
+        r = requests.get(f"{url}/api/version", timeout=5)
+        if r.status_code == 200:
+            return {"ok": True, "version": r.json().get("version", "?")}
+        return {"ok": False, "error": f"HTTP {r.status_code}"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/api/proxy/ollama_models")
+async def ollama_models(url: str = ""):
+    url = _fix_ollama_url(url)
+    try:
+        r = requests.get(f"{url}/api/tags", timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            models = []
+            for m in data.get("models", []):
+                models.append({
+                    "name": m.get("name", "?"),
+                    "size": m.get("size", 0),
+                })
+            return {"models": models}
+        return {"error": f"HTTP {r.status_code}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _fix_ollama_url(url):
+    url = url.strip()
+    if not url.startswith("http://") and not url.startswith("https://"):
+        url = "http://" + url
+    url = url.replace("https://", "http://")
+    if ":" not in url.split("/")[2] if "://" in url else True:
+        url = url.rstrip("/") + ":11434"
+    return url
 
 
 @app.post("/api/control/start")

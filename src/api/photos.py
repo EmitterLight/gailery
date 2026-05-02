@@ -639,48 +639,38 @@ def _get_mqtt_api():
         return None
 
 
-_embed_model = None
-_embed_tokenizer = None
+_embed_engine = None
 _embed_lock = None
 
 
-def _get_embed_model():
-    global _embed_model, _embed_tokenizer, _embed_lock
-    import torch
-    from transformers import AutoModel, AutoTokenizer
+def _get_embed_engine():
+    global _embed_engine, _embed_lock
     if _embed_lock is None:
         import threading
         _embed_lock = threading.Lock()
     with _embed_lock:
-        if _embed_model is None:
-            os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-            _embed_tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-Embedding-0.6B")
-            _embed_model = AutoModel.from_pretrained("Qwen/Qwen3-Embedding-0.6B", dtype=torch.float16).cuda().eval()
-            logger.info("[SEMSEARCH] Embedding model loaded on GPU")
-        return _embed_model, _embed_tokenizer
+        if _embed_engine is None:
+            import sys
+            from pathlib import Path
+            sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+            from embed import EmbedEngine
+            _embed_engine = EmbedEngine()
+            logger.info("[SEMSEARCH] EmbedEngine loaded (llama-cpp-python GPU)")
+        return _embed_engine
 
 
-def _unload_embed_model():
-    global _embed_model, _embed_tokenizer
-    import torch
-    if _embed_model is not None:
-        del _embed_model
-        del _embed_tokenizer
-        _embed_model = None
-        _embed_tokenizer = None
-        torch.cuda.empty_cache()
-        logger.info("[SEMSEARCH] Embedding model unloaded, GPU memory released")
+def _unload_embed_engine():
+    global _embed_engine
+    if _embed_engine is not None:
+        _embed_engine.cleanup()
+        _embed_engine = None
+        logger.info("[SEMSEARCH] EmbedEngine unloaded, GPU memory released")
 
 
 def _embed_query(query_text):
-    import torch
-    model, tokenizer = _get_embed_model()
-    tok = tokenizer([query_text], padding=True, truncation=True, max_length=512, return_tensors="pt").to("cuda")
-    with torch.no_grad():
-        out = model(**tok)
-        emb = out.last_hidden_state[:, -1, :]
-        emb = torch.nn.functional.normalize(emb, p=2, dim=1)
-    return emb[0].cpu().numpy().tolist()
+    engine = _get_embed_engine()
+    vec = engine.encode_single(query_text)
+    return vec.tolist()
 
 
 @router.get("/semantic_search")
@@ -716,7 +706,7 @@ async def semantic_search(q: str = "", limit: int = 20, threshold: float = 1.0):
         logger.info(f"[SEMSEARCH] Got embedding size={len(q_emb)}")
     except Exception as e:
         logger.error(f"[SEMSEARCH] Error getting embedding: {e}")
-        _unload_embed_model()
+        _unload_embed_engine()
         return {"total": 0, "photos": [], "query": q, "error": str(e)}
     finally:
         if mq and gpu_acquired:

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 embed.py - Generate text embeddings for semantic search.
-Uses Qwen3-Embedding-0.6B via transformers with GPU batching.
+Uses Qwen3-Embedding-0.6B via llama-cpp-python (GPU).
+Ollama-style: pre-allocated KV slots, no memory_clear, tail-only seq_rm.
 Stores vectors in LanceDB.
 
 Usage:
@@ -20,24 +21,24 @@ from datetime import datetime
 from pathlib import Path
 
 import numpy as np
-import torch
-from transformers import AutoModel, AutoTokenizer
+import requests
 
 VENV_PYTHON = os.environ.get("GALLERY_VENV_PYTHON", str(Path(__file__).parent / "venv" / "bin" / "python3"))
 if os.path.exists(VENV_PYTHON) and sys.executable != VENV_PYTHON:
     os.execv(VENV_PYTHON, [VENV_PYTHON, __file__] + sys.argv[1:])
 
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
+import config as app_config
 from config import PHOTO_SHARE_PATH
 LOG_FILE = str(Path(__file__).parent / "logs" / "pipeline.log")
 FLAG_FILE = str(Path(__file__).parent / "data" / "pipeline_flags" / "embed")
 
-HF_MODEL = "Qwen/Qwen3-Embedding-0.6B"
-EMBED_BATCH_SIZE = 64
-EMBED_MAX_LENGTH = 512
+NUM_SEQ = 4
+N_CTX = 512
+MODEL_PATH = str(Path(__file__).parent / "models" / "gguf" / "Qwen3-Embedding-0.6B-Q8_0.gguf")
+SEARCH_TEXT_MAX_LEN = 900
 LANCE_FLUSH_SIZE = 2048
 LOG_INTERVAL = 10
-SEARCH_TEXT_MAX_LEN = 900
 
 
 def _fmt_dur(secs):
@@ -151,32 +152,164 @@ def compute_meta_hash(search_text):
 
 
 class EmbedEngine:
+    _silent_cb = None
+
+    @classmethod
+    def _suppress_llama_log(cls):
+        import ctypes
+        import llama_cpp
+        if cls._silent_cb is not None:
+            return
+        CB = ctypes.CFUNCTYPE(None, ctypes.c_int, ctypes.c_char_p, ctypes.c_void_p)
+        cls._silent_cb = CB(lambda level, text, ud: None)
+        llama_cpp.llama_log_set(cls._silent_cb, ctypes.c_void_p(0))
+
     def __init__(self):
-        os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-        log(f"Loading {HF_MODEL}...")
-        self.tokenizer = AutoTokenizer.from_pretrained(HF_MODEL)
-        self.model = AutoModel.from_pretrained(HF_MODEL, dtype=torch.float16).cuda().eval()
-        log(f"Model loaded on {torch.cuda.get_device_name(0)}")
+        self._mode = getattr(app_config, 'OLLAMA_MODE', 'local')
+        if self._mode == "ollama":
+            self._init_ollama()
+        else:
+            self._init_local()
+
+    def _init_ollama(self):
+        url = app_config.OLLAMA_BASE_URL.strip()
+        url = url.replace("https://", "http://")
+        if not url.startswith("http://"):
+            url = "http://" + url
+        self._ollama_url = url.rstrip('/')
+        self._ollama_model = app_config.OLLAMA_EMBED_MODEL
+        self._n_embd = 1024
+        log(f"Embed engine: Ollama mode → {self._ollama_url} model={self._ollama_model}")
+
+    def _init_local(self):
+        import llama_cpp
+
+        self._suppress_llama_log()
+        lc = llama_cpp
+        self._lc = lc
+
+        model_enc = MODEL_PATH.encode('utf-8')
+        model_params = lc.llama_model_default_params()
+        model_params.n_gpu_layers = 99
+        self._model = lc.llama_model_load_from_file(model_enc, model_params)
+        if not self._model:
+            raise RuntimeError(f"Failed to load model {MODEL_PATH}")
+
+        self._n_embd = lc.llama_model_n_embd(self._model)
+        self._vocab = lc.llama_model_get_vocab(self._model)
+
+        n_ctx_total = N_CTX * NUM_SEQ
+        ctx_params = lc.llama_context_default_params()
+        ctx_params.n_ctx = n_ctx_total
+        ctx_params.n_batch = n_ctx_total
+        ctx_params.n_ubatch = N_CTX
+        ctx_params.n_seq_max = NUM_SEQ
+        ctx_params.embeddings = True
+        ctx_params.kv_unified = True
+        ctx_params.flash_attn_type = 1
+        ctx_params.n_threads = 4
+        ctx_params.n_threads_batch = 4
+
+        self._ctx = lc.llama_init_from_model(self._model, ctx_params)
+        if not self._ctx:
+            raise RuntimeError("Failed to create context")
+
+        self._mem = lc.llama_get_memory(self._ctx)
+        self._batch = lc.llama_batch_init(n_ctx_total, 0, NUM_SEQ)
+
+        log(f"Model loaded, n_embd={self._n_embd}, n_seq_max={NUM_SEQ}, n_ctx_per_seq={N_CTX}")
 
     def encode(self, texts):
+        if self._mode == "ollama":
+            return self._encode_ollama(texts)
+        return self._encode_local(texts)
+
+    def _encode_ollama(self, texts):
+        r = requests.post(
+            f"{self._ollama_url}/api/embed",
+            json={"model": self._ollama_model, "input": texts},
+            timeout=120,
+        )
+        r.raise_for_status()
+        items = r.json()["embeddings"]
         all_vecs = []
-        for i in range(0, len(texts), EMBED_BATCH_SIZE):
-            chunk = texts[i:i + EMBED_BATCH_SIZE]
-            tok = self.tokenizer(
-                chunk, padding=True, truncation=True,
-                max_length=EMBED_MAX_LENGTH, return_tensors="pt",
-            ).to("cuda")
-            with torch.no_grad():
-                out = self.model(**tok)
-                emb = out.last_hidden_state[:, -1, :]
-                emb = torch.nn.functional.normalize(emb, p=2, dim=1)
-            all_vecs.append(emb.cpu().numpy())
-        return np.concatenate(all_vecs, axis=0)
+        for item in items:
+            vec = np.array(item, dtype=np.float32)
+            norm = np.linalg.norm(vec)
+            if norm > 0:
+                vec = vec / norm
+            all_vecs.append(vec)
+        return np.stack(all_vecs, axis=0)
+
+    def _encode_local(self, texts):
+        lc = self._lc
+        batch = self._batch
+
+        batch.n_tokens = 0
+        sizes = []
+        for seq_id, text in enumerate(texts):
+            lc.llama_memory_seq_rm(self._mem, seq_id, 0, -1)
+
+            buf = (lc.llama_token * N_CTX)()
+            n = lc.llama_tokenize(
+                self._vocab, text.encode('utf-8'), len(text),
+                buf, N_CTX, True, True, False
+            )
+            n = min(max(n, 0), N_CTX)
+            sizes.append(n)
+            if n > 0:
+                n0 = batch.n_tokens; batch.n_tokens += n
+                for t in range(n):
+                    j = n0 + t
+                    batch.token[j] = buf[t]
+                    batch.pos[j] = t
+                    batch.seq_id[j][0] = seq_id
+                    batch.n_seq_id[j] = 1
+                    batch.logits[j] = False
+                batch.logits[n0 + n - 1] = True
+
+        ret = lc.llama_decode(self._ctx, batch)
+        if ret != 0:
+            raise RuntimeError(f"llama_decode returned {ret}")
+
+        all_vecs = []
+        for seq_id in range(len(texts)):
+            if sizes[seq_id] == 0:
+                all_vecs.append(np.zeros(self._n_embd, dtype=np.float32))
+                continue
+
+            emb = lc.llama_get_embeddings_seq(self._ctx, seq_id)
+            if emb:
+                vec = np.array(emb[:self._n_embd], dtype=np.float32)
+                norm = np.linalg.norm(vec)
+                if norm > 0:
+                    vec = vec / norm
+                all_vecs.append(vec)
+            else:
+                ith = sizes[seq_id] - 1
+                emb2 = lc.llama_get_embeddings_ith(self._ctx, ith)
+                if emb2:
+                    vec = np.array(emb2[:self._n_embd], dtype=np.float32)
+                    norm = np.linalg.norm(vec)
+                    if norm > 0:
+                        vec = vec / norm
+                    all_vecs.append(vec)
+                else:
+                    all_vecs.append(np.zeros(self._n_embd, dtype=np.float32))
+
+        return np.stack(all_vecs, axis=0)
+
+    def encode_single(self, text):
+        vecs = self.encode([text])
+        return vecs[0]
 
     def cleanup(self):
-        del self.model
-        del self.tokenizer
-        torch.cuda.empty_cache()
+        if self._mode == "ollama":
+            return
+        lc = self._lc
+        lc.llama_batch_free(self._batch)
+        lc.llama_free(self._ctx)
+        lc.llama_model_free(self._model)
         log("GPU memory released")
 
 
@@ -256,9 +389,8 @@ def _main(db, args, mq=None):
     try:
         engine = EmbedEngine()
 
-        batch_texts = []
-        batch_meta = []
         lance_buffer = []
+        mark_buffer = []
         embedded = 0
         skipped = 0
         t0 = time.time()
@@ -308,6 +440,12 @@ def _main(db, args, mq=None):
                             "bbox_x2": fr[6], "bbox_y2": fr[7],
                         })
 
+            # Batch encode: collect texts, encode in groups
+            chunk_size = getattr(app_config, 'OLLAMA_EMBED_CHUNK', 64) if engine._mode == "ollama" else NUM_SEQ
+            batch_texts = []
+            batch_photos = []
+            batch_hashes = []
+
             for p in chunk:
                 if mq and (mq.stopped() or mq.paused()):
                     if mq.stopped():
@@ -334,37 +472,39 @@ def _main(db, args, mq=None):
                     continue
 
                 meta_hash = compute_meta_hash(search_text)
-
                 batch_texts.append(search_text)
-                batch_meta.append({
-                    "photo_id": p["photo_id"],
-                    "path": path,
-                    "search_text": search_text,
-                    "meta_hash": meta_hash,
-                    "embedded_at": datetime.now().isoformat(),
-                })
+                batch_photos.append(p)
+                batch_hashes.append(meta_hash)
 
-                if len(batch_texts) >= EMBED_BATCH_SIZE:
-                    vectors = engine.encode(batch_texts)
-                    for j, meta in enumerate(batch_meta):
+                if len(batch_texts) >= chunk_size:
+                    # Encode batch
+                    vecs = engine.encode(batch_texts)
+                    for j, p2 in enumerate(batch_photos):
+                        vec = vecs[j]
+                        if j < len(batch_hashes):
+                            meta = batch_hashes[j]
+                        else:
+                            meta = compute_meta_hash(build_search_text(p2, photo_faces.get(p2.get("content_hash",""), []), persona_map))
                         lance_buffer.append({
-                            "photo_id": meta["photo_id"],
-                            "search_text": meta["search_text"],
-                            "embedding": vectors[j].tolist(),
-                            "meta_hash": meta["meta_hash"],
-                            "embedded_at": meta["embedded_at"],
+                            "photo_id": p2["photo_id"],
+                            "search_text": batch_texts[j] if j < len(batch_texts) else "",
+                            "embedding": vec.tolist(),
+                            "meta_hash": meta,
+                            "embedded_at": datetime.now().isoformat(),
                         })
                         embedded += 1
+                        mark_buffer.append(p2["photo_id"])
+                        if len(mark_buffer) >= 64:
+                            _mark_embedded_batch(db, mark_buffer)
+                            mark_buffer = []
+                        processed += 1
+                        if len(lance_buffer) >= LANCE_FLUSH_SIZE:
+                            db.add_photo_embeddings_batch(lance_buffer)
+                            lance_buffer = []
 
-                    _mark_embedded(db, batch_meta)
                     batch_texts = []
-                    batch_meta = []
-
-                processed += 1
-
-                if len(lance_buffer) >= LANCE_FLUSH_SIZE:
-                    db.add_photo_embeddings_batch(lance_buffer)
-                    lance_buffer = []
+                    batch_photos = []
+                    batch_hashes = []
 
                 now = time.time()
                 if now - last_log_t >= LOG_INTERVAL:
@@ -376,6 +516,29 @@ def _main(db, args, mq=None):
                     log(f"  [{embedded}/{total_to_embed}] {pct:.1f}% | {elapsed_fmt} пройдено, {rate:.0f}/с{eta_fmt}")
                     last_log_t = now
 
+            # Encode remaining batch
+            if batch_texts:
+                vecs = engine.encode(batch_texts)
+                for j, p2 in enumerate(batch_photos):
+                    vec = vecs[j]
+                    meta = batch_hashes[j] if j < len(batch_hashes) else compute_meta_hash(build_search_text(p2, photo_faces.get(p2.get("content_hash",""), []), persona_map))
+                    lance_buffer.append({
+                        "photo_id": p2["photo_id"],
+                        "search_text": batch_texts[j],
+                        "embedding": vec.tolist(),
+                        "meta_hash": meta,
+                        "embedded_at": datetime.now().isoformat(),
+                    })
+                    embedded += 1
+                    mark_buffer.append(p2["photo_id"])
+                    if len(mark_buffer) >= 64:
+                        _mark_embedded_batch(db, mark_buffer)
+                        mark_buffer = []
+                    processed += 1
+                    if len(lance_buffer) >= LANCE_FLUSH_SIZE:
+                        db.add_photo_embeddings_batch(lance_buffer)
+                        lance_buffer = []
+
             if args.force:
                 offset += fetch_size
             else:
@@ -385,18 +548,8 @@ def _main(db, args, mq=None):
                 if remaining == 0:
                     break
 
-        if batch_texts:
-            vectors = engine.encode(batch_texts)
-            for j, meta in enumerate(batch_meta):
-                lance_buffer.append({
-                    "photo_id": meta["photo_id"],
-                    "search_text": meta["search_text"],
-                    "embedding": vectors[j].tolist(),
-                    "meta_hash": meta["meta_hash"],
-                    "embedded_at": meta["embedded_at"],
-                })
-                embedded += 1
-            _mark_embedded(db, batch_meta)
+        if mark_buffer:
+            _mark_embedded_batch(db, mark_buffer)
 
         if lance_buffer:
             db.add_photo_embeddings_batch(lance_buffer)
@@ -433,10 +586,10 @@ def _main(db, args, mq=None):
     return 0
 
 
-def _mark_embedded(db, records):
+def _mark_embedded_batch(db, photo_ids):
     cur = db.sqlite.cursor()
-    for r in records:
-        cur.execute("UPDATE photos SET embedded = 1 WHERE photo_id = ?", (r["photo_id"],))
+    ph = ",".join("?" * len(photo_ids))
+    cur.execute(f"UPDATE photos SET embedded = 1 WHERE photo_id IN ({ph})", photo_ids)
     db.sqlite.commit()
 
 

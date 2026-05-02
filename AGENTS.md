@@ -5,6 +5,48 @@
 
 ---
 
+## FUNDAMENTAL: Двухконтурная архитектура (dual-circuit)
+
+### Принцип
+Все GPU-задачи (кроме describe/faces) должны работать в двух режимах:
+
+| Режим | Бэкенд | Характер |
+|---|---|---|
+| **local** (по умолчанию) | transformers / llama-cpp-python | Прямой GPU, без зависимостей |
+| **ollama** | Ollama HTTP API | Использует запущенный сервер Ollama (локальный или сетевой) |
+
+### Конфигурация в `config.py`
+```python
+OLLAMA_MODE = "local"          # "local" | "ollama"
+OLLAMA_BASE_URL = "http://192.168.237.158:11434"  # или http://localhost:11434
+OLLAMA_EMBED_MODEL = "qwen3-embedding:0.6b"
+```
+
+### Реализация в каждом воркере
+```python
+if config.OLLAMA_MODE == "ollama":
+    result = ollama_request("POST", "/api/embed", body)
+else:
+    result = local_engine.encode(texts)
+```
+
+### Что реализовано двухконтурно
+- [x] **embed** — семантическая индексация (transformers/llama-cpp-python vs Ollama)
+- [x] **semantic_search** — поиск (локально vs Ollama, через EmbedEngine)
+- [ ] **enrich_description** — обогащение описаний (llama.cpp vs Ollama)
+- [ ] **describe** — описание фото (llama-server vs Ollama/VLM)
+- [ ] **exif** — не требует GPU, всегда локально
+
+### Что НЕ двухконтурно (всегда локально)
+- faces — InsightFace GPU
+
+### Преимущества
+- По умолчанию работает без Ollama (автономно)
+- При наличии Ollama — использует её оптимизированный llama.cpp
+- Ollama может быть на другой машине (сетевой доступ)
+
+---
+
 ## FUNDAMENTAL: Идентификация файлов и счётчики
 
 ### Принцип идентификации

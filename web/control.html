@@ -458,6 +458,8 @@
             <button class="tab-btn" onclick="switchTab('config')">&#128736; Конфигурация</button>
             <button class="tab-btn" onclick="switchTab('family')">&#128106; Семья</button>
             <button class="tab-btn" onclick="switchTab('models')">&#128187; Модели</button>
+            <button class="tab-btn" onclick="switchTab('routing')">&#128260; Маршрутизация</button>
+            <button class="tab-btn" onclick="switchTab('ollama')">&#129302; Ollama</button>
         </div>
 
         <div class="tab-panel active" id="tab-pipeline">
@@ -586,6 +588,32 @@
                 </div>
                 <div id="modelsList"></div>
                 <div id="modelsStatus" class="mdl-status"></div>
+            </div>
+</div>
+
+        <div class="tab-panel" id="tab-routing">
+            <div class="backup-sec" id="routingSec">
+                <h3>&#128260; Маршрутизация задач</h3>
+                <p class="mdl-hint">Выбор бэкенда для каждой GPU-задачи. Переключение только если обе модели доступны.</p>
+                <div id="routingList"></div>
+            </div>
+        </div>
+
+        <div class="tab-panel" id="tab-ollama">
+            <div class="maint-sec">
+                <h3>&#129302; Сервер Ollama</h3>
+                <div class="maint-row">
+                    <label style="width:100px;font-size:12px;line-height:28px">URL сервера</label>
+                    <input id="ollamaUrl" placeholder="http://ollama.localnet:11434" style="flex:1;padding:4px 8px;border-radius:4px;max-width:350px">
+                    <button class="btn btn-go" onclick="ollamaCheck()">&#128269; Проверить</button>
+                    <button class="btn btn-go" id="ollamaSaveBtn" onclick="ollamaSave()" style="display:none">&#128190; Сохранить</button>
+                    <span id="ollamaSaveStatus" style="font-size:12px;color:#6e7681"></span>
+                </div>
+                <div id="ollamaServerInfo" style="margin-top:8px;font-size:12px;color:#6e7681"></div>
+            </div>
+            <div class="maint-sec" id="ollamaModelsSec" style="display:none">
+                <h3>&#128214; Проверка моделей</h3>
+                <div id="ollamaModelChecks" style="font-size:12px"></div>
             </div>
         </div>
     </div>
@@ -1765,7 +1793,172 @@ function checkModel(modelId){
     });
 }
 
+// --- Ollama tab ---
+var _ollamaOk = false;
+var REQUIRED_MODELS = [
+    {name:'qwen3-embedding:0.6b', purpose:'Семантическая индексация'},
+    {name:'qwen3.5:4b', purpose:'Описание фото / Обогащение'},
+];
+
+function ollamaLoad(){
+    fetch(API+'/settings/ollama_base_url').then(r=>r.json()).then(function(v){
+        if(v && v.value) document.getElementById('ollamaUrl').value = v.value;
+    });
+}
+function ollamaCheck(){
+    var info = document.getElementById('ollamaServerInfo');
+    var sec = document.getElementById('ollamaModelsSec');
+    var chk = document.getElementById('ollamaModelChecks');
+    var saveBtn = document.getElementById('ollamaSaveBtn');
+    var url = document.getElementById('ollamaUrl').value;
+    if(!url){ info.innerHTML='<span style=\"color:#f85149\">Укажите URL сервера</span>'; return; }
+
+    info.innerHTML = '<span style=\"color:#58a6ff\">Проверяю...</span>';
+    sec.style.display = 'none'; saveBtn.style.display = 'none';
+    _ollamaOk = false;
+
+    fetch(API+'/../api/proxy/ollama_check?url='+encodeURIComponent(url))
+    .then(r=>r.json()).then(function(ver){
+        if(!ver.ok){ info.innerHTML='<span style=\"color:#f85149\">&#10007; Сервер недоступен: '+esc(ver.error||'нет ответа')+'</span>'; return; }
+
+        info.innerHTML = '<span style=\"color:#3fb950\">&#10003; Доступен</span> — v'+esc(ver.version);
+
+        // Now check models
+        return fetch(API+'/../api/proxy/ollama_models?url='+encodeURIComponent(url));
+    }).then(r=>r?r.json():null).then(function(d){
+        if(!d || !d.models){ d={models:[]}; }
+        var names = {};
+        d.models.forEach(function(m){ names[m.name] = m; });
+
+        var h = '<table style=\"width:100%;border-collapse:collapse;margin-top:8px\">';
+        h += '<tr style=\"color:#6e7681\"><th style=\"text-align:left;padding:6px\">Модель</th><th style=\"text-align:left;padding:6px\">Назначение</th><th style=\"text-align:center;padding:6px\">Статус</th></tr>';
+        var allOk = true;
+        REQUIRED_MODELS.forEach(function(req){
+            var found = names[req.name];
+            if(found){
+                h += '<tr><td style=\"padding:6px\">'+esc(req.name)+'</td><td style=\"padding:6px;color:#6e7681\">'+req.purpose+'</td><td style=\"text-align:center;padding:6px\"><span style=\"color:#3fb950\">&#10003; '+formatBytes(found.size)+'</span></td></tr>';
+            } else {
+                allOk = false;
+                h += '<tr><td style=\"padding:6px\">'+esc(req.name)+'</td><td style=\"padding:6px;color:#6e7681\">'+req.purpose+'</td><td style=\"text-align:center;padding:6px\"><span style=\"color:#f85149\">&#10007; Нет</span></td></tr>';
+                h += '<tr><td colspan=\"3\" style=\"padding:0 6px 8px 6px\"><span style=\"color:#d29922;font-size:11px\">Администратору сервера Ollama:<br><code>ollama pull '+esc(req.name)+'</code></span></td></tr>';
+            }
+        });
+        h += '</table>';
+        chk.innerHTML = h;
+        sec.style.display = 'block';
+        _ollamaOk = allOk;
+        if(allOk){
+            info.innerHTML += ' <span style=\"color:#3fb950;margin-left:8px\">Все модели на месте</span>';
+            saveBtn.style.display = 'inline-block';
+            fetch(API+'/settings/ollama_mode',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:'ollama'})});
+        } else {
+            info.innerHTML += ' <span style=\"color:#d29922;margin-left:8px\">Не хватает моделей</span>';
+            saveBtn.style.display = 'none';
+            fetch(API+'/settings/ollama_mode',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:'local'})});
+        }
+    }).catch(function(e){
+        info.innerHTML='<span style=\"color:#f85149\">&#10007; Ошибка: '+e+'</span>';
+    });
+}
+function ollamaSave(){
+    var el = document.getElementById('ollamaSaveStatus');
+    var url = document.getElementById('ollamaUrl').value;
+    el.textContent='Сохраняю...'; el.style.color='#58a6ff';
+    fetch(API+'/settings/ollama_base_url',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:url})})
+    .then(function(){ el.textContent='Сохранено'; el.style.color='#3fb950'; })
+    .catch(function(e){ el.textContent='Ошибка: '+e; el.style.color='#f85149'; });
+}
+function formatBytes(b){ if(!b)return '?'; var u=['B','KB','MB','GB'],i=0; while(b>=1024&&i<3){b/=1024;i++;} return b.toFixed(1)+' '+u[i]; }
+
+// --- Task routing ---
+var DUAL_TASKS = [
+    {id:'embed', name:'Семантическая индексация', modelId:'qwen3-embed', ollamaModel:'qwen3-embedding:0.6b'},
+];
+function loadRouting(){
+    var url = document.getElementById('ollamaUrl').value;
+    var prom = url ? fetch(API+'/../api/proxy/ollama_models?url='+encodeURIComponent(url)).then(r=>r.json()).catch(function(){return{models:[]}}) : Promise.resolve({models:[]});
+    Promise.all([
+        fetch(API+'/models').then(r=>r.json()),
+        fetch(API+'/settings/ollama_mode').then(r=>r.json()).then(function(v){ return (v && v.value) || 'local'; }),
+        prom
+    ]).then(function(r){ return {localModels:r[0], ollamaMode:r[1]||'local', ollamaModels:r[2].models||[]}; }).then(function(data){
+        var localPresent = {};
+        (data.localModels.models||[]).forEach(function(m){ localPresent[m.id] = m.present||false; });
+        var ollamaNames = {};
+        data.ollamaModels.forEach(function(m){ ollamaNames[m.name] = true; });
+
+        var sec = document.getElementById('routingSec');
+        var list = document.getElementById('routingList');
+        var h = '';
+        DUAL_TASKS.forEach(function(t){
+            var localOk = localPresent[t.modelId] || false;
+            var ollamaOk = ollamaNames[t.ollamaModel] || false;
+            var mode = data.ollamaMode;
+            var isOllama = mode === 'ollama';
+
+            var lc = localOk ? '#3fb950' : '#f85149';
+            var oc = ollamaOk ? '#3fb950' : '#f85149';
+
+            h += '<div style=\"padding:12px 0;border-bottom:1px solid #21262d\">';
+            h += '<div style=\"font-weight:600;margin-bottom:8px\">'+t.name+'</div>';
+
+            // Toggle bar
+            h += '<div style=\"display:flex;align-items:center;gap:12px;margin-bottom:4px;font-size:13px\">';
+
+            // Local badge
+            h += '<span style=\"display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;border:1px solid '+lc+';color:'+lc+';font-size:12px\">&#127968; Локально</span>';
+
+            // Dots
+            h += '<div onclick=\"switchBackend(\''+t.id+'\',\'local\')\" '
+                +'style=\"width:14px;height:14px;border-radius:50%;border:2.5px solid #000;'
+                +(isOllama?'background:transparent':'background:#000')
+                +';cursor:pointer;flex-shrink:0\"></div>';
+
+            h += '<div style=\"width:36px;height:2.5px;background:#000;flex-shrink:0\"></div>';
+
+            h += '<div onclick=\"switchBackend(\''+t.id+'\',\'ollama\')\" '
+                +'style=\"width:14px;height:14px;border-radius:50%;border:2.5px solid #000;'
+                +(isOllama?'background:#000':'background:transparent')
+                +';cursor:pointer;flex-shrink:0\"></div>';
+
+            // Ollama badge
+            h += '<span style=\"display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;border:1px solid '+oc+';color:'+oc+';font-size:12px\">&#129302; Ollama</span>';
+
+            h += '</div>';
+
+            h += '<div style=\"font-size:11px;color:#6e7681\">Используется '+(isOllama?'внешний сервер Ollama':'локальная модель')+'</div>';
+
+            if(!localOk) h += '<div style=\"font-size:10px;color:#f85149;margin-top:2px\">Локальная модель отсутствует</div>';
+            if(!ollamaOk) h += '<div style=\"font-size:10px;color:#d29922;margin-top:2px\"><code>ollama pull '+t.ollamaModel+'</code></div>';
+
+            h += '</div>';
+        });
+        list.innerHTML = h;
+        sec.style.display = 'block';
+    });
+}
+function switchBackend(taskId, mode){
+    fetch(API+'/settings/ollama_mode',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:mode})})
+    .then(function(){ loadRouting(); });
+}
+
+switchTab.ollamaInit = false;
+var origSwitchTab = switchTab;
+switchTab = function(t){
+    origSwitchTab(t);
+    if(t==='ollama' && !switchTab.ollamaInit){ ollamaLoad(); switchTab.ollamaInit = true; }
+    if(t==='routing'){ loadRouting(); }
+};
+
 loadModels();
+
+// Auto-load Ollama URL if saved, and routing
+(function initOllama(){
+    fetch(API+'/settings/ollama_base_url').then(r=>r.json()).then(function(v){
+        if(v && v.value){ document.getElementById('ollamaUrl').value = v.value; ollamaCheck(); }
+        loadRouting();
+    }).catch(function(){ loadRouting(); });
+})();
 </script>
 </body>
 </html>
