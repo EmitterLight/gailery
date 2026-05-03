@@ -114,3 +114,102 @@ def app_client(tmp_data):
     for p in cfg_patches:
         p.stop()
     _clean_modules()
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Фикстура миникопии реальной БД для write-тестов
+# ═══════════════════════════════════════════════════════════════════════
+
+REAL_DB = Path("/opt/gailray/data/gallery.db")
+
+
+@pytest.fixture
+def minidb(tmp_data):
+    """Миникопия реальной БД: структура + первые N реальных строк.
+
+    Копирует структуру из реальной БД, затем через ATTACH DATABASE
+    переносит первые N строк из каждой таблицы.
+    Пути к фото — реальные (файлы на диске не меняются).
+
+    Используется для write-тестов (SECONDARY).
+    """
+    import sqlite3
+
+    test_path = tmp_data["db_path"]
+
+    # Копируем структуру (только CREATE, без INSERT)
+    prod = sqlite3.connect(str(REAL_DB))
+    schema_lines = []
+    skip_data = False
+    for line in prod.iterdump():
+        if line.startswith("INSERT INTO"):
+            skip_data = True
+        elif line.startswith("CREATE"):
+            skip_data = False
+        if not skip_data:
+            schema_lines.append(line)
+    prod.close()
+
+    schema = "\n".join(schema_lines)
+
+    mini = sqlite3.connect(str(test_path))
+    mini.executescript(schema)
+
+    # ATTACH реальную БД и копируем первые N строк ДАННЫХ
+    mini.execute(f"ATTACH DATABASE '{REAL_DB}' AS prod")
+    for tbl, rowid_col, limit in [
+        ("photos", "photo_id", 100),
+        ("faces", "rowid", 500),
+        ("personas", "rowid", 50),
+        ("catalog_roots", "rowid", 5),
+        ("catalog_files", "rowid", 200),
+        ("changes", "rowid", 50),
+        ("settings", "rowid", 20),
+    ]:
+        cnt = mini.execute(f"SELECT COUNT(*) FROM prod.{tbl}").fetchone()[0]
+        if cnt == 0:
+            continue
+        if cnt > limit:
+            ids = [r[0] for r in mini.execute(
+                f"SELECT {rowid_col} FROM prod.{tbl} LIMIT {limit}").fetchall()]
+            if ids:
+                ph = ",".join("?" * len(ids))
+                mini.execute(
+                    f"INSERT INTO {tbl} SELECT * FROM prod.{tbl} "
+                    f"WHERE {rowid_col} IN ({ph})", ids)
+        else:
+            mini.execute(f"INSERT INTO {tbl} SELECT * FROM prod.{tbl}")
+        mini.commit()
+
+    mini.execute("DETACH DATABASE prod")
+    mini.execute("VACUUM")
+    mini.close()
+
+    _clean_modules()
+    cfg_patches = [
+        patch("config.DATA_DIR", tmp_data["data"]),
+        patch("config.LANCEDB_PATH", tmp_data["lancedb"]),
+        patch("config.LOG_FILE", tmp_data["logs"] / "pipeline.log"),
+        patch("config.THUMBNAILS_DIR", tmp_data["thumbnails"]),
+        patch("config.PHOTO_SHARE_PATH", tmp_data["photo_share"]),
+        patch("config.FLAG_DIR", tmp_data["flags"]),
+    ]
+    for p in cfg_patches:
+        p.start()
+
+    from database import DatabaseManager
+    db_patches = [patch("database.SQLITE_PATH", test_path)]
+    for p in db_patches:
+        p.start()
+    db = DatabaseManager(db_path=test_path)
+
+    from main import app
+    from starlette.testclient import TestClient
+    client = TestClient(app, raise_server_exceptions=False)
+
+    yield {"db": db, "client": client, "tmp_data": tmp_data}
+
+    db.sqlite.close()
+    for p in db_patches + cfg_patches:
+        p.stop()
+    _clean_modules()

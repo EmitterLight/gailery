@@ -323,7 +323,7 @@ function loadAcNames() {
 }
 
 function loadPersonas() {
-    fetch(API + '/persons/?limit=500&named_only=true').then(function(r) { return r.json(); }).then(function(data) {
+    fetch(API + '/persons/?limit=500').then(function(r) { return r.json(); }).then(function(data) {
         allPersonas = data.persons;
         _personasAllLoaded = false;
         var total = data.total;
@@ -343,7 +343,7 @@ var _personasAllLoaded = false;
 
 function _ensureAllPersonas(cb) {
     if (_personasAllLoaded) { cb(); return; }
-    fetch(API + '/persons/?limit=2000').then(function(r) { return r.json(); }).then(function(data) {
+    fetch(API + '/persons/?limit=50000').then(function(r) { return r.json(); }).then(function(data) {
         allPersonas = data.persons;
         _personasAllLoaded = true;
         cb();
