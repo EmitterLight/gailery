@@ -42,9 +42,9 @@ check_gpu.py
 face_pipeline.py
 migrate_lance_to_sqlite.py
 vision_agent.py
-test_*
-check_*
-migrate_*
+/test_*
+/check_*
+/migrate_*
 
 # YOLO model file
 yolo26n.pt
