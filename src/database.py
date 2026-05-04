@@ -263,6 +263,33 @@ class DatabaseManager:
             """)
             self.sqlite.commit()
 
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='system_metrics'")
+        if not cur.fetchone():
+            cur.execute("""
+                CREATE TABLE system_metrics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    cpu_percent REAL,
+                    cpu_temp_max REAL,
+                    mem_percent REAL,
+                    mem_avail_gb REAL,
+                    gpu_load REAL,
+                    gpu_vram_mb REAL,
+                    gpu_temp REAL,
+                    gpu_power_w REAL,
+                    gpu_fan REAL,
+                    disk_root REAL,
+                    disk_share REAL,
+                    load1 REAL,
+                    load5 REAL,
+                    load15 REAL,
+                    net_rx_gb REAL,
+                    net_tx_gb REAL
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_metrics_ts ON system_metrics(timestamp)")
+            self.sqlite.commit()
+
     def _open_vector_tables(self):
         if "photo_embeddings" not in self.vectordb.list_tables().tables:
             schema = pa.schema([
@@ -1215,3 +1242,33 @@ class DatabaseManager:
     def set_setting(self, key, value):
         self.sqlite.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
         self.sqlite.commit()
+
+    def insert_system_metric(self, data):
+        self.sqlite.execute("""
+            INSERT INTO system_metrics (timestamp, cpu_percent, cpu_temp_max, mem_percent, mem_avail_gb,
+                gpu_load, gpu_vram_mb, gpu_temp, gpu_power_w, gpu_fan,
+                disk_root, disk_share, load1, load5, load15, net_rx_gb, net_tx_gb)
+            VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?,?)
+        """, (
+            data["timestamp"], data["cpu_percent"], data["cpu_temp_max"],
+            data["mem_percent"], data["mem_avail_gb"],
+            data["gpu_load"], data["gpu_vram_mb"], data["gpu_temp"],
+            data["gpu_power_w"], data["gpu_fan"],
+            data["disk_root"], data["disk_share"],
+            data["load1"], data["load5"], data["load15"],
+            data["net_rx_gb"], data["net_tx_gb"],
+        ))
+        self.sqlite.execute(
+            "DELETE FROM system_metrics WHERE timestamp < datetime('now', '-25 hours')"
+        )
+        self.sqlite.commit()
+
+    def get_system_metrics(self, limit=120):
+        rows = self.sqlite.execute(
+            "SELECT * FROM system_metrics ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+        cols = [d[1] for d in self.sqlite.execute("PRAGMA table_info(system_metrics)").fetchall()]
+        metrics = []
+        for r in reversed(rows):
+            metrics.append({cols[i]: r[i] for i in range(len(cols))})
+        return metrics

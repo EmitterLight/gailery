@@ -19,16 +19,33 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 db_manager = None
+_monitor_task = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global db_manager
+    global db_manager, _monitor_task
     logger.info("Starting application...")
     db_manager = DatabaseManager()
     logger.info("Database connected")
+
+    import asyncio
+    from system_monitor import collect_metrics
+    async def _collector_loop():
+        await asyncio.sleep(10)
+        while True:
+            try:
+                data = collect_metrics()
+                db_manager.insert_system_metric(data)
+            except Exception as e:
+                logger.warning(f"system_monitor: {e}")
+            await asyncio.sleep(60)
+
+    _monitor_task = asyncio.create_task(_collector_loop())
     yield
     logger.info("Shutting down application...")
+    if _monitor_task:
+        _monitor_task.cancel()
 
 
 app = FastAPI(
@@ -396,6 +413,154 @@ async def get_status():
 
     _status_cache[cache_key] = {"data": status, "ts": now}
     return status
+
+
+@app.get("/api/monitoring")
+async def get_monitoring():
+    import asyncio
+    from system_monitor import collect_live
+    from database import DatabaseManager
+
+    def _compute():
+        db = DatabaseManager()
+        live = collect_live()
+        history = db.get_system_metrics(limit=120)
+        return {"live": live, "history": history}
+
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _compute)
+
+
+@app.get("/api/system-report")
+async def get_system_report():
+    import asyncio
+    from system_monitor import collect_live
+    from database import DatabaseManager
+    import psutil
+    import os
+    import subprocess
+
+    def _report():
+        db = DatabaseManager()
+        live = collect_live()
+        si = live.get("system_info", {})
+
+        mem = psutil.virtual_memory()
+        swap = psutil.swap_memory()
+
+        disks = []
+        for mp in psutil.disk_partitions():
+            try:
+                u = psutil.disk_usage(mp.mountpoint)
+                disks.append({
+                    "mount": mp.mountpoint, "device": mp.device, "fstype": mp.fstype,
+                    "total_gib": round(u.total / (1024**3), 1), "used_gib": round(u.used / (1024**3), 1),
+                    "free_gib": round(u.free / (1024**3), 1), "percent": u.percent,
+                })
+            except Exception:
+                pass
+
+        net = psutil.net_io_counters()
+        boot = psutil.boot_time()
+
+        top_procs = []
+        for p in sorted(psutil.process_iter(['pid','name','memory_percent','cpu_percent']),
+                        key=lambda x: x.info.get('memory_percent', 0) or 0, reverse=True)[:8]:
+            try:
+                top_procs.append({
+                    "pid": p.info['pid'], "name": p.info['name'] or '?',
+                    "mem_pct": round(p.info['memory_percent'] or 0, 2),
+                    "cpu_pct": round(p.info['cpu_percent'] or 0, 1),
+                })
+            except Exception:
+                pass
+
+        gpu_processes = []
+        try:
+            import subprocess
+            out = subprocess.run(
+                ["nvidia-smi", "--query-compute-apps=pid,process_name,used_memory",
+                 "--format=csv,noheader,nounits"],
+                capture_output=True, text=True, timeout=5,
+            )
+            for line in out.stdout.strip().split("\n"):
+                if not line.strip(): continue
+                parts = [p.strip() for p in line.split(", ", 2)]
+                if len(parts) >= 3:
+                    gpu_processes.append({"pid": parts[0], "name": parts[1], "vram_mb": parts[2]})
+        except Exception:
+            pass
+
+        report = {
+            "host": {
+                "hostname": si.get("hostname", "?"),
+                "kernel": si.get("kernel", "?"),
+                "uptime_seconds": live.get("uptime_seconds", 0),
+                "boot_time": boot,
+                "cpu_model": si.get("cpu_model", "?"),
+                "cpu_cores_logical": si.get("cpu_count", 0),
+                "cpu_cores_physical": psutil.cpu_count(logical=False),
+                "load_1m": live.get("load1", 0),
+                "load_5m": live.get("load5", 0),
+                "load_15m": live.get("load15", 0),
+                "cpu_percent": live.get("cpu_percent", 0),
+                "cpu_temp_max": live.get("cpu_temp_max", 0),
+            },
+            "memory": {
+                "total_gib": round(mem.total / (1024**3), 1),
+                "available_gib": round(mem.available / (1024**3), 1),
+                "used_gib": round(mem.used / (1024**3), 1),
+                "free_gib": round(mem.free / (1024**3), 1),
+                "percent": mem.percent,
+                "cached_gib": round((mem.cached + mem.buffers) / (1024**3), 1) if hasattr(mem, 'cached') else 0,
+                "swap_total_gib": round(swap.total / (1024**3), 1),
+                "swap_used_gib": round(swap.used / (1024**3), 1),
+            },
+            "gpu": {
+                "name": si.get("gpu_name", "?"),
+                "driver": si.get("driver_ver", "?"),
+                "load_pct": live.get("gpu_load", 0),
+                "vram_used_mb": live.get("gpu_vram_mb", 0),
+                "vram_total_mb": live.get("gpu_vram_total", 8192),
+                "temp_c": live.get("gpu_temp", 0),
+                "power_w": live.get("gpu_power_w", 0),
+                "fan_pct": live.get("gpu_fan", 0),
+                "sm_clock_mhz": live.get("gpu_sm_clock", 0),
+                "mem_clock_mhz": live.get("gpu_mem_clock", 0),
+                "pcie_gen": si.get("pcie_gen", "?"),
+                "pcie_width": si.get("pcie_width", "?"),
+                "processes": gpu_processes,
+            },
+            "disks": disks,
+            "network": {
+                "rx_gb": round(net.bytes_recv / 1e9, 2),
+                "tx_gb": round(net.bytes_sent / 1e9, 2),
+                "packets_recv": net.packets_recv,
+                "packets_sent": net.packets_sent,
+            },
+            "top_processes": top_procs,
+            "gailray": {
+                "photos": db.count_photos("deleted = 0"),
+                "persons": db.sqlite.execute("SELECT COUNT(*) FROM personas").fetchone()[0],
+                "faces": db.sqlite.execute("SELECT COUNT(*) FROM faces").fetchone()[0],
+                "catalog_files": db.sqlite.execute("SELECT COUNT(*) FROM catalog_files WHERE deleted = 0").fetchone()[0],
+                "db_size_mb": round(os.path.getsize(str(DATA_DIR / "gallery.db")) / (1024**2), 1),
+                "lancedb_size_mb": 0,
+            }
+        }
+        try:
+            total = int(subprocess.run(["du", "-s",
+                str(DATA_DIR / "lancedb")], capture_output=True, text=True,
+                timeout=10).stdout.split()[0])
+            report["gailray"]["lancedb_size_mb"] = round(total / 1024, 1)
+        except Exception:
+            pass
+
+        db.sqlite.commit()
+        return report
+
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _report)
 
 
 @app.get("/api/mqtt/workers")
