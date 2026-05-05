@@ -719,6 +719,7 @@
         <div class="modal-nav modal-next" onclick="modalNav(1)">&#8250;</div>
         <div class="modal-img-wrap" id="modalImgWrap" style="cursor:grab">
             <img id="photoModalImg" src="" onclick="event.stopPropagation()">
+            <video id="photoModalVideo" src="" controls style="display:none;width:100%;height:100%;max-width:90vw;max-height:85vh;object-fit:contain" onclick="event.stopPropagation()"></video>
             <div class="face-overlays" id="faceOverlays"></div>
         </div>
         <div class="modal-topbar" id="modalTopbar">
@@ -1337,11 +1338,24 @@ function buildCardHtml(p, idx) {
 function playVideoCard(idx) {
     var p = currentPhotos[idx];
     if (!p) return;
-    openDetail(idx);
-    setTimeout(function(){
-        var v = document.getElementById('detailVideo');
-        if (v) v.play();
-    }, 300);
+    closeDetail();
+    _mIdx = idx;
+    _mPhotoId = p.photo_id || '';
+    var url = p.photo_id ? (API + '/photos/?path=' + encodeURIComponent(p.photo_id)) : '';
+    document.getElementById('photoModalImg').style.display = 'none';
+    var video = document.getElementById('photoModalVideo');
+    video.style.display = 'block';
+    video.src = url;
+    video.load();
+    video.play();
+    document.getElementById('modalImgWrap').style.transform = '';
+    document.getElementById('photoModal').classList.add('show');
+    document.getElementById('modalTopbar').style.display = 'none';
+    document.getElementById('modalDelBtn').style.display = 'none';
+    document.getElementById('faceOverlays').innerHTML = '';
+    var txt = formatDate(p.date);
+    if (p.camera_make || p.camera_model) txt += '<span class="modal-cam">' + esc((p.camera_make || '') + ' ' + (p.camera_model || '')) + '</span>';
+    document.getElementById('modalDate').innerHTML = txt;
 }
 
 function toggleTypeDropdown(e) {
@@ -2454,7 +2468,14 @@ function closePhotoModal() {
     document.getElementById('photoModal').classList.remove('show');
     var img = document.getElementById('photoModalImg');
     img.src = '';
+    img.style.display = '';
     img.classList.remove('cover');
+    var video = document.getElementById('photoModalVideo');
+    video.pause();
+    video.src = '';
+    video.style.display = 'none';
+    document.getElementById('modalTopbar').style.display = '';
+    document.getElementById('modalDelBtn').style.display = '';
     _mDate = '';
     _mPhotoId = '';
     _clearFaceBoxes();
