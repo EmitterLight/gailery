@@ -1355,21 +1355,23 @@ function playVideoCard(idx) {
     var p = currentPhotos[idx];
     if (!p) return;
     var url = p.photo_id ? (API + '/photos/?path=' + encodeURIComponent(p.photo_id)) : '';
-    var video = document.getElementById('vidModalPlayer');
-    video.src = url;
-    video.load();
-    video.play();
     var bar = document.getElementById('vidModalBar');
     var txt = formatDate(p.date);
     if (p.camera_make || p.camera_model) txt += ' <span style="color:#6e7681">&bull;</span> ' + esc((p.camera_make || '') + ' ' + (p.camera_model || ''));
     bar.innerHTML = txt;
+    var old = document.getElementById('vidModalPlayer');
+    old.outerHTML = '<video id="vidModalPlayer" src="' + url + '" controls preload="metadata" onclick="event.stopPropagation()"></video>';
     document.getElementById('vidModal').classList.add('show');
+    setTimeout(function(){
+        var v = document.getElementById('vidModalPlayer');
+        if (v) v.play();
+    }, 200);
 }
 function closeVideoModal() {
     document.getElementById('vidModal').classList.remove('show');
     var video = document.getElementById('vidModalPlayer');
     video.pause();
-    video.src = '';
+    video.removeAttribute('src');
 }
 
 function toggleTypeDropdown(e) {
