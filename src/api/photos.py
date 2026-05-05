@@ -163,8 +163,15 @@ async def get_photo(path: str):
         ".jpg": "image/jpeg",
         ".jpeg": "image/jpeg",
         ".png": "image/png",
-        ".webp": "image/webp"
-    }.get(ext, "image/jpeg")
+        ".webp": "image/webp",
+        ".mp4": "video/mp4",
+        ".mov": "video/quicktime",
+        ".avi": "video/x-msvideo",
+        ".mkv": "video/x-matroska",
+        ".webm": "video/webm",
+        ".3gp": "video/3gpp",
+        ".wmv": "video/x-ms-wmv",
+    }.get(ext, "application/octet-stream")
     try:
         with open(photo_path, "rb") as f:
             content = f.read()
