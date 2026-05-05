@@ -140,6 +140,9 @@ def scan_root(db, root_id):
                 rel_path = os.path.relpath(abs_path, root_path)
                 kept_rel.add(rel_path)
                 scanned += 1
+                if scanned % 500 == 0:
+                    elapsed = time.time() - t0
+                    log(f"Scanned {scanned} files, new={len(new_files)}, changed={changed_count}, restored={restored_count}, dirs_skipped={skipped_dirs}, elapsed={elapsed:.1f}s")
 
                 try:
                     stat = os.stat(abs_path)
@@ -237,6 +240,12 @@ def scan_root(db, root_id):
     new_count = len(kept_rel - existing_rel)
     del_str = f"{deleted_count} deleted" if scan_complete else "NO delete (scan incomplete)"
     log(f"Scan done in {elapsed:.1f}s: {scanned} scanned, {skipped_dirs} dirs skipped, {new_count} new, {changed_count} changed, {del_str}, {restored_count} restored, {stale_count} stale")
+    video_exts_lower = {'.mp4','.mov','.avi','.mkv','.webm','.3gp','.wmv'}
+    new_videos = db.sqlite.execute(
+        "SELECT COUNT(*) FROM catalog_files WHERE root_id = ? AND ext IN ({}) AND is_canonical = 1".format(
+            ','.join("'"+e+"'" for e in video_exts_lower)),
+        (root_id,)).fetchone()[0]
+    log(f"Video files in catalog: {new_videos}")
 
 
 def _mark_stale(db, file_id, old_hash, new_hash, abs_path):

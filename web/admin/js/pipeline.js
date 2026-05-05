@@ -100,12 +100,17 @@ function renderSummary() {
     if (!sec) return;
     if (!st || !st.photos_total) { sec.innerHTML = ''; return; }
     var ct = st.catalog_total || 0, ci = st.catalog_ingested || 0;
-    var h = '<div class="card-grid" style="grid-template-columns:repeat(5,1fr);gap:8px">';
+    var h = '<div class="card-grid" style="grid-template-columns:repeat(6,1fr);gap:8px">';
     h += '<div class="sbox"><div class="sv">'+ci+'</div><div class="sl">Внесено из '+ct+'</div></div>';
     h += '<div class="sbox"><div class="sv">'+(st.catalog_described||0)+'</div><div class="sl">Описано из '+ci+'</div></div>';
     h += '<div class="sbox"><div class="sv">'+(st.catalog_faces_done||0)+'</div><div class="sl">Лица из '+(st.faces_flagged_in_db||0)+'</div></div>';
     h += '<div class="sbox"><div class="sv">'+(st.catalog_exif_done||0)+'</div><div class="sl">EXIF из '+ci+'</div></div>';
     h += '<div class="sbox"><div class="sv">'+(st.photos_embedded||0)+'</div><div class="sl">Индекс из '+(st.photos_total||0)+'</div></div>';
+    if (st.videos && st.videos.catalog) {
+        h += '<div class="sbox"><div class="sv">'+st.videos.ingested+'</div><div class="sl">Видео из '+st.videos.catalog+'</div></div>';
+    } else {
+        h += '<div class="sbox"><div class="sv">0</div><div class="sl">Видео</div></div>';
+    }
     h += '</div>';
     if (st.per_root && st.per_root.length > 1) {
         h += '<div class="src-section"><div class="src-title">По источникам:</div>';

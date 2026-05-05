@@ -87,6 +87,13 @@ def get_progress(root_id=None):
     faces_pending = faces_flagged - faces_done
     embedded = cur.execute(f"SELECT COUNT(*) {base} AND p.embedded = 1", root_params).fetchone()[0]
 
+    video_where = base + " AND p.media_type = 'video'"
+    videos_catalog = cur.execute(f"SELECT COUNT(*) FROM catalog_files cf WHERE cf.is_canonical = 1 AND cf.deleted = 0 AND cf.ext IN ('mp4','mov','avi','mkv','webm','3gp','wmv','MP4','MOV','AVI','MKV','WEBM','3GP','WMV'){root_where}", root_params).fetchone()[0]
+    videos_ingested = cur.execute(f"SELECT COUNT(*) {video_where}", root_params).fetchone()[0]
+    videos_exif = cur.execute(f"SELECT COUNT(*) {video_where} AND p.exif_checked = 1", root_params).fetchone()[0]
+    p_videos_ingest = videos_ingested / max(videos_catalog, 1) * 100 if videos_catalog > 0 else 0
+    p_videos_exif = videos_exif / max(videos_ingested, 1) * 100 if videos_ingested > 0 else 0
+
     p_ingest = ingested / max(cat_total, 1) * 100
     p_describe = described / max(ingested, 1) * 100
     p_exif = exif_checked / max(ingested, 1) * 100
@@ -100,6 +107,13 @@ def get_progress(root_id=None):
         "faces": (faces_done, faces_flagged, p_faces),
         "faces_pending": faces_pending,
         "embed": (embedded, ingested, p_embed),
+        "videos": {
+            "catalog": videos_catalog,
+            "ingested": videos_ingested,
+            "exif": videos_exif,
+            "p_ingest": p_videos_ingest,
+            "p_exif": p_videos_exif,
+        },
     }
 
 

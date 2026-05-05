@@ -1096,7 +1096,28 @@ deleted=None, deleted_only=None,
                 "described": r_described,
                 "exif_done": r_exif,
                 "embedded": r_embedded,
+                "videos": self.sqlite.execute(
+                    "SELECT COUNT(*) FROM photos WHERE root_id = ? AND media_type = 'video' AND deleted = 0",
+                    (rid,)).fetchone()[0],
             })
+
+        videos_total = 0
+        videos_exif = 0
+        if enabled_ids:
+            videos_total = self.sqlite.execute(
+                f"SELECT COUNT(*) FROM catalog_files WHERE is_canonical = 1 AND deleted = 0 AND ext IN ('mp4','mov','avi','mkv','webm','3gp','wmv','MP4','MOV','AVI','MKV','WEBM','3GP','WMV') AND root_id IN ({rid_ph})",
+                enabled_ids
+            ).fetchone()[0]
+            videos_ingested = self.sqlite.execute(
+                f"SELECT COUNT(*) FROM photos WHERE media_type = 'video' AND deleted = 0 AND root_id IN ({rid_ph})",
+                enabled_ids
+            ).fetchone()[0]
+            videos_exif = self.sqlite.execute(
+                f"SELECT COUNT(*) FROM photos WHERE media_type = 'video' AND exif_checked = 1 AND deleted = 0 AND root_id IN ({rid_ph})",
+                enabled_ids
+            ).fetchone()[0]
+        else:
+            videos_ingested = 0
 
         return {
             "photos_total": photos_total,
@@ -1129,6 +1150,11 @@ deleted=None, deleted_only=None,
             "ingested_no_exif": photos_total - exif_done,
             "faces_not_done": max(faces_flagged - faces_processed, 0),
             "per_root": per_root,
+            "videos": {
+                "catalog": videos_total,
+                "ingested": videos_ingested,
+                "exif": videos_exif,
+            },
         }
 
     def mark_canonical_duplicates(self):
