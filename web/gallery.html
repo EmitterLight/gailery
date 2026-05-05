@@ -22,7 +22,9 @@
         .search-bar select { background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; padding: 5px 8px; font-family: monospace; font-size: 12px; }
         .search-bar select:focus { outline: none; border-color: #58a6ff; }
         .type-dropdown { position: relative; }
-        .type-dropdown-btn { background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; padding: 5px 8px; font-family: monospace; font-size: 12px; cursor: pointer; white-space: nowrap; }
+        .type-dropdown-btn { background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; padding: 5px 8px; font-family: monospace; font-size: 12px; cursor: pointer; white-space: nowrap; position: relative; }
+        .type-dropdown-btn .dd-dot { display: none; position: absolute; top: 2px; right: 2px; width: 7px; height: 7px; background: #f85149; border-radius: 50%; }
+        .type-dropdown-btn.has-filter .dd-dot { display: inline-block; }
         .type-dropdown-btn:hover { border-color: #58a6ff; }
         .type-dropdown-menu { display: none; position: absolute; top: 100%; left: 0; z-index: 100; background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 6px; min-width: 120px; box-shadow: 0 8px 24px rgba(0,0,0,.4); margin-top: 2px; }
         .type-dropdown-menu.open { display: block; }
@@ -618,7 +620,7 @@
          <label title="Фото с геолокацией в EXIF"><input type="checkbox" id="chkGps"> С GPS</label>
          <label style="color:#f85149" title="Помеченные к удалению"><input type="checkbox" id="chkDeleted"> Удалённые</label>
 <div class="type-dropdown" id="catDropdown">
-              <button class="type-dropdown-btn" id="catDropdownBtn" onclick="toggleCatDropdown(event)" title="Категории (определяется ИИ)">Категории: Все ▾</button>
+              <button class="type-dropdown-btn" id="catDropdownBtn" onclick="toggleCatDropdown(event)" title="Категории (определяется ИИ)">Категории ▾<span class="dd-dot"></span></button>
               <div class="type-dropdown-menu" id="catDropdownMenu">
                   <label class="type-check"><input type="checkbox" id="chkCatPhoto" onchange="onCatFilterChange()"> Фото</label>
                   <label class="type-check"><input type="checkbox" id="chkCatScreenshot" onchange="onCatFilterChange()"> Скриншот</label>
@@ -629,7 +631,7 @@
               </div>
           </div>
           <div class="type-dropdown" id="typeDropdown">
-              <button class="type-dropdown-btn" id="typeDropdownBtn" onclick="toggleTypeDropdown(event)" title="Типы файлов">Типы: Все ▾</button>
+              <button class="type-dropdown-btn" id="typeDropdownBtn" onclick="toggleTypeDropdown(event)" title="Форматы файлов">Форматы ▾<span class="dd-dot"></span></button>
               <div class="type-dropdown-menu" id="typeDropdownMenu">
                   <label class="type-check"><input type="checkbox" id="chkRaw" onchange="onTypeFilterChange()"> RAW</label>
                   <label class="type-check"><input type="checkbox" id="chkJpeg" onchange="onTypeFilterChange()"> JPEG</label>
@@ -1354,12 +1356,16 @@ function updateTypeFilterLabel() {
     var r = document.getElementById('chkRaw').checked;
     var j = document.getElementById('chkJpeg').checked;
     var v = document.getElementById('chkVideo').checked;
-    var parts = [];
-    if (r) parts.push('RAW');
-    if (j) parts.push('JPEG');
-    if (v) parts.push('Видео');
-    var text = parts.length === 3 ? 'Все' : (parts.length === 0 ? 'Нет' : parts.join('+'));
-    document.getElementById('typeDropdownBtn').textContent = 'Типы: ' + text + ' ▾';
+    var allOn = r && j && v;
+    document.getElementById('typeDropdownBtn').classList.toggle('has-filter', !allOn);
+}
+function updateCatFilterLabel() {
+    var cats = ['chkCatPhoto','chkCatScreenshot','chkCatDocument','chkCatMeme','chkCatIcon','chkCatOther'];
+    var allOn = true;
+    for (var i=0; i<cats.length; i++) {
+        if (!document.getElementById(cats[i]).checked) { allOn = false; break; }
+    }
+    document.getElementById('catDropdownBtn').classList.toggle('has-filter', !allOn);
 }
 document.addEventListener('click', function(e) {
     var menu = document.getElementById('typeDropdownMenu');
