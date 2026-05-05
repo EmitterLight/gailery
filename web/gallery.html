@@ -21,6 +21,20 @@
         .search-bar input[type="text"]:focus { outline: none; border-color: #58a6ff; }
         .search-bar select { background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; padding: 5px 8px; font-family: monospace; font-size: 12px; }
         .search-bar select:focus { outline: none; border-color: #58a6ff; }
+        .type-dropdown { position: relative; }
+        .type-dropdown-btn { background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; padding: 5px 8px; font-family: monospace; font-size: 12px; cursor: pointer; white-space: nowrap; }
+        .type-dropdown-btn:hover { border-color: #58a6ff; }
+        .type-dropdown-menu { display: none; position: absolute; top: 100%; left: 0; z-index: 100; background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 6px; min-width: 120px; box-shadow: 0 8px 24px rgba(0,0,0,.4); margin-top: 2px; }
+        .type-dropdown-menu.open { display: block; }
+        .type-check { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 4px; cursor: pointer; font-size: 12px; color: #c9d1d9; white-space: nowrap; }
+        .type-check:hover { background: rgba(255,255,255,.05); }
+        .type-check input[type="checkbox"] { accent-color: #58a6ff; }
+        .light-theme .type-dropdown-btn { background: #fff; color: #24292f; border-color: #d0d7de; }
+        .light-theme .type-dropdown-btn:hover { border-color: #0969da; }
+        .light-theme .type-dropdown-menu { background: #fff; border-color: #d0d7de; }
+        .light-theme .type-check { color: #24292f; }
+        .light-theme .type-check:hover { background: rgba(0,0,0,.03); }
+        .fs-type-checks { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
         .search-bar button { background: #238636; color: #fff; border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 12px; }
         .search-bar button:hover { background: #2ea043; }
         .search-bar .btn-secondary { background: #21262d; color: #c9d1d9; }
@@ -612,16 +626,14 @@
              <option value="icon">Иконка</option>
              <option value="other">Другое</option>
           </select>
-          <select id="fileTypeSelect" onchange="doSearch()" style="min-width:90px" title="Фильтр по формату файла">
-              <option value="">RAW+JPEG</option>
-              <option value="non_raw">Только JPEG</option>
-              <option value="raw">Только RAW</option>
-          </select>
-          <select id="mediaTypeSelect" onchange="doSearch()" style="min-width:90px" title="Фото / Видео">
-              <option value="">Фото+Видео</option>
-              <option value="photo">Фото</option>
-              <option value="video">Видео</option>
-          </select>
+          <div class="type-dropdown" id="typeDropdown">
+              <button class="type-dropdown-btn" id="typeDropdownBtn" onclick="toggleTypeDropdown(event)" title="Типы файлов">Типы: Все ▾</button>
+              <div class="type-dropdown-menu" id="typeDropdownMenu">
+                  <label class="type-check"><input type="checkbox" id="chkRaw" onchange="onTypeFilterChange()"> RAW</label>
+                  <label class="type-check"><input type="checkbox" id="chkJpeg" onchange="onTypeFilterChange()"> JPEG</label>
+                  <label class="type-check"><input type="checkbox" id="chkVideo" onchange="onTypeFilterChange()"> Видео</label>
+              </div>
+          </div>
           <button onclick="doSearch()">Искать</button>
          <button class="btn-secondary" onclick="openPersonFilter()">По персоне</button>
          <button class="btn-secondary" onclick="clearFilters()">Сброс</button>
@@ -667,17 +679,12 @@
              <option value="meme">Мем</option>
              <option value="icon">Иконка</option>
              <option value="other">Другое</option>
-         </select>
-         <select class="fs-select" id="fileTypeSelectMob" onchange="syncSelect(this,'fileTypeSelect')">
-             <option value="">RAW+JPEG</option>
-             <option value="non_raw">Только JPEG</option>
-             <option value="raw">Только RAW</option>
-         </select>
-         <select class="fs-select" id="mediaTypeSelectMob" onchange="syncSelect(this,'mediaTypeSelect')">
-             <option value="">Фото+Видео</option>
-             <option value="photo">Фото</option>
-             <option value="video">Видео</option>
-         </select>
+</select>
+         <div class="fs-type-checks">
+             <label class="type-check"><input type="checkbox" id="chkRawMob" onchange="syncTypeCheck(this,'chkRaw')"> RAW</label>
+             <label class="type-check"><input type="checkbox" id="chkJpegMob" onchange="syncTypeCheck(this,'chkJpeg')"> JPEG</label>
+             <label class="type-check"><input type="checkbox" id="chkVideoMob" onchange="syncTypeCheck(this,'chkVideo')"> Видео</label>
+         </div>
         <div class="toggle-row"><div><span class="toggle-label">Только с лицами</span><span class="fs-hint">Показать фото где найдены и распознаны лица</span></div><label class="toggle-switch"><input type="checkbox" id="chkFacesMob" onchange="syncFilter(this,'chkFaces')"><span class="toggle-track"></span></label></div>
         <div class="toggle-row"><div><span class="toggle-label">С описанием</span><span class="fs-hint">Фото обработанные ИИ-описанием</span></div><label class="toggle-switch"><input type="checkbox" id="chkHasDescMob" onchange="syncFilter(this,'chkHasDesc')"><span class="toggle-track"></span></label></div>
         <div class="toggle-row"><div><span class="toggle-label">С проблемами</span><span class="fs-hint">Размытые, тёмные, повреждённые</span></div><label class="toggle-switch"><input type="checkbox" id="chkIssuesMob" onchange="syncFilter(this,'chkIssues')"><span class="toggle-track"></span></label></div>
@@ -947,8 +954,11 @@ function getSearchParams() {
     var gpsOnly = document.getElementById('chkGps').checked;
     var deletedOnly = document.getElementById('chkDeleted').checked;
      var photoType = document.getElementById('photoTypeSelect').value;
-     var fileType = document.getElementById('fileTypeSelect').value;
-     var mediaType = document.getElementById('mediaTypeSelect').value;
+     var chkRaw = document.getElementById('chkRaw').checked;
+     var chkJpeg = document.getElementById('chkJpeg').checked;
+     var chkVideo = document.getElementById('chkVideo').checked;
+     var allChecked = chkRaw && chkJpeg && chkVideo;
+     var noneChecked = !chkRaw && !chkJpeg && !chkVideo;
      var params = 'limit=' + pageSize + '&sort=' + sort;
     if (q) params += '&q=' + encodeURIComponent(q);
     if (activePerson) params += '&person=' + encodeURIComponent(activePerson);
@@ -957,8 +967,15 @@ function getSearchParams() {
     if (issuesOnly) params += '&has_issues=true';
     if (gpsOnly) params += '&has_gps=true';
      if (photoType) params += '&photo_type=' + encodeURIComponent(photoType);
-     if (fileType) params += '&file_type=' + encodeURIComponent(fileType);
-     if (mediaType) params += '&media_type=' + encodeURIComponent(mediaType);
+     if (!noneChecked && !allChecked) {
+         if (!chkRaw && chkJpeg && !chkVideo) params += '&file_type=non_raw&media_type=photo';
+         else if (chkRaw && !chkJpeg && !chkVideo) params += '&file_type=raw&media_type=photo';
+         else if (!chkRaw && !chkJpeg && chkVideo) params += '&media_type=video';
+         else if (!chkRaw && chkJpeg && chkVideo) params += '&file_type=non_raw';
+         else if (chkRaw && !chkJpeg && chkVideo) params += '&file_type=raw';
+         else if (chkRaw && chkJpeg && !chkVideo) params += '&media_type=photo';
+     }
+     if (noneChecked) params += '&photo_id=none';
     if (_noDateMode) params += '&no_date=true';
     if (deletedOnly) params += '&deleted_only=true';
     return params;
@@ -1315,6 +1332,32 @@ function playVideoCard(idx) {
         if (v) v.play();
     }, 300);
 }
+
+function toggleTypeDropdown(e) {
+    e.stopPropagation();
+    document.getElementById('typeDropdownMenu').classList.toggle('open');
+}
+function onTypeFilterChange() {
+    updateTypeFilterLabel();
+    doSearch();
+}
+function updateTypeFilterLabel() {
+    var r = document.getElementById('chkRaw').checked;
+    var j = document.getElementById('chkJpeg').checked;
+    var v = document.getElementById('chkVideo').checked;
+    var parts = [];
+    if (r) parts.push('RAW');
+    if (j) parts.push('JPEG');
+    if (v) parts.push('Видео');
+    var text = parts.length === 3 ? 'Все' : (parts.length === 0 ? 'Нет' : parts.join('+'));
+    document.getElementById('typeDropdownBtn').textContent = 'Типы: ' + text + ' ▾';
+}
+document.addEventListener('click', function(e) {
+    var menu = document.getElementById('typeDropdownMenu');
+    if (menu && menu.classList.contains('open') && !e.target.closest('.type-dropdown')) {
+        menu.classList.remove('open');
+    }
+});
 
 function loadTimeline() {
     fetch(API + '/photos/dates').then(function(r) { return r.json(); }).then(function(data) {
@@ -2576,8 +2619,10 @@ function clearFilters() {
     document.getElementById('chkGps').checked = false;
     document.getElementById('chkDeleted').checked = false;
      document.getElementById('photoTypeSelect').value = '';
-     document.getElementById('fileTypeSelect').value = '';
-     document.getElementById('mediaTypeSelect').value = '';
+     document.getElementById('chkRaw').checked = true;
+     document.getElementById('chkJpeg').checked = true;
+     document.getElementById('chkVideo').checked = true;
+     updateTypeFilterLabel();
     activeYear = '';
     activePerson = '';
     doSearch();
@@ -2772,8 +2817,9 @@ function saveFilters() {
         gps: document.getElementById('chkGps').checked,
         deleted: document.getElementById('chkDeleted').checked,
         type: document.getElementById('photoTypeSelect').value,
-        fileType: document.getElementById('fileTypeSelect').value,
-        mediaType: document.getElementById('mediaTypeSelect').value,
+        chkRaw: document.getElementById('chkRaw').checked,
+        chkJpeg: document.getElementById('chkJpeg').checked,
+        chkVideo: document.getElementById('chkVideo').checked,
         needleDate: _needleDateISO || null,
         photoId: _firstVisiblePhotoId || null,
     };
@@ -2794,8 +2840,10 @@ function restoreFilters() {
         if (s.gps) document.getElementById('chkGps').checked = true;
         if (s.deleted) document.getElementById('chkDeleted').checked = true;
         if (s.type) document.getElementById('photoTypeSelect').value = s.type;
-        if (s.fileType) document.getElementById('fileTypeSelect').value = s.fileType;
-        if (s.mediaType) document.getElementById('mediaTypeSelect').value = s.mediaType;
+        if (s.chkRaw !== undefined) document.getElementById('chkRaw').checked = s.chkRaw;
+        if (s.chkJpeg !== undefined) document.getElementById('chkJpeg').checked = s.chkJpeg;
+        if (s.chkVideo !== undefined) document.getElementById('chkVideo').checked = s.chkVideo;
+        updateTypeFilterLabel();
         onModeChange();
         _restoreNeedleDate = s.needleDate || null;
         _restorePhotoId = s.photoId || null;
@@ -2808,6 +2856,11 @@ var _needleDateISO = null;
 var _firstVisiblePhotoId = null;
 
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+
+document.getElementById('chkRaw').checked = true;
+document.getElementById('chkJpeg').checked = true;
+document.getElementById('chkVideo').checked = true;
+updateTypeFilterLabel();
 
 restoreFilters();
 doSearch();
@@ -3073,6 +3126,11 @@ function syncSelect(mobEl, deskId) {
     document.getElementById(deskId).value = mobEl.value;
     doSearch();
 }
+function syncTypeCheck(mobEl, deskId) {
+    document.getElementById(deskId).checked = mobEl.checked;
+    updateTypeFilterLabel();
+    doSearch();
+}
  function syncSheetFromBar() {
      var pairs = [['chkFacesMob','chkFaces'],['chkHasDescMob','chkHasDesc'],['chkIssuesMob','chkIssues'],['chkGpsMob','chkGps'],['chkDeletedMob','chkDeleted']];
      for (var i = 0; i < pairs.length; i++) {
@@ -3094,17 +3152,19 @@ function syncSelect(mobEl, deskId) {
      if (modeMob && modeDesk) modeMob.value = modeDesk.value;
  }
 function updateFilterBadge() {
-    var any = document.getElementById('chkFaces').checked || document.getElementById('chkHasDesc').checked || document.getElementById('chkIssues').checked || document.getElementById('chkGps').checked || document.getElementById('chkDeleted').checked || document.getElementById('fileTypeSelect').value !== '';
+    var allChecked = document.getElementById('chkRaw').checked && document.getElementById('chkJpeg').checked && document.getElementById('chkVideo').checked;
+    var any = document.getElementById('chkFaces').checked || document.getElementById('chkHasDesc').checked || document.getElementById('chkIssues').checked || document.getElementById('chkGps').checked || document.getElementById('chkDeleted').checked || !allChecked;
     var btn = document.querySelector('.mob-filter-btn');
     if (btn) btn.classList.toggle('has-filters', any);
 }
- function mobClearFilters() {
+function mobClearFilters() {
      var ids = ['chkFacesMob','chkHasDescMob','chkIssuesMob','chkGpsMob','chkDeletedMob'];
      for (var i = 0; i < ids.length; i++) { var el = document.getElementById(ids[i]); if (el) el.checked = false; }
      var sortMob = document.getElementById('sortSelectMob'); if (sortMob) sortMob.value = 'date_desc';
       var typeMob = document.getElementById('photoTypeSelectMob'); if (typeMob) typeMob.value = '';
-      var ftMob = document.getElementById('fileTypeSelectMob'); if (ftMob) ftMob.value = '';
-     var mtMob = document.getElementById('mediaTypeSelectMob'); if (mtMob) mtMob.value = '';
+      document.getElementById('chkRawMob').checked = true;
+      document.getElementById('chkJpegMob').checked = true;
+      document.getElementById('chkVideoMob').checked = true;
      var modeMob = document.getElementById('searchModeMob'); if (modeMob) modeMob.value = 'exact';
      clearFilters();
  }
