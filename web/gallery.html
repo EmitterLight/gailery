@@ -2652,7 +2652,6 @@ function clearFilters() {
     document.getElementById('chkIssues').checked = false;
     document.getElementById('chkGps').checked = false;
     document.getElementById('chkDeleted').checked = false;
-     document.getElementById('photoTypeSelect').value = '';
      document.getElementById('chkCatPhoto').checked = true;
      document.getElementById('chkCatScreenshot').checked = true;
      document.getElementById('chkCatDocument').checked = true;
@@ -2857,8 +2856,6 @@ function saveFilters() {
         issues: document.getElementById('chkIssues').checked,
         gps: document.getElementById('chkGps').checked,
         deleted: document.getElementById('chkDeleted').checked,
-        type: document.getElementById('photoTypeSelect').value,
-        type: document.getElementById('photoTypeSelect').value,
         catPhoto: document.getElementById('chkCatPhoto').checked,
         catScreenshot: document.getElementById('chkCatScreenshot').checked,
         catDocument: document.getElementById('chkCatDocument').checked,
@@ -2887,7 +2884,6 @@ function restoreFilters() {
         if (s.issues) document.getElementById('chkIssues').checked = true;
         if (s.gps) document.getElementById('chkGps').checked = true;
         if (s.deleted) document.getElementById('chkDeleted').checked = true;
-        if (s.type) document.getElementById('photoTypeSelect').value = s.type;
         if (s.catPhoto !== undefined) document.getElementById('chkCatPhoto').checked = s.catPhoto;
         if (s.catScreenshot !== undefined) document.getElementById('chkCatScreenshot').checked = s.catScreenshot;
         if (s.catDocument !== undefined) document.getElementById('chkCatDocument').checked = s.catDocument;
@@ -3208,19 +3204,32 @@ function syncCatCheck(mobEl, deskId) {
      var sortMob = document.getElementById('sortSelectMob');
      var sortDesk = document.getElementById('sortSelect');
      if (sortMob && sortDesk) sortMob.value = sortDesk.value;
-     var typeMob = document.getElementById('photoTypeSelectMob');
-     var typeDesk = document.getElementById('photoTypeSelect');
-     if (typeMob && typeDesk) typeMob.value = typeDesk.value;
-     var ftMob = document.getElementById('fileTypeSelectMob');
-     var ftDesk = document.getElementById('fileTypeSelect');
-     if (ftMob && ftDesk) ftMob.value = ftDesk.value;
+     var catPairs = [
+         ['chkCatPhotoMob','chkCatPhoto'],['chkCatScreenshotMob','chkCatScreenshot'],
+         ['chkCatDocumentMob','chkCatDocument'],['chkCatMemeMob','chkCatMeme'],
+         ['chkCatIconMob','chkCatIcon'],['chkCatOtherMob','chkCatOther']
+     ];
+     for (var i = 0; i < catPairs.length; i++) {
+         var mob = document.getElementById(catPairs[i][0]);
+         var desk = document.getElementById(catPairs[i][1]);
+         if (mob && desk) mob.checked = desk.checked;
+     }
+     var fmtPairs = [['chkRawMob','chkRaw'],['chkJpegMob','chkJpeg'],['chkVideoMob','chkVideo']];
+     for (var i = 0; i < fmtPairs.length; i++) {
+         var mob = document.getElementById(fmtPairs[i][0]);
+         var desk = document.getElementById(fmtPairs[i][1]);
+         if (mob && desk) mob.checked = desk.checked;
+     }
      var modeMob = document.getElementById('searchModeMob');
      var modeDesk = document.getElementById('searchMode');
      if (modeMob && modeDesk) modeMob.value = modeDesk.value;
  }
 function updateFilterBadge() {
-    var allChecked = document.getElementById('chkRaw').checked && document.getElementById('chkJpeg').checked && document.getElementById('chkVideo').checked;
-    var any = document.getElementById('chkFaces').checked || document.getElementById('chkHasDesc').checked || document.getElementById('chkIssues').checked || document.getElementById('chkGps').checked || document.getElementById('chkDeleted').checked || !allChecked;
+    var allFmts = document.getElementById('chkRaw').checked && document.getElementById('chkJpeg').checked && document.getElementById('chkVideo').checked;
+    var allCats = true;
+    var catIds = ['chkCatPhoto','chkCatScreenshot','chkCatDocument','chkCatMeme','chkCatIcon','chkCatOther'];
+    for (var i = 0; i < catIds.length; i++) { if (!document.getElementById(catIds[i]).checked) { allCats = false; break; } }
+    var any = document.getElementById('chkFaces').checked || document.getElementById('chkHasDesc').checked || document.getElementById('chkIssues').checked || document.getElementById('chkGps').checked || document.getElementById('chkDeleted').checked || !allFmts || !allCats;
     var btn = document.querySelector('.mob-filter-btn');
     if (btn) btn.classList.toggle('has-filters', any);
 }
@@ -3228,7 +3237,8 @@ function mobClearFilters() {
      var ids = ['chkFacesMob','chkHasDescMob','chkIssuesMob','chkGpsMob','chkDeletedMob'];
      for (var i = 0; i < ids.length; i++) { var el = document.getElementById(ids[i]); if (el) el.checked = false; }
      var sortMob = document.getElementById('sortSelectMob'); if (sortMob) sortMob.value = 'date_desc';
-      var typeMob = document.getElementById('photoTypeSelectMob'); if (typeMob) typeMob.value = '';
+      var catMobs = ['chkCatPhotoMob','chkCatScreenshotMob','chkCatDocumentMob','chkCatMemeMob','chkCatIconMob','chkCatOtherMob'];
+      for (var i = 0; i < catMobs.length; i++) { var el = document.getElementById(catMobs[i]); if (el) el.checked = true; }
       document.getElementById('chkRawMob').checked = true;
       document.getElementById('chkJpegMob').checked = true;
       document.getElementById('chkVideoMob').checked = true;
