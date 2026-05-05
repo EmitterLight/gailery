@@ -25,7 +25,8 @@ if os.path.exists(VENV_PYTHON) and sys.executable != VENV_PYTHON:
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 LOG_FILE = str(Path(__file__).parent / "logs" / "pipeline.log")
 
-SUPPORTED_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".raw", ".cr2", ".nef", ".arw", ".dng", ".heic"}
+SUPPORTED_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".raw", ".cr2", ".nef", ".arw", ".dng", ".heic",
+                    ".mp4", ".mov", ".avi", ".mkv", ".webm", ".3gp", ".wmv", ".MP4", ".MOV", ".AVI", ".MKV", ".WEBM", ".3GP", ".WMV"}
 
 
 def compute_file_hash(path, chunk_size=65536):
@@ -261,6 +262,8 @@ def _ingest_new_canonical(db, root_id):
     batch = []
     file_ids = []
     for abs_path, rid in rows:
+        ext = os.path.splitext(abs_path)[1].lower()
+        is_video = ext in {".mp4", ".mov", ".avi", ".mkv", ".webm", ".3gp", ".wmv"}
         batch.append({
             "photo_id": str(_uuid.uuid4()),
             "path": abs_path,
@@ -275,6 +278,8 @@ def _ingest_new_canonical(db, root_id):
             "faces_present": False,
             "date_conflict": 0,
             "root_id": rid,
+            "media_type": "video" if is_video else "photo",
+            "duration_seconds": 0,
         })
         fid_row = cur.execute("SELECT file_id FROM catalog_files WHERE abs_path = ? AND is_canonical = 1 AND deleted = 0", (abs_path,)).fetchone()
         if fid_row:

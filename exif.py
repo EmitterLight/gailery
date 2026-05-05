@@ -114,6 +114,7 @@ def extract_date_from_path(path_str):
         r'Screenshot[_\-](\d{4})[_\-](\d{2})[_\-](\d{2})',
         r'Signal[_\-](\d{4})[_\-](\d{2})[_\-](\d{2})',
         r'VID[_\-](\d{4})(\d{2})(\d{2})',
+        r'video[_\-](\d{4})[_\-](\d{2})[_\-](\d{2})',
         r'Screen[_\-](\d{4})[_\-](\d{2})[_\-](\d{2})',
         r'(\d{4})[_\-](\d{2})[_\-](\d{2})',
     ]
@@ -335,6 +336,40 @@ def _main(db, args, mq=None):
             for photo_id, path, exif, is_missing in results:
                 updates = {"exif_checked": 1}
 
+                # --- video metadata (if file is a video) ---
+                video_exts = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".3gp", ".wmv",
+                              ".MP4", ".MOV", ".AVI", ".MKV", ".WEBM", ".3GP", ".WMV"}
+                is_video = any(path.endswith(ext) for ext in video_exts)
+
+                if is_video:
+                    from video_metadata import extract_metadata, extract_video_date
+                    v_meta = extract_metadata(path)
+                    if v_meta:
+                        updates["media_type"] = "video"
+                        updates["duration_seconds"] = v_meta["duration_seconds"]
+                        if v_meta["width"] and v_meta["height"]:
+                            updates["img_width"] = v_meta["width"]
+                            updates["img_height"] = v_meta["height"]
+                        updates["camera_model"] = v_meta.get("codec", "")
+                        v_date = extract_video_date(path)
+                        mtime = None
+                        if path and Path(path).exists():
+                            try:
+                                mtime = os.stat(path).st_mtime
+                            except Exception:
+                                pass
+                        resolved, conflict = resolve_date(v_date or None, path, mtime)
+                        if resolved:
+                            updates["date"] = resolved
+                        if conflict:
+                            updates["date_conflict"] = 1
+                        with_data += 1
+                    batch_updates.append((photo_id, updates))
+                    if path:
+                        cat_done_paths.append(path)
+                    continue
+
+                # --- photo EXIF processing ---
                 if is_missing:
                     missing += 1
                     batch_updates.append((photo_id, updates))

@@ -175,6 +175,11 @@ class DatabaseManager:
             cur.execute("ALTER TABLE photos ADD COLUMN date_conflict INTEGER DEFAULT 0")
         if 'thumbnail_path' not in columns:
             cur.execute("ALTER TABLE photos ADD COLUMN thumbnail_path TEXT")
+        if 'media_type' not in columns:
+            cur.execute("ALTER TABLE photos ADD COLUMN media_type TEXT DEFAULT 'photo'")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_photos_media_type ON photos(media_type)")
+        if 'duration_seconds' not in columns:
+            cur.execute("ALTER TABLE photos ADD COLUMN duration_seconds REAL DEFAULT 0")
         self.sqlite.commit()
 
         cur.execute("PRAGMA table_info(catalog_roots)")
@@ -336,8 +341,8 @@ class DatabaseManager:
         for r in records:
             cur.execute(
                 "INSERT OR IGNORE INTO photos (photo_id,path,thumbnail_path,date,gps_lat,gps_lon,"
-                "camera_make,camera_model,description,faces_present,exif_checked,created_at,root_id,deleted) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "camera_make,camera_model,description,faces_present,exif_checked,created_at,root_id,deleted,media_type,duration_seconds) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (r.get("photo_id", str(uuid.uuid4())),
                  r.get("path"), r.get("thumbnail_path"), r.get("date"),
                  r.get("gps_lat"), r.get("gps_lon"),
@@ -347,7 +352,9 @@ class DatabaseManager:
                  int(r.get("exif_checked", False)),
                  r.get("created_at") or datetime.now().isoformat(),
                  r.get("root_id"),
-                 int(r.get("deleted", 0)))
+                 int(r.get("deleted", 0)),
+                 r.get("media_type", "photo"),
+                 r.get("duration_seconds", 0))
             )
         self.sqlite.commit()
 
@@ -414,9 +421,10 @@ class DatabaseManager:
                       has_faces=None, no_description=None, has_issues=None,
                       issue_type=None, photo_type=None, has_gps=None,
                       no_date=None, has_description=None,
-                      deleted=None, deleted_only=None,
-                      content_hash=None, file_type=None,
-                      sort="date_desc", limit=60, offset=0):
+deleted=None, deleted_only=None,
+                       content_hash=None, file_type=None,
+                       media_type=None,
+                       sort="date_desc", limit=60, offset=0):
         ed = "COALESCE(manual_date, date)"
         sql = "SELECT photos.*, " + ed + " as effective_date, cf.content_hash FROM photos JOIN catalog_files cf ON cf.abs_path = photos.path WHERE cf.is_canonical = 1 AND cf.deleted = 0"
         params = []
@@ -485,6 +493,11 @@ class DatabaseManager:
             ext_clauses = ' AND '.join(['path NOT LIKE ?' for _ in _raw_exts])
             sql += f" AND ({ext_clauses})"
             params.extend([f'%{e}' for e in sorted(_raw_exts)])
+
+        if media_type == 'photo':
+            sql += " AND (media_type IS NULL OR media_type = 'photo')"
+        elif media_type == 'video':
+            sql += " AND media_type = 'video'"
 
         if content_hash:
             sql += " AND cf.content_hash LIKE ?"

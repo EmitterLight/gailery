@@ -55,7 +55,7 @@ def get_undetected_photos(db, limit=0):
         SELECT p.photo_id, p.path, p.description, cf.content_hash
         FROM photos p
         JOIN catalog_files cf ON cf.abs_path = p.path
-        WHERE p.faces_present = 1 AND p.deleted = 0
+        WHERE p.faces_present = 1 AND p.deleted = 0 AND (p.media_type IS NULL OR p.media_type != 'video')
           AND cf.is_canonical = 1 AND cf.deleted = 0
           AND NOT EXISTS (
               SELECT 1 FROM faces f WHERE f.content_hash = cf.content_hash

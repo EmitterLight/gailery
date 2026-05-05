@@ -58,6 +58,11 @@
         .card .badge.badge-rel { top: 4px; }
         .card .badge.badge-faces { top: 22px; }
         .card .badge.badge-only { top: 4px; }
+        .card .video-dur-badge { position: absolute; bottom: 4px; left: 4px; background: rgba(0,0,0,.8); color: #fff; font-size: 9px; padding: 1px 4px; border-radius: 3px; font-weight: 600; z-index: 2; letter-spacing: .5px; }
+        .card .video-play-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.3); opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 1; }
+        .card:hover .video-play-overlay { opacity: 1; }
+        .card .video-play-overlay span { font-size: 36px; color: #fff; text-shadow: 0 0 8px rgba(0,0,0,.5); }
+        .light-theme .card .video-dur-badge { background: rgba(0,0,0,.7); }
         .card .del-mark { position: absolute; bottom: 4px; right: 4px; width: 22px; height: 22px; background: none; color: #c9d1d9; display: flex; align-items: center; justify-content: center; font-size: 14px; cursor: pointer; z-index: 3; opacity: 0; transition: opacity .15s; text-shadow: 0 0 2px #000, 0 0 2px #000, 0 0 4px #000; }
         .card:hover .del-mark { opacity: 1; }
         .card .del-mark:hover { color: #f85149; }
@@ -612,6 +617,11 @@
               <option value="non_raw">Только JPEG</option>
               <option value="raw">Только RAW</option>
           </select>
+          <select id="mediaTypeSelect" onchange="doSearch()" style="min-width:90px" title="Фото / Видео">
+              <option value="">Фото+Видео</option>
+              <option value="photo">Фото</option>
+              <option value="video">Видео</option>
+          </select>
           <button onclick="doSearch()">Искать</button>
          <button class="btn-secondary" onclick="openPersonFilter()">По персоне</button>
          <button class="btn-secondary" onclick="clearFilters()">Сброс</button>
@@ -662,6 +672,11 @@
              <option value="">RAW+JPEG</option>
              <option value="non_raw">Только JPEG</option>
              <option value="raw">Только RAW</option>
+         </select>
+         <select class="fs-select" id="mediaTypeSelectMob" onchange="syncSelect(this,'mediaTypeSelect')">
+             <option value="">Фото+Видео</option>
+             <option value="photo">Фото</option>
+             <option value="video">Видео</option>
          </select>
         <div class="toggle-row"><div><span class="toggle-label">Только с лицами</span><span class="fs-hint">Показать фото где найдены и распознаны лица</span></div><label class="toggle-switch"><input type="checkbox" id="chkFacesMob" onchange="syncFilter(this,'chkFaces')"><span class="toggle-track"></span></label></div>
         <div class="toggle-row"><div><span class="toggle-label">С описанием</span><span class="fs-hint">Фото обработанные ИИ-описанием</span></div><label class="toggle-switch"><input type="checkbox" id="chkHasDescMob" onchange="syncFilter(this,'chkHasDesc')"><span class="toggle-track"></span></label></div>
@@ -933,6 +948,7 @@ function getSearchParams() {
     var deletedOnly = document.getElementById('chkDeleted').checked;
      var photoType = document.getElementById('photoTypeSelect').value;
      var fileType = document.getElementById('fileTypeSelect').value;
+     var mediaType = document.getElementById('mediaTypeSelect').value;
      var params = 'limit=' + pageSize + '&sort=' + sort;
     if (q) params += '&q=' + encodeURIComponent(q);
     if (activePerson) params += '&person=' + encodeURIComponent(activePerson);
@@ -942,6 +958,7 @@ function getSearchParams() {
     if (gpsOnly) params += '&has_gps=true';
      if (photoType) params += '&photo_type=' + encodeURIComponent(photoType);
      if (fileType) params += '&file_type=' + encodeURIComponent(fileType);
+     if (mediaType) params += '&media_type=' + encodeURIComponent(mediaType);
     if (_noDateMode) params += '&no_date=true';
     if (deletedOnly) params += '&deleted_only=true';
     return params;
@@ -1260,8 +1277,8 @@ function buildCardHtml(p, idx) {
          var ftop = hasRel ? (p.is_raw ? ' style="top:40px"' : '') : (p.is_raw ? ' style="top:22px"' : '');
          badge = '<div class="' + fcls + '"' + ftop + '>' + p.personas.length + ' лиц</div>';
      }
-     var html = '<div class="card' + (p.deleted ? ' deleted-card' : '') + '" data-date="' + esc(p.date || '') + '" data-photo-id="' + esc(p.photo_id || '') + '" onclick="openDetail(' + idx + ')" ondblclick="event.stopPropagation();openViewer(' + idx + ');toggleFullscreen()">';
-    html += '<button class="expand-btn" onclick="event.stopPropagation();openViewer(' + idx + ')">&#x2922;</button>';
+     var html = '<div class="card' + (p.deleted ? ' deleted-card' : '') + '" data-date="' + esc(p.date || '') + '" data-photo-id="' + esc(p.photo_id || '') + '" onclick="openDetail(' + idx + ')" ondblclick="event.stopPropagation();' + (p.media_type === 'video' ? 'playVideoCard(' + idx + ')' : 'openViewer(' + idx + ');toggleFullscreen()') + '">';
+    html += '<button class="expand-btn" onclick="event.stopPropagation();' + (p.media_type === 'video' ? 'playVideoCard(' + idx + ')' : 'openViewer(' + idx + ')') + '">' + (p.media_type === 'video' ? '&#9654;' : '&#x2922;') + '</button>';
     var q = document.getElementById('searchInput').value.trim();
     if (q) html += '<button class="goto-btn" onclick="event.stopPropagation();goToTimelineFromCard(' + idx + ')" title="Найти в хронологии">&#x21E1;</button>';
     if (thumbBase) {
@@ -1273,6 +1290,13 @@ function buildCardHtml(p, idx) {
      html += gpsIcon;
      html += badge;
     html += relBadge;
+     if (p.media_type === 'video' && p.duration_seconds) {
+         var mins = Math.floor(p.duration_seconds / 60);
+         var secs = Math.floor(p.duration_seconds % 60);
+         var durStr = mins + ':' + (secs < 10 ? '0' : '') + secs;
+         html += '<div class="video-dur-badge">' + durStr + '</div>';
+         html += '<div class="video-play-overlay"><span>&#9654;</span></div>';
+     }
     if (!p.deleted) html += '<div class="del-mark" onclick="event.stopPropagation();markDeleted(\'' + esc(p.photo_id || '') + '\')" title="Удалить">&#128465;</div>';
     html += '<div class="overlay">';
     if (dateStr) html += '<div class="date">' + esc(dateStr) + '</div>';
@@ -1280,6 +1304,16 @@ function buildCardHtml(p, idx) {
     html += facesHtml;
     html += '</div></div>';
     return html;
+}
+
+function playVideoCard(idx) {
+    var p = currentPhotos[idx];
+    if (!p) return;
+    openDetail(idx);
+    setTimeout(function(){
+        var v = document.getElementById('detailVideo');
+        if (v) v.play();
+    }, 300);
 }
 
 function loadTimeline() {
@@ -1437,8 +1471,13 @@ function selectYear(year) {
      var photoUrl = p.photo_id ? (API + '/photos/?path=' + encodeURIComponent(p.photo_id)) : '';
      var thumbUrl = p.photo_id ? (API + '/photos/thumbnail?path=' + encodeURIComponent(p.photo_id)) : '';
 
-     var html = '<img class="dp-img" id="dpImg" src="' + thumbUrl + '" loading="lazy" onerror="this.style.display=\'none\'">';
-     html += '<div class="dp-img-bar"><button onclick="rotateDetail(-90)">&#8634;</button><button onclick="rotateDetail(90)">&#8635;</button></div>';
+     var html;
+     if (p.media_type === 'video') {
+         html = '<video class="dp-img" id="detailVideo" src="' + photoUrl + '" controls preload="metadata" style="width:100%;max-height:400px;background:#000;border-radius:4px"></video>';
+     } else {
+         html = '<img class="dp-img" id="dpImg" src="' + thumbUrl + '" loading="lazy" onerror="this.style.display=\'none\'">';
+         html += '<div class="dp-img-bar"><button onclick="rotateDetail(-90)">&#8634;</button><button onclick="rotateDetail(90)">&#8635;</button></div>';
+     }
      if (_dpHash) {
          fetch(API + '/photos/edits/' + encodeURIComponent(_dpHash)).then(function(r){return r.json()}).then(function(d){
              var re = (d.edits || []).find(function(e){return e.action==='rotate'});
@@ -1484,6 +1523,12 @@ function selectYear(year) {
     }
     if (p.is_raw) html += '<div class="dp-meta" style="color:#f0883e;font-weight:600">RAW</div>';
     if (p.camera_make || p.camera_model) html += '<div class="dp-meta">Камера: ' + esc((p.camera_make || '') + ' ' + (p.camera_model || '')) + '</div>';
+    if (p.media_type === 'video') {
+        var mins = Math.floor(p.duration_seconds / 60);
+        var secs = Math.floor(p.duration_seconds % 60);
+        html += '<div class="dp-meta">Длительность: <b>' + mins + ':' + (secs < 10 ? '0' : '') + secs + '</b></div>';
+        if (p.img_width && p.img_height) html += '<div class="dp-meta">Разрешение: ' + p.img_width + '×' + p.img_height + '</div>';
+    }
     html += '<div class="dp-meta">Лица: ' + p.total_faces + '</div>';
     if (p.photo_type && p.photo_type !== 'photo') html += '<div class="dp-meta">Тип: ' + esc(p.photo_type) + '</div>';
     if (p.has_issues) html += '<div class="dp-meta" style="color:#f85149">Проблемы: ' + esc(p.issue_type || 'да') + '</div>';
@@ -2532,6 +2577,7 @@ function clearFilters() {
     document.getElementById('chkDeleted').checked = false;
      document.getElementById('photoTypeSelect').value = '';
      document.getElementById('fileTypeSelect').value = '';
+     document.getElementById('mediaTypeSelect').value = '';
     activeYear = '';
     activePerson = '';
     doSearch();
@@ -2727,6 +2773,7 @@ function saveFilters() {
         deleted: document.getElementById('chkDeleted').checked,
         type: document.getElementById('photoTypeSelect').value,
         fileType: document.getElementById('fileTypeSelect').value,
+        mediaType: document.getElementById('mediaTypeSelect').value,
         needleDate: _needleDateISO || null,
         photoId: _firstVisiblePhotoId || null,
     };
@@ -2748,6 +2795,7 @@ function restoreFilters() {
         if (s.deleted) document.getElementById('chkDeleted').checked = true;
         if (s.type) document.getElementById('photoTypeSelect').value = s.type;
         if (s.fileType) document.getElementById('fileTypeSelect').value = s.fileType;
+        if (s.mediaType) document.getElementById('mediaTypeSelect').value = s.mediaType;
         onModeChange();
         _restoreNeedleDate = s.needleDate || null;
         _restorePhotoId = s.photoId || null;
@@ -3056,6 +3104,7 @@ function updateFilterBadge() {
      var sortMob = document.getElementById('sortSelectMob'); if (sortMob) sortMob.value = 'date_desc';
       var typeMob = document.getElementById('photoTypeSelectMob'); if (typeMob) typeMob.value = '';
       var ftMob = document.getElementById('fileTypeSelectMob'); if (ftMob) ftMob.value = '';
+     var mtMob = document.getElementById('mediaTypeSelectMob'); if (mtMob) mtMob.value = '';
      var modeMob = document.getElementById('searchModeMob'); if (modeMob) modeMob.value = 'exact';
      clearFilters();
  }
