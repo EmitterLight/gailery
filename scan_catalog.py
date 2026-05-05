@@ -140,7 +140,7 @@ def scan_root(db, root_id):
                 rel_path = os.path.relpath(abs_path, root_path)
                 kept_rel.add(rel_path)
                 scanned += 1
-                if scanned % 500 == 0:
+                if scanned % 10 == 0:
                     elapsed = time.time() - t0
                     log(f"Scanned {scanned} files, new={len(new_files)}, changed={changed_count}, restored={restored_count}, dirs_skipped={skipped_dirs}, elapsed={elapsed:.1f}s")
 
