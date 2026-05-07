@@ -73,40 +73,42 @@ def get_progress(root_id=None):
     root_params = [root_id] if root_id else []
 
     base = f"FROM catalog_files cf JOIN photos p ON p.path = cf.abs_path WHERE cf.is_canonical = 1 AND cf.deleted = 0 AND p.deleted = 0{root_where}"
+    photo_where = base + " AND (p.media_type IS NULL OR p.media_type != 'video')"
 
     cat_total = cur.execute(f"SELECT COUNT(*) FROM catalog_files cf WHERE cf.is_canonical = 1 AND cf.deleted = 0{root_where}", root_params).fetchone()[0]
 
     ingested = cur.execute(f"SELECT COUNT(*) {base}", root_params).fetchone()[0]
-    described = cur.execute(f"SELECT COUNT(*) {base} AND p.description IS NOT NULL", root_params).fetchone()[0]
-    exif_checked = cur.execute(f"SELECT COUNT(*) {base} AND p.exif_checked = 1", root_params).fetchone()[0]
-    faces_flagged = cur.execute(f"SELECT COUNT(*) {base} AND p.faces_present = 1", root_params).fetchone()[0]
+    ingested_photos = cur.execute(f"SELECT COUNT(*) {photo_where}", root_params).fetchone()[0]
+    described = cur.execute(f"SELECT COUNT(*) {photo_where} AND p.description IS NOT NULL", root_params).fetchone()[0]
+    exif_checked = cur.execute(f"SELECT COUNT(*) {photo_where} AND p.exif_checked = 1", root_params).fetchone()[0]
+    faces_flagged = cur.execute(f"SELECT COUNT(*) {photo_where} AND p.faces_present = 1", root_params).fetchone()[0]
     faces_done = cur.execute(
-        f"SELECT COUNT(*) {base} AND p.faces_present = 1"
+        f"SELECT COUNT(*) {photo_where} AND p.faces_present = 1"
         f" AND EXISTS (SELECT 1 FROM faces f WHERE f.content_hash = cf.content_hash)",
         root_params).fetchone()[0]
     faces_pending = faces_flagged - faces_done
-    embedded = cur.execute(f"SELECT COUNT(*) {base} AND p.embedded = 1", root_params).fetchone()[0]
+    embedded = cur.execute(f"SELECT COUNT(*) {photo_where} AND p.embedded = 1", root_params).fetchone()[0]
 
     video_where = base + " AND p.media_type = 'video'"
-    videos_catalog = cur.execute(f"SELECT COUNT(*) FROM catalog_files cf WHERE cf.is_canonical = 1 AND cf.deleted = 0 AND cf.ext IN ('mp4','mov','avi','mkv','webm','3gp','wmv','MP4','MOV','AVI','MKV','WEBM','3GP','WMV'){root_where}", root_params).fetchone()[0]
+    videos_catalog = cur.execute(f"SELECT COUNT(*) FROM catalog_files cf WHERE cf.is_canonical = 1 AND cf.deleted = 0 AND cf.ext IN ('.mp4','.mov','.avi','.mkv','.webm','.3gp','.wmv'){root_where}", root_params).fetchone()[0]
     videos_ingested = cur.execute(f"SELECT COUNT(*) {video_where}", root_params).fetchone()[0]
     videos_exif = cur.execute(f"SELECT COUNT(*) {video_where} AND p.exif_checked = 1", root_params).fetchone()[0]
     p_videos_ingest = videos_ingested / max(videos_catalog, 1) * 100 if videos_catalog > 0 else 0
     p_videos_exif = videos_exif / max(videos_ingested, 1) * 100 if videos_ingested > 0 else 0
 
     p_ingest = ingested / max(cat_total, 1) * 100
-    p_describe = described / max(ingested, 1) * 100
-    p_exif = exif_checked / max(ingested, 1) * 100
+    p_describe = described / max(ingested_photos, 1) * 100
+    p_exif = exif_checked / max(ingested_photos, 1) * 100
     p_faces = faces_done / max(faces_flagged, 1) * 100 if faces_flagged > 0 else 100
-    p_embed = embedded / max(ingested, 1) * 100
+    p_embed = embedded / max(ingested_photos, 1) * 100
 
     return {
         "ingest": (ingested, cat_total, p_ingest),
-        "describe": (described, ingested, p_describe),
-        "exif": (exif_checked, ingested, p_exif),
+        "describe": (described, ingested_photos, p_describe),
+        "exif": (exif_checked, ingested_photos, p_exif),
         "faces": (faces_done, faces_flagged, p_faces),
         "faces_pending": faces_pending,
-        "embed": (embedded, ingested, p_embed),
+        "embed": (embedded, ingested_photos, p_embed),
         "videos": {
             "catalog": videos_catalog,
             "ingested": videos_ingested,

@@ -261,6 +261,23 @@ def _mark_stale(db, file_id, old_hash, new_hash, abs_path):
 
 def _ingest_new_canonical(db, root_id):
     cur = db.sqlite.cursor()
+
+    restored = cur.execute(
+        "UPDATE photos SET deleted = 0 WHERE deleted = 1 AND path IN ("
+        "SELECT cf.abs_path FROM catalog_files cf WHERE cf.is_canonical = 1 AND cf.deleted = 0 AND cf.root_id = ?"
+        ")",
+        (root_id,)
+    ).rowcount
+    if restored > 0:
+        db.sqlite.commit()
+        cur.execute(
+            "UPDATE catalog_files SET ingested = 1 WHERE is_canonical = 1 AND deleted = 0 AND root_id = ? AND abs_path IN ("
+            "SELECT path FROM photos WHERE deleted = 0)",
+            (root_id,)
+        )
+        db.sqlite.commit()
+        log(f"Restored {restored} canonical photos that were marked deleted")
+
     rows = cur.execute(
         "SELECT cf.abs_path, cf.root_id FROM catalog_files cf "
         "WHERE cf.is_canonical = 1 AND cf.ingested = 0 AND cf.deleted = 0 AND cf.root_id = ?",
@@ -307,8 +324,10 @@ def _cleanup_noncanonical_photos(db):
     db.sqlite.execute(
         "UPDATE photos SET deleted = 1 "
         "WHERE deleted = 0 AND path IN ("
-        "SELECT p.path FROM photos p JOIN catalog_files cf ON cf.abs_path = p.path "
-        "WHERE cf.is_canonical = 0)"
+        "SELECT p.path FROM photos p "
+        "WHERE NOT EXISTS ("
+        "SELECT 1 FROM catalog_files cf WHERE cf.abs_path = p.path AND cf.is_canonical = 1 AND cf.deleted = 0"
+        "))"
     )
     db.sqlite.commit()
 

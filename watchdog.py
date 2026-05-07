@@ -89,7 +89,11 @@ def start_pipeline():
     _pipeline_restarts.append(now)
     logger.info("Pipeline не работает — запускаю")
     log_incident("PIPELINE START: пёс запускает неработающий pipeline")
-    subprocess.run(["systemctl", "start", PIPELINE_SERVICE], check=False, timeout=10)
+    try:
+        subprocess.run(["systemctl", "start", PIPELINE_SERVICE], check=False, timeout=60)
+    except subprocess.TimeoutExpired:
+        logger.warning("systemctl start timeout (60s) — pipeline мог стартовать, продолжаю")
+        log_incident("PIPELINE START TIMEOUT: systemctl start завис, но pipeline мог запуститься")
     time.sleep(3)
     if is_pipeline_active():
         _pipeline_restarts.clear()
@@ -341,10 +345,13 @@ def main():
                 except Exception:
                     pass
 
-            check_stale_flags()
-            check_duplicate_pipelines()
-            check_orphan_workers()
-            check_memory_pressure()
+            try:
+                check_stale_flags()
+                check_duplicate_pipelines()
+                check_orphan_workers()
+                check_memory_pressure()
+            except Exception as e:
+                logger.warning(f"Ошибка в check_*: {e}")
 
             if not is_idle:
                 log_incident(f"HEARTBEAT: pipeline={'active' if is_pipeline_active() else 'dead'}, mode={mode}")
