@@ -74,7 +74,7 @@
         .card .badge.badge-rel { top: 4px; }
         .card .badge.badge-faces { top: 22px; }
         .card .badge.badge-only { top: 4px; }
-        .card .video-dur-badge { position: absolute; bottom: 4px; left: 4px; background: rgba(0,0,0,.8); color: #fff; font-size: 9px; padding: 1px 4px; border-radius: 3px; font-weight: 600; z-index: 2; letter-spacing: .5px; }
+        .card .video-dur-badge { position: absolute; top: 4px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.8); color: #fff; font-size: 9px; padding: 1px 4px; border-radius: 3px; font-weight: 600; z-index: 2; letter-spacing: .5px; }
         .card .video-play-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.3); opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 1; }
         .card:hover .video-play-overlay { opacity: 1; }
         .card .video-play-overlay span { font-size: 36px; color: #fff; text-shadow: 0 0 8px rgba(0,0,0,.5); }
@@ -833,6 +833,7 @@ var _firstPath = null;
 var _lastPath = null;
 var _noDateMode = false;
 var _needleMode = false;
+var _filterNeedleDate = null;
 var _prefetchQueue = [];
 var _prefetching = false;
 var _PREFETCH_AHEAD = 5;
@@ -914,6 +915,21 @@ var isSemanticMode = false;
  }
 
 function doSearch() {
+    // Запомнить позицию (иглу времени) перед сбросом
+    var savedNeedleDate = null;
+    if (currentPhotos.length > 0 && !activeYear && !_restoreNeedleDate) {
+        var cards = document.querySelectorAll('.card');
+        var gridRect = document.getElementById('grid').getBoundingClientRect();
+        for (var i = 0; i < cards.length; i++) {
+            var rect = cards[i].getBoundingClientRect();
+            if (rect.top >= gridRect.top - 10 && rect.bottom <= gridRect.bottom + 10) {
+                savedNeedleDate = cards[i].getAttribute('data-date');
+                break;
+            }
+        }
+        if (!savedNeedleDate) savedNeedleDate = currentPhotos[0].date || null;
+    }
+
     currentPhotos = [];
     _needleMode = false;
     _canLoadMore = true;
@@ -958,6 +974,14 @@ function doSearch() {
         var sortSel = document.getElementById('sortSelect');
         if (sortSel && sortSel.value === 'date_desc') sortSel.value = 'date_asc';
         loadAfter(saved, null, true);
+    } else if (savedNeedleDate) {
+        _filterNeedleDate = savedNeedleDate;
+        var sortVal = document.getElementById('sortSelect').value;
+        if (sortVal === 'date_desc') {
+            loadAfter(savedNeedleDate, null, false, true);
+        } else {
+            loadAfter(savedNeedleDate, null, true);
+        }
     } else {
         _restoreNeedleDate = null;
         loadAfter(afterDate);
@@ -1008,13 +1032,15 @@ function getSearchParams() {
     return params;
 }
 
-function loadAfter(afterDate, afterPath, useDateFrom) {
+function loadAfter(afterDate, afterPath, useDateFrom, useDateBefore) {
     if (_isLoading || !_canLoadMore) return;
     _isLoading = true;
     var params = getSearchParams();
     if (afterDate) {
         if (useDateFrom) {
             params += '&date_from=' + encodeURIComponent(afterDate);
+        } else if (useDateBefore) {
+            params += '&date_before=' + encodeURIComponent(afterDate);
         } else {
             params += '&date_after=' + encodeURIComponent(afterDate);
             if (afterPath) params += '&path_after=' + encodeURIComponent(afterPath);
@@ -1079,6 +1105,20 @@ function _applyBatch(data) {
                  setTimeout(scrollToPhoto, 300);
              }
              _needleMode = false;
+         }
+         if (_filterNeedleDate) {
+             var needle = _filterNeedleDate;
+             _filterNeedleDate = null;
+             var cards = document.querySelectorAll('.card');
+             var bestIdx = -1;
+             for (var i = 0; i < currentPhotos.length; i++) {
+                 var d = currentPhotos[i].date || '';
+                 if (d >= needle) { bestIdx = i; break; }
+             }
+             if (bestIdx < 0 && currentPhotos.length > 0) bestIdx = 0;
+             if (bestIdx >= 0 && cards[bestIdx]) {
+                 cards[bestIdx].scrollIntoView({ block: 'start' });
+             }
          }
     }
     if (data.photos.length < totalResults) {
@@ -1837,9 +1877,19 @@ function rotateDetail(deg) {
 function slideshowToggle(dir) {
      _ssDir = dir;
      clearInterval(_ssTimer);
+     _ssTimer = null;
      document.getElementById('modalTopbar').classList.add('playing');
      _clearFaceBoxes();
-     _ssTimer = setInterval(function() { slideshowAdvance(); }, 5000);
+     var p = currentPhotos[_mIdx];
+     var vid = document.getElementById('photoModalVideo');
+     if (p && p.media_type === 'video' && vid) {
+         vid.onended = function() {
+             if (_ssDir !== 0) slideshowAdvance();
+         };
+         if (vid.paused) vid.play().catch(function(){});
+     } else {
+         _ssTimer = setInterval(function() { slideshowAdvance(); }, 5000);
+     }
  }
 
  function slideshowAdvance() {
@@ -1857,16 +1907,18 @@ function slideshowToggle(dir) {
              return;
          }
      }
-     if (newIdx < currentPhotos.length) {
-         openViewer(newIdx);
-         _clearFaceBoxes();
-         _cacheImg(newIdx + _ssDir);
-         _cacheImg(newIdx + _ssDir * 2);
-         var p = currentPhotos[newIdx];
-         if (p && p.media_type !== 'video') {
-             _ssTimer = setInterval(function() { slideshowAdvance(); }, 5000);
-         }
-     }
+      if (newIdx < currentPhotos.length) {
+          openViewer(newIdx);
+          _clearFaceBoxes();
+          _cacheImg(newIdx + _ssDir);
+          _cacheImg(newIdx + _ssDir * 2);
+          var p = currentPhotos[newIdx];
+          clearInterval(_ssTimer);
+          _ssTimer = null;
+          if (p && p.media_type !== 'video') {
+              _ssTimer = setInterval(function() { slideshowAdvance(); }, 5000);
+          }
+      }
  }
 
  function slideshowStop() {
@@ -1986,14 +2038,15 @@ function openViewer(idx) {
     _cacheImg(idx + 2);
 
     if (isVideo) {
-        // In slideshow: stop fixed timer, autoplay, and advance on ended
+        // Always autoplay video
+        vid.play().catch(function(){});
+        // In slideshow: stop fixed timer and advance on ended
         if (_ssDir !== 0) {
             clearInterval(_ssTimer);
             _ssTimer = null;
             vid.onended = function() {
                 if (_ssDir !== 0) slideshowAdvance();
             };
-            vid.play().catch(function(){});
         }
         if (_mCoverMode) _updateFitIcon(p, true);
     } else if (isMobile || _mCoverMode) {
