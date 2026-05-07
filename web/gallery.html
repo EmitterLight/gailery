@@ -1032,8 +1032,8 @@ function getSearchParams() {
     return params;
 }
 
-function loadAfter(afterDate, afterPath, useDateFrom, useDateBefore) {
-    if (_isLoading || !_canLoadMore) return;
+function loadAfter(afterDate, afterPath, useDateFrom, useDateBefore, onComplete) {
+    if (_isLoading || !_canLoadMore) { if (onComplete) onComplete(); return; }
     _isLoading = true;
     var params = getSearchParams();
     if (afterDate) {
@@ -1053,6 +1053,7 @@ function loadAfter(afterDate, afterPath, useDateFrom, useDateBefore) {
         _applyBatch(taken.data);
         _isLoading = false;
         _fillPrefetch();
+        if (onComplete) onComplete();
     } else {
         _prefetchQueue = [];
         appendPlaceholders(pageSize);
@@ -1061,10 +1062,12 @@ function loadAfter(afterDate, afterPath, useDateFrom, useDateBefore) {
             _applyBatch(data);
             _isLoading = false;
             _fillPrefetch();
+            if (onComplete) onComplete();
         }).catch(function(e) {
             removePlaceholders();
             if (currentPhotos.length === 0) document.getElementById('grid').innerHTML = '<div class="empty">Ошибка: ' + esc(e.message) + '</div>';
             _isLoading = false;
+            if (onComplete) onComplete();
         });
     }
 }
@@ -1188,8 +1191,8 @@ function _fillPrefetch() {
     doNext(0);
 }
 
-function loadBefore(beforeDate, beforePath) {
-    if (_isLoading || !_canLoadPrev || !beforeDate) return;
+function loadBefore(beforeDate, beforePath, onComplete) {
+    if (_isLoading || !_canLoadPrev || !beforeDate) { if (onComplete) onComplete([]); return; }
     _isLoading = true;
     var sortVal = document.getElementById('sortSelect').value;
     var sortForBefore = sortVal === 'date_asc' ? 'date_desc' : (sortVal === 'date_desc' ? 'date_asc' : sortVal);
@@ -1213,7 +1216,8 @@ function loadBefore(beforeDate, beforePath) {
         window.scrollBy(0, newScrollH - oldScrollH);
         _isLoading = false;
         updateInfo();
-    }).catch(function(e) { console.log('loadBefore error:', e); _isLoading = false; });
+        if (onComplete) onComplete(data.photos || []);
+    }).catch(function(e) { console.log('loadBefore error:', e); _isLoading = false; if (onComplete) onComplete([]); });
 }
 
 function updateInfo() {
@@ -1882,44 +1886,61 @@ function slideshowToggle(dir) {
      _clearFaceBoxes();
      var p = currentPhotos[_mIdx];
      var vid = document.getElementById('photoModalVideo');
-     if (p && p.media_type === 'video' && vid) {
-         vid.onended = function() {
-             if (_ssDir !== 0) slideshowAdvance();
-         };
-         if (vid.paused) vid.play().catch(function(){});
-     } else {
-         _ssTimer = setInterval(function() { slideshowAdvance(); }, 5000);
-     }
+      if (p && p.media_type === 'video' && vid) {
+          vid.onended = function() {
+              if (_ssDir !== 0) slideshowAdvance();
+          };
+          if (vid.paused) vid.play().catch(function(){});
+      } else {
+          _ssTimer = setInterval(function() { slideshowAdvance(); }, 5000);
+      }
+      _syncTimelineToPhoto();
  }
 
- function slideshowAdvance() {
-     if (_ssDir === 0) return;
-     var newIdx = _mIdx + _ssDir;
-     if (newIdx < 0) {
-         slideshowStop();
-         return;
-     }
-     if (newIdx >= currentPhotos.length) {
-         if (_canLoadMore && !_isLoading) {
-             loadAfter(_lastDate, _lastPath);
-         } else {
-             slideshowStop();
-             return;
-         }
-     }
-      if (newIdx < currentPhotos.length) {
-          openViewer(newIdx);
-          _clearFaceBoxes();
-          _cacheImg(newIdx + _ssDir);
-          _cacheImg(newIdx + _ssDir * 2);
-          var p = currentPhotos[newIdx];
-          clearInterval(_ssTimer);
-          _ssTimer = null;
-          if (p && p.media_type !== 'video') {
-              _ssTimer = setInterval(function() { slideshowAdvance(); }, 5000);
-          }
+  function _slideshowOpen(newIdx) {
+      if (newIdx < 0 || newIdx >= currentPhotos.length) return;
+      openViewer(newIdx);
+      _clearFaceBoxes();
+      _cacheImg(newIdx + _ssDir);
+      _cacheImg(newIdx + _ssDir * 2);
+      _syncTimelineToPhoto();
+      var p = currentPhotos[newIdx];
+      clearInterval(_ssTimer);
+      _ssTimer = null;
+      if (p && p.media_type !== 'video') {
+          _ssTimer = setInterval(function() { slideshowAdvance(); }, 5000);
       }
- }
+  }
+
+  function slideshowAdvance() {
+      if (_ssDir === 0) return;
+      var newIdx = _mIdx + _ssDir;
+      if (newIdx < 0) {
+          if (_canLoadPrev && !_isLoading && _ssDir < 0 && _firstDate) {
+              loadBefore(_firstDate, _firstPath, function(batch) {
+                  if (_ssDir !== 0 && batch.length > 0) {
+                      _mIdx += batch.length;
+                      newIdx = _mIdx + _ssDir;
+                      if (newIdx >= 0 && newIdx < currentPhotos.length) _slideshowOpen(newIdx);
+                  }
+              });
+          } else {
+              slideshowStop();
+          }
+          return;
+      }
+      if (newIdx >= currentPhotos.length) {
+          if (_canLoadMore && !_isLoading) {
+              loadAfter(_lastDate, _lastPath, false, false, function() {
+                  if (_ssDir !== 0 && newIdx < currentPhotos.length) _slideshowOpen(newIdx);
+              });
+          } else {
+              slideshowStop();
+          }
+          return;
+      }
+      _slideshowOpen(newIdx);
+  }
 
  function slideshowStop() {
      _ssDir = 0;
@@ -1937,6 +1958,7 @@ function slideshowToggle(dir) {
 
 function openViewer(idx) {
     if (idx < 0 || idx >= currentPhotos.length) return;
+    _modalOpen = true;
     closeDetail();
     _mIdx = idx;
     var p = currentPhotos[idx];
@@ -2059,6 +2081,9 @@ function openViewer(idx) {
         if (img.complete && img.naturalWidth) { smartFit(); }
         else { img.addEventListener('load', onImgReady); }
     }
+    _syncTimelineToPhoto();
+    var card = p.photo_id ? document.querySelector('.card[data-photo-id="' + CSS.escape(p.photo_id) + '"]') : null;
+    if (card) card.scrollIntoView({block:'center', behavior:'smooth'});
 }
 
 function updateModalGps(p) {
@@ -2329,7 +2354,32 @@ function undeletePhoto(photoId) {
 
 function modalNav(dir) {
     var newIdx = _mIdx + dir;
-    if (newIdx < 0 || newIdx >= currentPhotos.length) return;
+    if (newIdx < 0) {
+        if (_canLoadPrev && !_isLoading && dir < 0 && _firstDate) {
+            loadBefore(_firstDate, _firstPath, function(batch) {
+                if (batch.length > 0) {
+                    _mIdx += batch.length;
+                    newIdx = _mIdx + dir;
+                    if (newIdx >= 0 && newIdx < currentPhotos.length) {
+                        _mIdx = newIdx;
+                        openViewer(newIdx);
+                    }
+                }
+            });
+        }
+        return;
+    }
+    if (newIdx >= currentPhotos.length) {
+        if (_canLoadMore && !_isLoading && dir > 0) {
+            loadAfter(_lastDate, _lastPath, false, false, function() {
+                if (newIdx < currentPhotos.length) {
+                    _mIdx = newIdx;
+                    openViewer(newIdx);
+                }
+            });
+        }
+        return;
+    }
     _mIdx = newIdx;
     openViewer(newIdx);
 }
@@ -2630,7 +2680,8 @@ function closePhotoModal() {
     document.getElementById('photoModal').classList.remove('fs');
      if (_ssTimer) { clearInterval(_ssTimer); _ssTimer = null; _ssDir = 0; var lastPid = currentPhotos[_mIdx] && currentPhotos[_mIdx].photo_id; }
      document.getElementById('modalTopbar').classList.remove('playing');
-     if (lastPid) { var c = document.querySelector('.card[data-photo-id="' + CSS.escape(lastPid) + '"]'); if (c) c.scrollIntoView({block:'center'}); }
+      if (lastPid) { var c = document.querySelector('.card[data-photo-id="' + CSS.escape(lastPid) + '"]'); if (c) { c.scrollIntoView({block:'center'}); } }
+     _modalOpen = false;
 }
 
 function goToTimeline() {
@@ -3089,8 +3140,15 @@ window.addEventListener('beforeunload', function() { saveFilters(); });
 
 var _scrollYear = '';
 var _lastScrollY = 0;
+var _tlSyncPaused = false;
+var _modalOpen = false;
 
-function updateTimelinePosition() {
+function _syncTimelineToPhoto() {
+    var p = currentPhotos[_mIdx];
+    if (p && p.date) updateTimelinePosition(p.date);
+}
+
+function updateTimelinePosition(targetDate) {
     if (!dateData || !dateData.years) return;
     var needle = document.getElementById('tlNeedle');
     var tl = document.getElementById('timeline');
@@ -3107,24 +3165,29 @@ function updateTimelinePosition() {
         return;
     }
 
-    var cards = document.querySelectorAll('.card[data-date]');
-    if (cards.length === 0) return;
+    var nearDate;
+    if (targetDate) {
+        nearDate = targetDate;
+    } else {
+        var cards = document.querySelectorAll('.card[data-date]');
+        if (cards.length === 0) return;
 
-    var vvH = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-    var firstVisible = null;
-    for (var i = 0; i < cards.length; i++) {
-        var rect = cards[i].getBoundingClientRect();
-        if (rect.bottom > 0 && rect.top < vvH) {
-            firstVisible = cards[i];
-            break;
+        var vvH = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+        var firstVisible = null;
+        for (var i = 0; i < cards.length; i++) {
+            var rect = cards[i].getBoundingClientRect();
+            if (rect.bottom > 0 && rect.top < vvH) {
+                firstVisible = cards[i];
+                break;
+            }
         }
-    }
-    if (!firstVisible) return;
+        if (!firstVisible) return;
 
-    var nearDate = firstVisible.getAttribute('data-date');
+        nearDate = firstVisible.getAttribute('data-date');
+        _firstVisiblePhotoId = firstVisible.getAttribute('data-photo-id') || null;
+    }
     if (!nearDate) return;
     _needleDateISO = nearDate;
-    _firstVisiblePhotoId = firstVisible.getAttribute('data-photo-id') || null;
 
     var nearYear = parseInt(nearDate.substring(0, 4));
     if (isNaN(nearYear)) { _needleDateISO = null; return; }
@@ -3181,6 +3244,7 @@ function updateTimelinePosition() {
 }
 
 window.addEventListener('scroll', function() {
+     if (_modalOpen || _tlSyncPaused) return;
      var scrollY = window.scrollY || window.pageYOffset;
      var vvH = window.visualViewport ? window.visualViewport.height : window.innerHeight;
      var docH = document.documentElement.scrollHeight;
