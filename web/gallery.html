@@ -812,6 +812,12 @@
 
 <script>
 var API = '/api';
+function videoSrc(p) {
+    if (p.media_type === 'video' && (p.needs_transcode || p.needs_remux)) {
+        return API + '/photos/video_stream?path=' + encodeURIComponent(p.photo_id);
+    }
+    return p.photo_id ? (API + '/photos/?path=' + encodeURIComponent(p.photo_id)) : '';
+}
 var pageSize = 60;
 var totalResults = 0;
 var activeDate = '';
@@ -1459,7 +1465,7 @@ function buildCardHtml(p, idx) {
 function playVideoCard(idx) {
     var p = currentPhotos[idx];
     if (!p) return;
-    var url = p.photo_id ? (API + '/photos/?path=' + encodeURIComponent(p.photo_id)) : '';
+    var url = videoSrc(p);
     var bar = document.getElementById('vidModalBar');
     var txt = formatDate(p.date);
     if (p.camera_make || p.camera_model) txt += ' <span style="color:#6e7681">&bull;</span> ' + esc((p.camera_make || '') + ' ' + (p.camera_model || ''));
@@ -2063,12 +2069,13 @@ function selectYear(year) {
      if (!p) return;
      _dpRot = 0;
      _dpHash = p.content_hash || '';
-     var photoUrl = p.photo_id ? (API + '/photos/?path=' + encodeURIComponent(p.photo_id)) : '';
-     var thumbUrl = p.photo_id ? (API + '/photos/thumbnail?path=' + encodeURIComponent(p.photo_id)) : '';
+      var photoUrl = p.photo_id ? (API + '/photos/?path=' + encodeURIComponent(p.photo_id)) : '';
+      var thumbUrl = p.photo_id ? (API + '/photos/thumbnail?path=' + encodeURIComponent(p.photo_id)) : '';
+      var vidUrl = videoSrc(p);
 
-     var html;
-     if (p.media_type === 'video') {
-         html = '<video class="dp-img" id="detailVideo" src="' + photoUrl + '" controls preload="metadata" style="width:100%;max-height:400px;background:#000;border-radius:4px"></video>';
+      var html;
+      if (p.media_type === 'video') {
+          html = '<video class="dp-img" id="detailVideo" src="' + vidUrl + '" controls preload="metadata" style="width:100%;max-height:400px;background:#000;border-radius:4px"></video>';
      } else {
          html = '<img class="dp-img" id="dpImg" src="' + thumbUrl + '" loading="lazy" onerror="this.style.display=\'none\'">';
          html += '<div class="dp-img-bar"><button onclick="rotateDetail(-90)">&#8634;</button><button onclick="rotateDetail(90)">&#8635;</button></div>';
@@ -2258,7 +2265,7 @@ function selectYear(year) {
         html += '</div>';
     }
 
-    html += '<div style="margin-top:12px"><button style="background:#238636;color:#fff;border:none;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:12px" onclick="openFullPhoto(\'' + esc(photoUrl) + '\')">Открыть полное фото</button></div>';
+    html += '<div style="margin-top:12px"><button style="background:#238636;color:#fff;border:none;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:12px" onclick="openFullPhoto(\'' + esc(p.media_type === 'video' ? vidUrl : photoUrl) + '\')">Открыть полное фото</button></div>';
 
      document.getElementById('dpContent').innerHTML = html;
      document.getElementById('detailPanel').classList.add('show');
@@ -2271,7 +2278,7 @@ function selectYear(year) {
  }
 
 function openFullPhoto(url) {
-    openViewer(currentPhotos.findIndex(function(p) { return p.photo_id && (API + '/photos/?path=' + encodeURIComponent(p.photo_id)) === url; }));
+    openViewer(currentPhotos.findIndex(function(p) { return videoSrc(p) === url || (API + '/photos/?path=' + encodeURIComponent(p.photo_id)) === url; }));
 }
 
 var _mZoom = 1, _mPx = 0, _mPy = 0, _mDrag = false, _mDX = 0, _mDY = 0, _mDate = '', _mPhotoId = '', _mRot = 0, _mIdx = -1, _mCoverMode = false;
@@ -2281,6 +2288,7 @@ var _imgCache = {};
 function _cacheImg(idx) {
     if (idx < 0 || idx >= currentPhotos.length) return;
     var p = currentPhotos[idx];
+    if (p.media_type === 'video') return;
     var url = p.photo_id ? (API + '/photos/?path=' + encodeURIComponent(p.photo_id)) : '';
     if (url && !_imgCache[url]) {
         var img = new Image();
@@ -2417,7 +2425,7 @@ function openViewer(idx) {
     var p = currentPhotos[idx];
     _mDate = p.date || '';
     _mPhotoId = p.photo_id || '';
-    var url = p.photo_id ? (API + '/photos/?path=' + encodeURIComponent(p.photo_id)) : '';
+    var url = videoSrc(p);
     var img = document.getElementById('photoModalImg');
     var vid = document.getElementById('photoModalVideo');
     var wrap = document.getElementById('modalImgWrap');

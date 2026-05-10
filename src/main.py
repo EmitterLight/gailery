@@ -90,15 +90,34 @@ class BfcacheFixMiddleware:
 app.add_middleware(BfcacheFixMiddleware)
 
 
-@app.middleware("http")
-async def redirect_api_errors_for_browsers(request: Request, call_next):
-    response = await call_next(request)
-    if response.status_code >= 400:
-        accept = request.headers.get("accept", "")
-        if "text/html" in accept and request.url.path.startswith("/api/"):
-            from fastapi.responses import RedirectResponse
-            return RedirectResponse(url="/gallery")
-    return response
+class BrowserErrorRedirectMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            scope_headers = scope.get("headers", [])
+            accept = ""
+            path = scope.get("path", "")
+            for k, v in scope_headers:
+                if k == b"accept":
+                    accept = v.decode()
+            if "text/html" in accept and path.startswith("/api/"):
+                captured_status = None
+                async def send_with_check(message):
+                    nonlocal captured_status
+                    if message["type"] == "http.response.start":
+                        captured_status = message.get("status", 200)
+                    if captured_status is not None and captured_status >= 400 and message["type"] == "http.response.body" and not message.get("more_body", False):
+                        redirect_msg_start = {"type": "http.response.start", "status": 302, "headers": [[b"location", b"/gallery"], [b"content-length", b"0"]]}
+                        redirect_msg_body = {"type": "http.response.body", "body": b"", "more_body": False}
+                        await send(redirect_msg_start)
+                        await send(redirect_msg_body)
+                        return
+                    await send(message)
+                await self.app(scope, receive, send_with_check)
+                return
+        await self.app(scope, receive, send)
 
 
 app.add_middleware(

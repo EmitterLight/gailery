@@ -1,10 +1,14 @@
 """API endpoints for photos"""
 
 from fastapi import APIRouter, HTTPException, Response, Request
+from fastapi.responses import StreamingResponse
+
 from pathlib import Path
 from typing import Optional, List
 import logging
 import os
+import re
+import subprocess
 import time
 import threading
 from config import PHOTO_SHARE_PATH, THUMBNAILS_DIR, LLAMA_CPP_DIR, PROJECT_ROOT, LOG_FILE
@@ -12,6 +16,9 @@ from config import PHOTO_SHARE_PATH, THUMBNAILS_DIR, LLAMA_CPP_DIR, PROJECT_ROOT
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/photos", tags=["photos"])
+
+TRANSCODE_EXTS = {'.avi', '.3gp', '.wmv', '.mpg', '.mpeg', '.flv', '.m4v'}
+REMUX_EXTS = {'.mkv'}
 
 FOTO_PREFIX = str(PHOTO_SHARE_PATH) + "/"
 
@@ -94,6 +101,8 @@ def _enrich_photo(p, photo_faces, persona_map, include_created=False, include_th
         "is_raw": is_raw,
         "media_type": p.get("media_type", "photo"),
         "duration_seconds": p.get("duration_seconds", 0),
+        "needs_transcode": p.get("media_type") == "video" and Path(p.get("path", "")).suffix.lower() in TRANSCODE_EXTS,
+        "needs_remux": p.get("media_type") == "video" and Path(p.get("path", "")).suffix.lower() in REMUX_EXTS,
         "is_canonical": p.get("is_canonical", True),
         "duplicate_paths": p.get("duplicate_paths", []),
         "content_hash": p.get("content_hash"),
@@ -415,10 +424,158 @@ async def get_face_context(face_id: str, zoom: float = 3.0):
         loop = asyncio.get_event_loop()
         content = await loop.run_in_executor(None, _context)
         return Response(content=content, media_type="image/jpeg",
-                        headers={"Cache-Control": "no-cache"})
+                         headers={"Cache-Control": "no-cache"})
     except Exception as e:
         logger.error(f"Failed to get face context {face_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to get face context")
+
+
+def _resolve_photo_path(path: str):
+    from database import get_db
+    db = get_db()
+    row = db.sqlite.execute("SELECT path FROM photos WHERE photo_id = ?", (path,)).fetchone()
+    if row:
+        return Path(row[0])
+    row2 = db.sqlite.execute("SELECT cf.abs_path FROM catalog_files cf WHERE cf.content_hash = ?", (path,)).fetchone()
+    if row2:
+        return Path(row2[0])
+    return PHOTO_SHARE_PATH / path
+
+
+def _start_ffmpeg_transcode(input_path, seek_time=0):
+    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error"]
+    if seek_time > 0:
+        cmd.extend(["-ss", f"{seek_time:.3f}"])
+    cmd.extend([
+        "-i", str(input_path),
+        "-err_detect", "ignore_err",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+        "-pix_fmt", "yuv420p",
+        "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+        "-c:a", "aac", "-b:a", "192k",
+        "-movflags", "+frag_keyframe+empty_moov+default_base_moof",
+        "-f", "mp4", "pipe:1",
+    ])
+    return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+
+def _start_ffmpeg_remux(input_path, seek_time=0):
+    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error"]
+    if seek_time > 0:
+        cmd.extend(["-ss", f"{seek_time:.3f}"])
+    cmd.extend([
+        "-i", str(input_path),
+        "-err_detect", "ignore_err",
+        "-c:v", "copy",
+        "-c:a", "aac", "-b:a", "192k",
+        "-movflags", "+frag_keyframe+empty_moov+default_base_moof",
+        "-f", "mp4", "pipe:1",
+    ])
+    return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+
+def _stream_ffmpeg(process):
+    try:
+        while True:
+            chunk = process.stdout.read(65536)
+            if not chunk:
+                break
+            yield chunk
+    finally:
+        try:
+            process.kill()
+        except Exception:
+            pass
+        try:
+            process.wait(timeout=3)
+        except Exception:
+            pass
+
+
+def _estimate_transcode_size(duration, width, height):
+    pixels = (width or 640) * (height or 480)
+    if pixels <= 640 * 480:
+        vbr = 2_800_000
+    elif pixels <= 1280 * 720:
+        vbr = 4_500_000
+    elif pixels <= 1920 * 1080:
+        vbr = 7_000_000
+    else:
+        vbr = 10_000_000
+    abr = 128_000
+    return int((vbr + abr) * max(duration, 1) / 8)
+
+
+@router.get("/video_stream")
+async def video_stream(path: str = "", t: float = 0, request: Request = None):
+    photo_path = _resolve_photo_path(path)
+    if not photo_path.exists() or not photo_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    is_remux = photo_path.suffix.lower() in REMUX_EXTS
+
+    from database import get_db
+    db = get_db()
+    photo = db.get_photo_by_path(str(photo_path))
+    if not photo:
+        row = db.sqlite.execute(
+            "SELECT duration_seconds, img_width, img_height FROM photos WHERE path = ?",
+            (str(photo_path),)
+        ).fetchone()
+        if row:
+            duration, width, height = row[0] or 30, row[1] or 640, row[2] or 480
+        else:
+            duration, width, height = 30, 640, 480
+    else:
+        duration = photo.get("duration_seconds", 30) or 30
+        width = photo.get("img_width", 640) or 640
+        height = photo.get("img_height", 480) or 480
+
+    MAX_TRANSCODE_SIZE = 500 * 1024 * 1024
+    estimated_size = _estimate_transcode_size(duration, width, height)
+    if not is_remux and estimated_size > MAX_TRANSCODE_SIZE:
+        raise HTTPException(status_code=413, detail=f"Video too large to transcode on-the-fly ({estimated_size // 1024 // 1024}MB estimated)")
+
+    seek_time = max(0, min(t, duration - 0.5))
+
+    def start_ffmpeg(seek):
+        if is_remux:
+            return _start_ffmpeg_remux(photo_path, seek)
+        return _start_ffmpeg_transcode(photo_path, seek)
+
+    range_header = request.headers.get("range", "") if request else ""
+    if range_header:
+        m = re.match(r'bytes=(\d+)-(\d*)', range_header)
+        if m:
+            start_byte = int(m.group(1))
+        else:
+            start_byte = 0
+
+        if estimated_size > 0 and start_byte > 0:
+            seek_time = max(0, min((start_byte / estimated_size) * duration, duration - 0.5))
+
+        process = start_ffmpeg(seek_time)
+        return StreamingResponse(
+            _stream_ffmpeg(process),
+            status_code=206,
+            media_type="video/mp4",
+            headers={
+                "Content-Range": f"bytes {start_byte}-*/*",
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "no-cache",
+            }
+        )
+
+    process = start_ffmpeg(seek_time)
+    return StreamingResponse(
+        _stream_ffmpeg(process),
+        status_code=200,
+        media_type="video/mp4",
+        headers={
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "no-cache",
+        }
+    )
 
 
 @router.get("/list")

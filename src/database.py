@@ -1173,15 +1173,15 @@ deleted=None, deleted_only=None,
                 (rid,)
             ).fetchone()[0]
             per_root.append({
-                "root_id": rid,
-                "alias": r.get("alias", ""),
-                "catalog_total": r_cat,
-                "ingested": rr[0] or 0,
-                "described": rr[1] or 0,
-                "exif_done": rr[2] or 0,
-                "embedded": rr[3] or 0,
-                "videos": rr[4] or 0,
-            })
+                    "root_id": rid,
+                    "alias": r.get("alias", ""),
+                    "catalog_total": r_cat,
+                    "ingested": (rr[0] if rr else 0) or 0,
+                    "described": (rr[1] if rr else 0) or 0,
+                    "exif_done": (rr[2] if rr else 0) or 0,
+                    "embedded": (rr[3] if rr else 0) or 0,
+                    "videos": (rr[4] if rr else 0) or 0,
+                })
 
         return {
             "photos_total": photos_total,
