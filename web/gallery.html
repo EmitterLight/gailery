@@ -2124,7 +2124,12 @@ function selectYear(year) {
         html += '</div></div>';
     }
     if (p.is_raw) html += '<div class="dp-meta" style="color:#f0883e;font-weight:600">RAW</div>';
-    if (p.camera_make || p.camera_model) html += '<div class="dp-meta">Камера: ' + esc((p.camera_make || '') + ' ' + (p.camera_model || '')) + '</div>';
+    var _fakeCam = /^(h264|h265|hevc|mjpeg|mpeg4|vp[89]|av1|aac|mp4a|pcm|opus|vp9|theora|flac)$/i;
+    var _camMake = p.camera_make || '';
+    var _camModel = p.camera_model || '';
+    if (_fakeCam.test(_camMake)) _camMake = '';
+    if (_fakeCam.test(_camModel)) _camModel = '';
+    if (p.media_type !== 'video' && (_camMake || _camModel)) html += '<div class="dp-meta">Камера: ' + esc(_camMake + ' ' + _camModel) + '</div>';
     if (p.media_type === 'video') {
         html += '<div id="videoMetaArea"><div class="dp-meta" style="color:#6e7681">Загрузка метаданных…</div></div>';
         (function(){
