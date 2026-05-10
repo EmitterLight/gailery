@@ -629,6 +629,76 @@ async def video_stream(path: str = "", t: float = 0, request: Request = None):
     )
 
 
+@router.get("/video_meta")
+async def video_meta(path: str = ""):
+    photo_path = _resolve_photo_path(path)
+    if not photo_path.exists() or not photo_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    import json as _json
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-hide_banner", "-loglevel", "error",
+             "-show_format", "-show_streams",
+             "-print_format", "json", str(photo_path)],
+            capture_output=True, timeout=10
+        )
+        info = _json.loads(result.stdout)
+    except Exception as e:
+        logger.error(f"ffprobe failed for {photo_path}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to probe video")
+
+    meta = {
+        "duration": 0,
+        "creation_time": None,
+        "camera": None,
+        "video_codec": None,
+        "audio_codec": None,
+        "width": None,
+        "height": None,
+        "fps": None,
+        "pix_fmt": None,
+        "bit_rate": None,
+        "audio_sample_rate": None,
+        "audio_channels": None,
+        "container": None,
+    }
+
+    fmt = info.get("format", {})
+    if fmt.get("duration"):
+        meta["duration"] = float(fmt["duration"])
+    if fmt.get("bit_rate"):
+        meta["bit_rate"] = int(fmt["bit_rate"])
+    tags = fmt.get("tags", {})
+    if tags.get("creation_time"):
+        meta["creation_time"] = tags["creation_time"]
+    if tags.get("software"):
+        meta["camera"] = tags["software"]
+    elif tags.get("comment"):
+        meta["camera"] = tags["comment"]
+    if fmt.get("format_name"):
+        meta["container"] = fmt["format_name"]
+
+    for s in info.get("streams", []):
+        ct = s.get("codec_type")
+        if ct == "video" and not meta["video_codec"]:
+            meta["video_codec"] = s.get("codec_name")
+            meta["width"] = s.get("width")
+            meta["height"] = s.get("height")
+            meta["pix_fmt"] = s.get("pix_fmt")
+            rfr = s.get("r_frame_rate", "0/0")
+            if "/" in str(rfr):
+                num, den = str(rfr).split("/")
+                den = int(den) if int(den) else 1
+                meta["fps"] = round(int(num) / den, 2)
+        elif ct == "audio" and not meta["audio_codec"]:
+            meta["audio_codec"] = s.get("codec_name")
+            meta["audio_sample_rate"] = s.get("sample_rate")
+            meta["audio_channels"] = s.get("channels")
+
+    return meta
+
+
 @router.get("/list")
 async def list_photos(limit: int = 100, offset: int = 0, sort: str = "changed_desc"):
     from database import get_db
