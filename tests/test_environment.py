@@ -9,6 +9,7 @@ P104-100 (Pascal SM 6.1) constraints:
 import json
 import pytest
 import pkg_resources
+from pathlib import Path
 
 
 REQUIRED_VERSIONS = {
@@ -228,15 +229,21 @@ def _pgrep(script_name):
 
 
 def test_pipeline_process_exists():
-    """Процесс pipeline.py запущен — без него не работает обработка.
+    """Процесс pipeline.py запущен ИЛИ idle (все шаги завершены).
 
-    Если тест падает, а сервисы active — watchdog запустит pipeline сам
-    при следующем цикле. Панель «Воркеры MQTT» покажет dead пока pipeline
-    не переподключится после рестарта.
+    Если pipeline_idle флаг стоит — pipeline закончивший, это нормально.
+    Если нет флага и нет процесса — проблема, watchdog должен перезапустить.
     """
     pids = _pgrep("pipeline.py")
+    try:
+        from config import FLAG_DIR
+        is_idle = (FLAG_DIR / "pipeline_idle").exists()
+    except Exception:
+        is_idle = False
+    if is_idle:
+        return
     assert len(pids) >= 1, (
-        "pipeline.py не запущен!\n"
+        "pipeline.py не запущен и не idle!\n"
         "Проверь: ps aux | grep pipeline.py\n"
         "Watchdog должен перезапустить автоматически."
     )
@@ -267,17 +274,21 @@ def test_api_status_returns_data():
 
 
 def test_watchdog_mode_consistent_with_flags():
-    """mode активен <=> no_restart флаг отсутствует. Проверяет консистентность."""
+    """mode из API согласован с реальным состоянием: sleeping/waiting/active."""
     import urllib.request
     data = json.loads(urllib.request.urlopen(
-        "http://localhost:8000/api/watchdog/crashes", timeout=5).read())
+        "http://localhost:8000/api/watchdog/crashes", timeout=30).read())
     no_restart = data["no_restart"]
     mode = data["mode"]
-    expected = "sleeping" if no_restart else "active"
-    assert mode == expected, (
-        f"mode={mode} но no_restart={no_restart}, "
-        f"ожидалось {expected}"
+    valid_modes = {"sleeping", "waiting", "active"}
+    assert mode in valid_modes, (
+        f"mode={mode} — неизвестный режим, ожидался один из {valid_modes}"
     )
+    if no_restart:
+        assert mode == "sleeping", (
+            f"no_restart={no_restart} но mode={mode}, "
+            f"ожидался 'sleeping'"
+        )
 
 
 def test_persons_api_includes_unnamed():

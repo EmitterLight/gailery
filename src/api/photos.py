@@ -897,10 +897,12 @@ async def save_rich_description(photo_id: str, request: Request):
 
 @router.get("/dates")
 async def get_date_histogram():
+    import asyncio
     from database import get_db
 
     db = get_db()
-    return db.get_date_histogram()
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, db.get_date_histogram)
 
 
 @router.post("/describe")

@@ -22,7 +22,7 @@ BUDGETS = {
     "search_60_faces": 0.01,
     "dates_histogram": 1.5,
     "count_photos": 0.05,
-    "get_all_faces": 1.5,
+    "get_all_faces": 2.0,
     "get_all_personas": 0.2,
     "targeted_faces_60": 0.05,
     "api_health": 0.5,

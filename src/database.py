@@ -1080,43 +1080,60 @@ deleted=None, deleted_only=None,
     def get_status(self):
         enabled_roots = [r for r in self.get_catalog_roots() if r.get("enabled", 1)]
         enabled_ids = [r["root_id"] for r in enabled_roots]
-        rid_ph = ",".join("?" * len(enabled_ids)) if enabled_ids else ""
 
         if enabled_ids:
+            rid_ph = ",".join("?" * len(enabled_ids))
+
+            photos_row = self.sqlite.execute(
+                f"SELECT "
+                f"COUNT(*),"
+                f"SUM(CASE WHEN deleted=0 THEN 1 ELSE 0 END),"
+                f"SUM(CASE WHEN deleted=0 AND (media_type IS NULL OR media_type!='video') THEN 1 ELSE 0 END),"
+                f"SUM(CASE WHEN deleted=0 AND media_type='video' THEN 1 ELSE 0 END),"
+                f"SUM(CASE WHEN deleted=0 AND (media_type IS NULL OR media_type!='video') AND description IS NOT NULL AND description!='' THEN 1 ELSE 0 END),"
+                f"SUM(CASE WHEN deleted=0 AND (media_type IS NULL OR media_type!='video') AND faces_present=1 THEN 1 ELSE 0 END),"
+                f"SUM(CASE WHEN deleted=0 AND (media_type IS NULL OR media_type!='video') AND exif_checked=1 THEN 1 ELSE 0 END),"
+                f"SUM(CASE WHEN deleted=0 AND (media_type IS NULL OR media_type!='video') AND embedded=1 THEN 1 ELSE 0 END),"
+                f"SUM(CASE WHEN deleted=0 AND media_type='video' AND exif_checked=1 THEN 1 ELSE 0 END),"
+                f"SUM(CASE WHEN deleted=1 THEN 1 ELSE 0 END) "
+                f"FROM photos WHERE root_id IN ({rid_ph})",
+                enabled_ids
+            ).fetchone()
+
+            photos_total = photos_row[1]
+            photos_only = photos_row[2]
+            videos_ingested = photos_row[3]
+            described = photos_row[4]
+            faces_flagged = photos_row[5]
+            exif_done = photos_row[6]
+            embedded = photos_row[7]
+            videos_exif = photos_row[8]
+            photos_deleted = photos_row[9]
+
             catalog_total = self.sqlite.execute(
-                f"SELECT COUNT(*) FROM catalog_files WHERE is_canonical = 1 AND deleted = 0 AND root_id IN ({rid_ph})",
+                f"SELECT COUNT(*) FROM catalog_files WHERE is_canonical=1 AND deleted=0 AND root_id IN ({rid_ph})",
                 enabled_ids
             ).fetchone()[0]
-            photos_total = self.sqlite.execute(
-                f"SELECT COUNT(*) FROM photos WHERE deleted = 0 AND root_id IN ({rid_ph})",
-                enabled_ids
-            ).fetchone()[0]
-            described = self.sqlite.execute(
-                f"SELECT COUNT(*) FROM photos WHERE description IS NOT NULL AND description != '' AND deleted = 0 AND (media_type IS NULL OR media_type != 'video') AND root_id IN ({rid_ph})",
-                enabled_ids
-            ).fetchone()[0]
-            faces_flagged = self.sqlite.execute(
-                f"SELECT COUNT(*) FROM photos WHERE faces_present = 1 AND deleted = 0 AND (media_type IS NULL OR media_type != 'video') AND root_id IN ({rid_ph})",
-                enabled_ids
-            ).fetchone()[0]
-            exif_done = self.sqlite.execute(
-                f"SELECT COUNT(*) FROM photos WHERE exif_checked = 1 AND deleted = 0 AND (media_type IS NULL OR media_type != 'video') AND root_id IN ({rid_ph})",
-                enabled_ids
-            ).fetchone()[0]
-            embedded = self.sqlite.execute(
-                f"SELECT COUNT(*) FROM photos WHERE embedded = 1 AND deleted = 0 AND (media_type IS NULL OR media_type != 'video') AND root_id IN ({rid_ph})",
-                enabled_ids
-            ).fetchone()[0]
+
             faces_processed = self.sqlite.execute(
-                f"SELECT COUNT(*) FROM photos p "
-                f"WHERE p.faces_present = 1 AND p.deleted = 0 AND (p.media_type IS NULL OR p.media_type != 'video') AND p.root_id IN ({rid_ph})"
-                f" AND p.path IN (SELECT cf.abs_path FROM catalog_files cf JOIN faces f ON f.content_hash = cf.content_hash WHERE cf.is_canonical = 1 AND cf.deleted = 0)",
+                f"SELECT COUNT(DISTINCT cf.abs_path) FROM catalog_files cf "
+                f"JOIN faces f ON f.content_hash = cf.content_hash "
+                f"JOIN photos p ON p.path = cf.abs_path "
+                f"WHERE cf.is_canonical=1 AND cf.deleted=0 AND p.faces_present=1 AND p.deleted=0 "
+                f"AND (p.media_type IS NULL OR p.media_type!='video') AND p.root_id IN ({rid_ph})",
+                enabled_ids
+            ).fetchone()[0]
+
+            videos_catalog = self.sqlite.execute(
+                f"SELECT COUNT(*) FROM catalog_files WHERE is_canonical=1 AND deleted=0 "
+                f"AND ext IN ('.mp4','.mov','.avi','.mkv','.webm','.3gp','.wmv') AND root_id IN ({rid_ph})",
                 enabled_ids
             ).fetchone()[0]
         else:
-            catalog_total = photos_total = described = faces_flagged = faces_processed = exif_done = embedded = 0
+            catalog_total = photos_total = photos_only = videos_ingested = 0
+            described = faces_flagged = faces_processed = exif_done = embedded = 0
+            videos_exif = videos_catalog = photos_deleted = 0
 
-        photos_deleted = self.count_photos(where="deleted = 1")
         personas_total = self.sqlite.execute("SELECT COUNT(*) FROM personas").fetchone()[0]
         faces_total = self.count_faces()
         with_persona = self.count_faces("persona_id IS NOT NULL")
@@ -1125,44 +1142,30 @@ deleted=None, deleted_only=None,
         per_root = []
         for r in enabled_roots:
             rid = r["root_id"]
-            r_cat = self.sqlite.execute("SELECT COUNT(*) FROM catalog_files WHERE root_id = ? AND is_canonical = 1 AND deleted = 0", (rid,)).fetchone()[0]
-            r_photos = self.sqlite.execute("SELECT COUNT(*) FROM photos WHERE root_id = ? AND deleted = 0", (rid,)).fetchone()[0]
-            r_described = self.sqlite.execute("SELECT COUNT(*) FROM photos WHERE root_id = ? AND description IS NOT NULL AND description != '' AND deleted = 0", (rid,)).fetchone()[0]
-            r_exif = self.sqlite.execute("SELECT COUNT(*) FROM photos WHERE root_id = ? AND exif_checked = 1 AND deleted = 0", (rid,)).fetchone()[0]
-            r_embedded = self.sqlite.execute("SELECT COUNT(*) FROM photos WHERE root_id = ? AND embedded = 1 AND deleted = 0", (rid,)).fetchone()[0]
+            rr = self.sqlite.execute(
+                "SELECT "
+                "SUM(CASE WHEN deleted=0 THEN 1 ELSE 0 END),"
+                "SUM(CASE WHEN deleted=0 AND description IS NOT NULL AND description!='' THEN 1 ELSE 0 END),"
+                "SUM(CASE WHEN deleted=0 AND exif_checked=1 THEN 1 ELSE 0 END),"
+                "SUM(CASE WHEN deleted=0 AND embedded=1 THEN 1 ELSE 0 END),"
+                "SUM(CASE WHEN deleted=0 AND media_type='video' THEN 1 ELSE 0 END) "
+                "FROM photos WHERE root_id = ?",
+                (rid,)
+            ).fetchone()
+            r_cat = self.sqlite.execute(
+                "SELECT COUNT(*) FROM catalog_files WHERE root_id=? AND is_canonical=1 AND deleted=0",
+                (rid,)
+            ).fetchone()[0]
             per_root.append({
                 "root_id": rid,
                 "alias": r.get("alias", ""),
                 "catalog_total": r_cat,
-                "ingested": r_photos,
-                "described": r_described,
-                "exif_done": r_exif,
-                "embedded": r_embedded,
-                "videos": self.sqlite.execute(
-                    "SELECT COUNT(*) FROM photos WHERE root_id = ? AND media_type = 'video' AND deleted = 0",
-                    (rid,)).fetchone()[0],
+                "ingested": rr[0] or 0,
+                "described": rr[1] or 0,
+                "exif_done": rr[2] or 0,
+                "embedded": rr[3] or 0,
+                "videos": rr[4] or 0,
             })
-
-        videos_total = 0
-        videos_exif = 0
-        photos_only = photos_total
-        if enabled_ids:
-            videos_catalog = self.sqlite.execute(
-                f"SELECT COUNT(*) FROM catalog_files WHERE is_canonical = 1 AND deleted = 0 AND ext IN ('.mp4','.mov','.avi','.mkv','.webm','.3gp','.wmv') AND root_id IN ({rid_ph})",
-                enabled_ids
-            ).fetchone()[0]
-            videos_total = videos_catalog
-            videos_ingested = self.sqlite.execute(
-                f"SELECT COUNT(*) FROM photos WHERE media_type = 'video' AND deleted = 0 AND root_id IN ({rid_ph})",
-                enabled_ids
-            ).fetchone()[0]
-            videos_exif = self.sqlite.execute(
-                f"SELECT COUNT(*) FROM photos WHERE media_type = 'video' AND exif_checked = 1 AND deleted = 0 AND root_id IN ({rid_ph})",
-                enabled_ids
-            ).fetchone()[0]
-            photos_only = photos_total - videos_ingested
-        else:
-            videos_ingested = 0
 
         return {
             "photos_total": photos_total,
@@ -1176,27 +1179,27 @@ deleted=None, deleted_only=None,
             "personas_total": personas_total,
             "catalog_total": max(catalog_total, photos_total),
             "catalog_ingested": photos_total,
-            "catalog_not_ingested": max(catalog_total, photos_total) - photos_total,
+            "catalog_not_ingested": max(catalog_total - photos_total, 0),
             "catalog_described": described,
-            "catalog_not_described": photos_only - described,
+            "catalog_not_described": max(photos_only - described, 0),
             "catalog_exif_done": exif_done,
-            "catalog_exif_not": photos_only - exif_done,
+            "catalog_exif_not": max(photos_only - exif_done, 0),
             "catalog_faces_done": faces_processed,
             "catalog_faces_not": max(faces_flagged - faces_processed, 0),
             "photos_embedded": embedded,
-            "photos_not_embedded": photos_only - embedded,
+            "photos_not_embedded": max(photos_only - embedded, 0),
             "pct_ingested": round(min(photos_total, catalog_total) / max(catalog_total, 1) * 100, 2),
             "pct_described": round(described / max(photos_only, 1) * 100, 2),
             "pct_exif": round(exif_done / max(photos_only, 1) * 100, 2),
             "pct_faces": round(faces_processed / max(faces_flagged, 1) * 100, 2),
             "pct_embedded": round(embedded / max(photos_only, 1) * 100, 2),
             "faces_flagged_in_db": faces_flagged,
-            "ingested_undescribed": photos_only - described,
-            "ingested_no_exif": photos_only - exif_done,
+            "ingested_undescribed": max(photos_only - described, 0),
+            "ingested_no_exif": max(photos_only - exif_done, 0),
             "faces_not_done": max(faces_flagged - faces_processed, 0),
             "per_root": per_root,
             "videos": {
-                "catalog": videos_total,
+                "catalog": videos_catalog,
                 "ingested": videos_ingested,
                 "exif": videos_exif,
             },

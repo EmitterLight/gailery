@@ -213,8 +213,16 @@ async def get_log(lines: int = 100):
         return {"lines": [], "total": 0}
 
     def _read_tail():
-        with open(log_path) as f:
-            all_lines = f.readlines()
+        with open(log_path, "rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            chunk_size = min(size, 65536 * 4)
+            f.seek(max(0, size - chunk_size))
+            raw = f.read()
+        text = raw.decode("utf-8", errors="replace")
+        all_lines = text.splitlines(True)
+        if size > chunk_size and all_lines:
+            all_lines = all_lines[1:]
         return all_lines
 
     loop = asyncio.get_event_loop()
@@ -622,7 +630,14 @@ async def watchdog_crashes():
     loop = asyncio.get_event_loop()
     crashes = await loop.run_in_executor(None, _read_crashes)
     no_restart = (FLAG_DIR / "no_restart").exists()
-    mode = "sleeping" if no_restart else "active"
+    mq = _get_api_mqtt()
+    mqtt_mode = mq.get_watchdog_mode() if mq else None
+    if mqtt_mode:
+        mode = mqtt_mode
+    elif no_restart:
+        mode = "sleeping"
+    else:
+        mode = "active"
     return {"crashes": crashes[:50], "no_restart": no_restart, "mode": mode}
 
 
@@ -1028,8 +1043,17 @@ def _get_prompts():
     return prompts
 
 
+_config_cache = {"data": None, "ts": 0}
+_CONFIG_TTL = 30
+
+
 @app.get("/api/config")
 async def get_config():
+    import time as _time
+    now = _time.time()
+    if _config_cache["data"] and (now - _config_cache["ts"]) < _CONFIG_TTL:
+        return _config_cache["data"]
+
     from config import (
         PHOTO_SHARE_PATH, DATA_DIR, THUMBNAILS_DIR, LOGS_DIR, LLAMA_CPP_DIR,
         VENV_PYTHON, MQTT_HOST, MQTT_PORT, MQTT_WS_PORT, GPU_LOCK_TIMEOUT,
@@ -1137,7 +1161,10 @@ async def get_config():
             ]
         },
     ]
-    return {"groups": groups}
+    result = {"groups": groups}
+    _config_cache["data"] = result
+    _config_cache["ts"] = _time.time()
+    return result
 
 
 @app.get("/{path:path}")

@@ -79,6 +79,10 @@ def control_resume_topic():
     return _topic("control", "resume")
 
 
+def watchdog_mode_topic():
+    return _topic("watchdog", "mode")
+
+
 class GailrayMQTT:
     def __init__(self, client_id=None, host=None, port=None):
         self.host = host or _MQTT_HOST
@@ -324,6 +328,7 @@ class ApiMQTT(GailrayMQTT):
             port=port,
         )
         self._worker_states = {}
+        self._watchdog_mode = None
         for name in WORKER_NAMES:
             self._worker_states[name] = {
                 "status": "idle",
@@ -341,6 +346,7 @@ class ApiMQTT(GailrayMQTT):
                 self.subscribe(worker_pid_topic(name), self._make_handler(name, "pid"))
                 self.subscribe(worker_gpu_held_topic(name), self._make_handler(name, "gpu_held"))
             self.subscribe(gpu_lock_topic(), self._gpu_lock_handler)
+            self.subscribe(watchdog_mode_topic(), self._watchdog_mode_handler)
         return result
 
     def _make_handler(self, name, field):
@@ -363,6 +369,12 @@ class ApiMQTT(GailrayMQTT):
 
     def _gpu_lock_handler(self, payload, msg):
         pass
+
+    def _watchdog_mode_handler(self, payload, msg):
+        self._watchdog_mode = payload
+
+    def get_watchdog_mode(self):
+        return self._watchdog_mode
 
     def get_worker_states(self):
         return dict(self._worker_states)
