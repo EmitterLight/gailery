@@ -1255,22 +1255,18 @@ deleted=None, deleted_only=None,
         return (total_groups, total_copies)
 
     def get_duplicate_paths(self, content_hash, exclude_path=None):
-        """Get all abs_paths for non-canonical files with the same content_hash."""
-        cur = self.sqlite.cursor()
-        if exclude_path:
-            rows = cur.execute(
-                "SELECT abs_path FROM catalog_files "
-                "WHERE content_hash = ? AND is_canonical = 0 "
-                "ORDER BY abs_path",
-                (content_hash,)
-            ).fetchall()
-        else:
-            rows = cur.execute(
-                "SELECT abs_path FROM catalog_files "
-                "WHERE content_hash = ? AND is_canonical = 0 "
-                "ORDER BY abs_path",
-                (content_hash,)
-            ).fetchall()
+        """Get all abs_paths for non-canonical files with the same content_hash, excluding canonical path."""
+        canonical = self.sqlite.execute(
+            "SELECT abs_path FROM catalog_files WHERE content_hash = ? AND is_canonical = 1 LIMIT 1",
+            (content_hash,)
+        ).fetchone()
+        canonical_path = canonical[0] if canonical else None
+        rows = self.sqlite.execute(
+            "SELECT abs_path FROM catalog_files "
+            "WHERE content_hash = ? AND is_canonical = 0 AND abs_path != ? "
+            "ORDER BY abs_path",
+            (content_hash, canonical_path or "")
+        ).fetchall()
         return [r[0] for r in rows]
 
     def is_path_canonical(self, abs_path):

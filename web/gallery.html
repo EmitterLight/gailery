@@ -2127,38 +2127,41 @@ function selectYear(year) {
     if (p.camera_make || p.camera_model) html += '<div class="dp-meta">Камера: ' + esc((p.camera_make || '') + ' ' + (p.camera_model || '')) + '</div>';
     if (p.media_type === 'video') {
         html += '<div id="videoMetaArea"><div class="dp-meta" style="color:#6e7681">Загрузка метаданных…</div></div>';
-        fetch(API + '/photos/video_meta?path=' + encodeURIComponent(p.photo_id)).then(function(r){return r.json()}).then(function(m){
-            var el = document.getElementById('videoMetaArea');
-            if (!el) return;
-            var h = '';
-            if (m.width && m.height) h += '<div class="dp-meta">Разрешение: <b>' + m.width + '×' + m.height + '</b></div>';
-            if (m.duration) {
-                var mins = Math.floor(m.duration / 60);
-                var secs = Math.floor(m.duration % 60);
-                h += '<div class="dp-meta">Длительность: <b>' + mins + ':' + (secs < 10 ? '0' : '') + secs + '</b></div>';
-            }
-            if (m.creation_time) h += '<div class="dp-meta">Дата записи: <b>' + esc(m.creation_time) + '</b></div>';
-            if (m.camera) h += '<div class="dp-meta">Камера: ' + esc(m.camera) + '</div>';
-            if (m.video_codec) h += '<div class="dp-meta">Видео: ' + esc(m.video_codec) + (m.pix_fmt ? ' ' + esc(m.pix_fmt) : '') + '</div>';
-            if (m.audio_codec) {
-                var ai = esc(m.audio_codec);
-                if (m.audio_sample_rate) ai += ' ' + m.audio_sample_rate + 'Hz';
-                if (m.audio_channels) ai += ' ' + m.audio_channels + 'ch';
-                h += '<div class="dp-meta">Аудио: ' + ai + '</div>';
-            } else {
-                h += '<div class="dp-meta" style="color:#f0883e">Аудио: нет</div>';
-            }
-            if (m.fps) h += '<div class="dp-meta">Кадры: ' + m.fps + ' fps</div>';
-            if (m.bit_rate) {
-                var mbps = (m.bit_rate / 1000000).toFixed(1);
-                h += '<div class="dp-meta">Битрейт: ' + mbps + ' Мбит/с</div>';
-            }
-            if (m.container) h += '<div class="dp-meta">Контейнер: ' + esc(m.container) + '</div>';
-            el.innerHTML = h;
-        }).catch(function(){
-            var el = document.getElementById('videoMetaLoading');
-            if (el) el.textContent = 'Метаданные недоступны';
-        });
+        (function(){
+            var pid = p.photo_id;
+            fetch(API + '/photos/video_meta?path=' + encodeURIComponent(pid)).then(function(r){return r.json()}).then(function(m){
+                var el = document.getElementById('videoMetaArea');
+                if (!el) return;
+                var h = '';
+                if (m.width && m.height) h += '<div class="dp-meta">Разрешение: <b>' + m.width + '×' + m.height + '</b></div>';
+                if (m.duration) {
+                    var mins = Math.floor(m.duration / 60);
+                    var secs = Math.floor(m.duration % 60);
+                    h += '<div class="dp-meta">Длительность: <b>' + mins + ':' + (secs < 10 ? '0' : '') + secs + '</b></div>';
+                }
+                if (m.creation_time) h += '<div class="dp-meta">Дата записи: <b>' + esc(m.creation_time) + '</b></div>';
+                if (m.camera) h += '<div class="dp-meta">Камера: ' + esc(m.camera) + '</div>';
+                if (m.video_codec) h += '<div class="dp-meta">Видео: ' + esc(m.video_codec) + (m.pix_fmt ? ' ' + esc(m.pix_fmt) : '') + '</div>';
+                if (m.audio_codec) {
+                    var ai = esc(m.audio_codec);
+                    if (m.audio_sample_rate) ai += ' ' + m.audio_sample_rate + 'Hz';
+                    if (m.audio_channels) ai += ' ' + m.audio_channels + 'ch';
+                    h += '<div class="dp-meta">Аудио: ' + ai + '</div>';
+                } else {
+                    h += '<div class="dp-meta" style="color:#f0883e">Аудио: нет</div>';
+                }
+                if (m.fps) h += '<div class="dp-meta">Кадры: ' + m.fps + ' fps</div>';
+                if (m.bit_rate) {
+                    var mbps = (m.bit_rate / 1000000).toFixed(1);
+                    h += '<div class="dp-meta">Битрейт: ' + mbps + ' Мбит/с</div>';
+                }
+                if (m.container) h += '<div class="dp-meta">Контейнер: ' + esc(m.container) + '</div>';
+                el.innerHTML = h;
+            }).catch(function(){
+                var el = document.getElementById('videoMetaArea');
+                if (el) el.innerHTML = '<div class="dp-meta" style="color:#f0883e">Метаданные недоступны</div>';
+            });
+        })();
     }
     html += '<div class="dp-meta">Лица: ' + p.total_faces + '</div>';
     if (p.photo_type && p.photo_type !== 'photo') html += '<div class="dp-meta">Тип: ' + esc(p.photo_type) + '</div>';
