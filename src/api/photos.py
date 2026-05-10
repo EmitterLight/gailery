@@ -672,10 +672,14 @@ async def video_meta(path: str = ""):
     tags = fmt.get("tags", {})
     if tags.get("creation_time"):
         meta["creation_time"] = tags["creation_time"]
-    if tags.get("software"):
-        meta["camera"] = tags["software"]
-    elif tags.get("comment"):
+    qt_model = tags.get("com.apple.quicktime.model")
+    qt_make = tags.get("com.apple.quicktime.make")
+    if qt_model:
+        meta["camera"] = (qt_make + " " + qt_model).strip() if qt_make and qt_make not in qt_model else qt_model
+    elif tags.get("comment") and "camera" in tags["comment"].lower():
         meta["camera"] = tags["comment"]
+    elif tags.get("software"):
+        meta["camera"] = tags["software"]
     if fmt.get("format_name"):
         meta["container"] = fmt["format_name"]
 
