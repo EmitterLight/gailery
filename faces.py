@@ -127,10 +127,16 @@ def run_detection(photos):
         except Exception as e:
             log(f"ERROR {os.path.basename(path)}: {e}")
             try:
-                db.sqlite.execute("UPDATE photos SET faces_present = 0, deleted = 1 WHERE path = ? AND deleted = 0", (path,))
-                db.sqlite.execute("UPDATE catalog_files SET deleted = 1, deleted_type = 'auto_corrupted' WHERE abs_path = ? AND deleted = 0", (path,))
-                db.sqlite.commit()
-                log(f"  marked as deleted (corrupted file)")
+                ext = os.path.splitext(path)[1].lower()
+                if ext in {".mp4", ".mov", ".avi", ".mkv", ".webm", ".3gp", ".wmv", ".mpg", ".mpeg", ".m4v", ".flv", ".vob", ".ts"}:
+                    db.sqlite.execute("UPDATE photos SET media_type = 'video', faces_present = 0, description = NULL WHERE path = ? AND deleted = 0", (path,))
+                    db.sqlite.commit()
+                    log(f"  set media_type=video (not an image)")
+                else:
+                    db.sqlite.execute("UPDATE photos SET faces_present = 0, deleted = 1 WHERE path = ? AND deleted = 0", (path,))
+                    db.sqlite.execute("UPDATE catalog_files SET deleted = 1, deleted_type = 'auto_corrupted' WHERE abs_path = ? AND deleted = 0", (path,))
+                    db.sqlite.commit()
+                    log(f"  marked as deleted (corrupted file)")
             except Exception:
                 pass
             continue

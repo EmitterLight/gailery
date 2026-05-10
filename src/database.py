@@ -231,10 +231,9 @@ class DatabaseManager:
         cur.execute("""
             UPDATE photos SET deleted = 1
             WHERE deleted = 0
-            AND path IN (
-                SELECT p.path FROM photos p
-                JOIN catalog_files cf ON cf.abs_path = p.path
-                WHERE cf.is_canonical = 0
+            AND NOT EXISTS (
+                SELECT 1 FROM catalog_files cf
+                WHERE cf.abs_path = photos.path AND cf.is_canonical = 1 AND cf.deleted = 0
             )
         """)
         self.sqlite.commit()

@@ -296,7 +296,7 @@ def _main(db, args, mq=None):
         need_exif = db.get_all_photos()
     else:
         rows = db.sqlite.execute(
-            "SELECT photo_id, path FROM photos WHERE exif_checked = 0 ORDER BY path"
+            "SELECT photo_id, path FROM photos WHERE exif_checked = 0 AND (media_type IS NULL OR media_type != 'video') ORDER BY path"
         ).fetchall()
         need_exif = [{"photo_id": r[0], "path": r[1]} for r in rows if db.is_path_canonical(r[1])]
 

@@ -291,7 +291,7 @@ def _ingest_new_canonical(db, root_id):
     file_ids = []
     for abs_path, rid in rows:
         ext = os.path.splitext(abs_path)[1].lower()
-        is_video = ext in {".mp4", ".mov", ".avi", ".mkv", ".webm", ".3gp", ".wmv"}
+        is_video = ext in {".mp4", ".mov", ".avi", ".mkv", ".webm", ".3gp", ".wmv", ".mpg", ".mpeg", ".m4v", ".flv", ".vob", ".ts"}
         batch.append({
             "photo_id": str(_uuid.uuid4()),
             "path": abs_path,

@@ -324,7 +324,7 @@ def get_unembedded_photos_sql(db, limit=0, offset=0):
                p.faces_present, c.content_hash
         FROM photos p
         JOIN catalog_files c ON p.path = c.abs_path AND c.is_canonical = 1 AND c.deleted = 0
-        WHERE (p.embedded = 0 OR p.embedded IS NULL) AND p.deleted = 0
+        WHERE (p.embedded = 0 OR p.embedded IS NULL) AND p.deleted = 0 AND (p.media_type IS NULL OR p.media_type != 'video')
         ORDER BY p.path
     """
     if limit > 0:
@@ -546,7 +546,7 @@ def _main(db, args, mq=None):
                 offset += fetch_size
             else:
                 remaining = cur.execute(
-                    "SELECT COUNT(*) FROM photos p JOIN catalog_files c ON p.path = c.abs_path AND c.is_canonical = 1 AND c.deleted = 0 WHERE (p.embedded = 0 OR p.embedded IS NULL) AND p.deleted = 0"
+            "SELECT COUNT(*) FROM photos p JOIN catalog_files c ON p.path = c.abs_path AND c.is_canonical = 1 AND c.deleted = 0 WHERE (p.embedded = 0 OR p.embedded IS NULL) AND p.deleted = 0 AND (p.media_type IS NULL OR p.media_type != 'video')"
                 ).fetchone()[0]
                 if remaining == 0:
                     break

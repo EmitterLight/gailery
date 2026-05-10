@@ -90,7 +90,7 @@ def get_progress(root_id=None):
     embedded = cur.execute(f"SELECT COUNT(*) {photo_where} AND p.embedded = 1", root_params).fetchone()[0]
 
     video_where = base + " AND p.media_type = 'video'"
-    videos_catalog = cur.execute(f"SELECT COUNT(*) FROM catalog_files cf WHERE cf.is_canonical = 1 AND cf.deleted = 0 AND cf.ext IN ('.mp4','.mov','.avi','.mkv','.webm','.3gp','.wmv'){root_where}", root_params).fetchone()[0]
+    videos_catalog = cur.execute(f"SELECT COUNT(*) FROM catalog_files cf WHERE cf.is_canonical = 1 AND cf.deleted = 0 AND cf.ext IN ('.mp4','.mov','.avi','.mkv','.webm','.3gp','.wmv','.mpg','.mpeg','.m4v','.flv','.vob','.ts','.MP4','.MOV','.AVI','.MKV','.WEBM','.3GP','.WMV','.MPG','.MPEG','.M4V','.FLV','.VOB','.TS'){root_where}", root_params).fetchone()[0]
     videos_ingested = cur.execute(f"SELECT COUNT(*) {video_where}", root_params).fetchone()[0]
     videos_exif = cur.execute(f"SELECT COUNT(*) {video_where} AND p.exif_checked = 1", root_params).fetchone()[0]
     p_videos_ingest = videos_ingested / max(videos_catalog, 1) * 100 if videos_catalog > 0 else 0
