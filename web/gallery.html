@@ -814,7 +814,7 @@
 var API = '/api';
 var pageSize = 60;
 var totalResults = 0;
-var activeYear = '';
+var activeDate = '';
 var activePerson = '';
 var allPersonas = [];
 var dateData = null;
@@ -930,7 +930,7 @@ var isSemanticMode = false;
 function doSearch() {
     // Запомнить позицию (иглу времени) перед сбросом
     var savedNeedleDate = null;
-    if (currentPhotos.length > 0 && !activeYear && !_restoreNeedleDate) {
+    if (currentPhotos.length > 0 && !activeDate && !_restoreNeedleDate) {
         var cards = document.querySelectorAll('.card');
         var gridRect = document.getElementById('grid').getBoundingClientRect();
         for (var i = 0; i < cards.length; i++) {
@@ -971,7 +971,7 @@ function doSearch() {
         doSemanticSearch(q);
         return;
     }
-    var afterDate = activeYear ? activeYear : null;
+    var afterDate = activeDate ? activeDate : null;
     saveFilters();
     if (_restoreNeedleDate && !afterDate) {
         var saved = _restoreNeedleDate;
@@ -990,7 +990,7 @@ function doSearch() {
         }
     } else {
         _restoreNeedleDate = null;
-        loadAfter(afterDate);
+        loadAfter(afterDate, null, !!afterDate);
     }
 }
 
@@ -1033,7 +1033,6 @@ function getSearchParams() {
          else if (chkRaw && chkJpeg && !chkVideo) params += '&media_type=photo';
      }
      if (noneChecked) params += '&photo_id=none';
-    if (activeYear) params += '&date_from=' + encodeURIComponent(activeYear + '-01-01');
     if (deletedOnly) params += '&deleted_only=true';
     return params;
 }
@@ -1107,7 +1106,6 @@ function _applyBatch(data) {
     updateInfo();
     saveFilters();
      if (startIdx === 0) {
-         setTimeout(function() { updateTimelinePosition(); }, 100);
          if (_needleMode) {
              if (_restorePhotoId) {
                  var rid = _restorePhotoId;
@@ -1122,6 +1120,8 @@ function _applyBatch(data) {
                  setTimeout(scrollToPhoto, 300);
              }
              _needleMode = false;
+         } else {
+             setTimeout(function() { updateTimelinePosition(); }, 100);
          }
          if (_filterNeedleDate) {
              var needle = _filterNeedleDate;
@@ -1516,7 +1516,7 @@ function loadTimeline() {
             }
         }
         if (!minD) minD = '2020-01-01';
-        if (!maxD) maxD = '2025-12-31';
+        if (!maxD) { var _now = new Date(); maxD = _now.getFullYear() + '-12-31'; }
         _tlMinYear = _dateToFracRaw(minD);
         _tlMaxYear = _dateToFracRaw(maxD);
         var span = _tlMaxYear - _tlMinYear;
@@ -1920,11 +1920,11 @@ function _tlOnTouchEnd(e) {
 
 function _tlNavigateAt(clickX) {
     var clickFrac = _xToFrac(clickX);
-    var isLastBar = clickFrac >= _tlMaxYear - 0.5;
+    var isLastBar = clickFrac >= _tlMaxYear - 0.08;
     var clickDate = fracToISO(clickFrac);
     var needle = document.getElementById('tlNeedle');
     if (needle) { needle.style.transition = 'none'; needle.style.left = clickX + 'px'; updateNeedleFlag(clickDate); }
-    activeYear = Math.floor(clickFrac).toString();
+    activeDate = clickDate;
     _needleMode = true;
     currentPhotos = [];
     _canLoadMore = true;
@@ -1937,19 +1937,18 @@ function _tlNavigateAt(clickX) {
     document.getElementById('grid').innerHTML = '';
     var sortSel = document.getElementById('sortSelect');
     if (isLastBar) {
-        activeYear = Math.floor(_tlMaxYear).toString();
+        activeDate = fracToISO(_tlMaxYear);
         sortSel.value = 'date_desc';
         _filterNeedleDate = '9999-12-31';
         saveFilters();
-        loadAfter(null);
+        loadAfter(activeDate, null, true);
     } else {
         if (sortSel && sortSel.value === 'date_desc') sortSel.value = 'date_asc';
         _lastDate = clickDate;
         saveFilters();
-        loadAfter(clickDate);
+        loadAfter(clickDate, null, true);
     }
 }
-
 function fracToISO(frac) {
     var y = Math.floor(frac);
     var rest = frac - y;
@@ -1986,8 +1985,8 @@ function updateNeedleFlag(dateStr) {
 }
 
 function selectYear(year) {
-    activeYear = year || '';
-    updateNeedleFlag(year ? (year + '-01-01') : '');
+    activeDate = year ? (year + '-01-01') : '';
+    updateNeedleFlag(activeDate);
     var needle = document.getElementById('tlNeedle');
     if (needle && year) {
         needle.style.transition = 'left .4s ease-out';
@@ -3095,7 +3094,7 @@ function _goToTimeline(p) {
     document.getElementById('searchMode').value = 'text';
     onModeChange();
     isSemanticMode = false;
-    activeYear = '';
+    activeDate = '';
     _restoreNeedleDate = date;
     _restorePhotoId = pid;
     doSearch();
@@ -3266,7 +3265,7 @@ function clearFilters() {
      document.getElementById('chkJpeg').checked = true;
      document.getElementById('chkVideo').checked = true;
      updateTypeFilterLabel();
-    activeYear = '';
+    activeDate = '';
     activePerson = '';
     doSearch();
 }
