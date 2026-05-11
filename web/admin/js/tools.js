@@ -21,10 +21,10 @@ A.renderBlock_hashes = function(containerId) {
     if (!el) return;
     var pfx = 'hs_'+containerId+'_';
     el.innerHTML =
-        '<div class="backup-sec"><h3>Контроль хешей</h3>'+
+        '<div class="maint-sec"><h3>🔗 Контроль хешей файлов</h3>'+
         '<div id="'+pfx+'stats" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px"></div>'+
-        '<div class="maint-row"><button class="btn btn-go" id="'+pfx+'start">Расчёт хешей</button><button class="btn btn-stop" id="'+pfx+'stop" disabled>Стоп</button></div>'+
-        '<div class="maint-row"><button class="btn btn-go" id="'+pfx+'dups">Найти дубликаты</button></div>'+
+        '<div class="maint-row"><button class="btn btn-go" id="'+pfx+'start">Запустить расчёт хешей</button><button class="btn btn-stop" id="'+pfx+'stop" disabled>Остановить</button><span class="maint-info">xxHash128 для всех файлов без хеша</span></div>'+
+        '<div class="maint-row"><button class="btn btn-go" id="'+pfx+'dups">Найти дубликаты файлов</button><span class="maint-info">Бит-в-бит совпадения по content_hash</span></div>'+
         '<div id="'+pfx+'status" class="backup-status"></div>'+
         '<div id="'+pfx+'dupList" style="max-height:300px;overflow:auto;margin-top:8px;font-size:12px"></div></div>';
 
@@ -171,22 +171,22 @@ A.renderBlock_maintenance = function(containerId) {
     if (!el) return;
     var pfx = 'mt_'+containerId+'_';
     el.innerHTML =
-        '<div class="backup-sec"><h3>Бекап</h3>'+
-        '<div class="backup-row"><button class="btn btn-go" id="'+pfx+'dl">📥 Скачать</button>'+
-        '<label class="btn btn-go btn-sm" style="cursor:pointer">📤 Загрузить <input type="file" accept=".gz,.db" id="'+pfx+'ul" style="display:none"></label>'+
+        '<div class="backup-sec"><h3>💾 Бекап базы данных</h3>'+
+        '<div class="backup-row"><button class="btn btn-go" id="'+pfx+'dl">⬇ Скачать бекап</button>'+
+        '<label class="btn btn-go" style="cursor:pointer">⬆ Загрузить бекап <input type="file" accept=".gz,.db" id="'+pfx+'ul" style="display:none"></label>'+
         '<span class="backup-info" id="'+pfx+'info"></span></div>'+
         '<div id="'+pfx+'bkStatus" class="backup-status"></div></div>'+
-        '<div class="maint-sec"><h3>Обслуживание</h3>'+
+        '<div class="maint-sec"><h3>🔧 Обслуживание базы данных</h3>'+
         '<div id="'+pfx+'sizes" class="maint-sizes"></div>'+
-        '<div class="maint-row"><button class="btn btn-go" id="'+pfx+'vacuum">VACUUM SQLite</button><span class="maint-info">Сжать базу</span></div>'+
-        '<div class="maint-row"><button class="btn btn-go" id="'+pfx+'dedup">Удалить дубли индексов</button><span class="maint-info">LanceDB дедупликация</span></div>'+
+        '<div class="maint-row"><button class="btn btn-go" id="'+pfx+'vacuum">VACUUM SQLite</button><span class="maint-info">Сжать SQLite, удалить мусор</span></div>'+
+        '<div class="maint-row"><button class="btn btn-go" id="'+pfx+'dedup">Удалить дубли семантических индексов</button><span class="maint-info">LanceDB: убрать повторные записи</span></div>'+
         '<div id="'+pfx+'mtStatus" class="backup-status"></div></div>';
 
-    document.getElementById(pfx+'dl').addEventListener('click', function() { backupDownload(cid); });
-    document.getElementById(pfx+'ul').addEventListener('change', function() { backupUpload(cid, this); });
-    document.getElementById(pfx+'vacuum').addEventListener('click', function() { maintVacuum(cid); });
-    document.getElementById(pfx+'dedup').addEventListener('click', function() { maintDedup(cid); });
-    loadMaintStats(cid);
+    document.getElementById(pfx+'dl').addEventListener('click', function() { backupDownload(containerId); });
+    document.getElementById(pfx+'ul').addEventListener('change', function() { backupUpload(containerId, this); });
+    document.getElementById(pfx+'vacuum').addEventListener('click', function() { maintVacuum(containerId); });
+    document.getElementById(pfx+'dedup').addEventListener('click', function() { maintDedup(containerId); });
+    loadMaintStats(containerId);
 };
 
 function loadMaintStats(cid) {
