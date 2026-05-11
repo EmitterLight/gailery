@@ -96,13 +96,17 @@
         .modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.9); z-index: 1010; justify-content: center; align-items: center; }
         .modal-bg.show { display: flex; }
         .modal-img-wrap { position: relative; display: inline-block; transform-origin: center center; transition: transform .1s; }
-        .modal-bg .modal-img-wrap img, .modal-bg .modal-img-wrap video { max-width: 95svw; max-height: 95svh; object-fit: contain; border-radius: 4px; }
-        .modal-bg.fs .modal-img-wrap img, .modal-bg.fs .modal-img-wrap video { max-width: 100svw; max-height: 100svh; object-fit: contain; border-radius: 0; }
-        .modal-bg .modal-img-wrap img.cover, .modal-bg .modal-img-wrap video.cover { max-width: none; max-height: none; width: 95svw; height: 95svh; object-fit: cover; border-radius: 4px; }
+        .modal-content { display: flex; flex-direction: column; align-items: center; max-width: 90svw; max-height: 90svh; }
+        .modal-bg.fs .modal-content { max-width: 100svw; max-height: 100svh; }
+        .modal-bg .modal-img-wrap img, .modal-bg .modal-img-wrap video { max-width: 90svw; max-height: 90svh; object-fit: contain; border-radius: 4px; }
+        .modal-bg.fs .modal-img-wrap img, .modal-bg.fs .modal-img-wrap video { width: 100svw; height: 100svh; object-fit: contain; border-radius: 0; }
+        .modal-bg .modal-img-wrap img.cover, .modal-bg .modal-img-wrap video.cover { max-width: none; max-height: none; width: 90svw; height: 90svh; object-fit: cover; border-radius: 4px; }
         .modal-bg.fs .modal-img-wrap img.cover, .modal-bg.fs .modal-img-wrap video.cover { width: 100svw; height: 100svh; object-fit: cover; border-radius: 0; }
-        .modal-bg .modal-img-wrap.cover-wrap { display: block; width: 95svw; height: 95svh; }
+        .modal-bg .modal-img-wrap.cover-wrap { display: block; width: 90svw; height: 90svh; }
         .modal-bg.fs .modal-img-wrap.cover-wrap { display: block; width: 100svw; height: 100svh; }
         .modal-bg.fs { background: #000; }
+        .modal-bg.fs .modal-topbar { border-radius: 6px; }
+        .modal-bg .modal-topbar.zoomed { border-radius: 6px 6px 6px 6px; }
         .vid-modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.92); z-index: 1020; justify-content: center; align-items: center; flex-direction: column; }
         .vid-modal-bg.show { display: flex; }
         .vid-modal-close { position: absolute; top: 12px; right: 16px; color: #8b949e; font-size: 32px; cursor: pointer; z-index: 1; line-height: 1; }
@@ -117,20 +121,16 @@
         .face-overlays:hover .face-box { opacity: 1; }
         .face-box:hover { border-color: #58a6ff; }
         .face-box-label { position: absolute; bottom: calc(100% + 4px); left: 0; background: rgba(88,166,255,.9); color: #fff; font-size: 13px; font-weight: 600; padding: 3px 8px; border-radius: 3px; white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
-        .modal-close { position: absolute; top: 14px; right: 16px; color: #fff; font-size: 26px; cursor: pointer; z-index: 1001; line-height: 1; opacity: .7; transition: opacity .5s; height: 26px; display: flex; align-items: center; }
-        .modal-close:hover { opacity: 1; }
-        .modal-nav { position: absolute; top: 50%; color: #fff; font-size: 44px; cursor: pointer; z-index: 1001; opacity: .5; user-select: none; padding: 20px 12px; transform: translateY(-50%); }
-        .modal-nav:hover { opacity: .9; }
+        .modal-btns { position: absolute; z-index: 1001; display: flex; gap: 4px; pointer-events: auto; transition: top .15s ease-out, right .15s ease-out; }
+        .modal-btns > * { color: #fff; font-size: 20px; cursor: pointer; line-height: 1; height: 30px; min-width: 30px; display: flex; align-items: center; justify-content: center; border-radius: 5px; opacity: .35; transition: opacity .15s, background .15s, transform .15s; user-select: none; }
+        .modal-btns:hover > * { opacity: 1; background: rgba(0,0,0,.65); -webkit-text-stroke: 1.5px #000; text-shadow: 0 0 3px #000, 0 0 6px #000; }
+        .modal-btns > *:hover { background: rgba(88,166,255,.9) !important; transform: scale(1.15); }
+        .modal-close { font-size: 24px; }
+        .modal-close:hover { background: rgba(248,81,73,.9) !important; }
+        .modal-nav { position: absolute; top: 50%; color: #fff; font-size: 44px; cursor: pointer; z-index: 1001; opacity: .4; user-select: none; padding: 20px 12px; transform: translateY(-50%); transition: opacity .15s, background .15s, transform .15s; border-radius: 6px; -webkit-text-stroke: 1.5px #000; text-shadow: 0 0 4px #000, 0 0 8px #000; }
+        .modal-nav:hover { opacity: 1; background: rgba(255,255,255,.85); color: #000; -webkit-text-stroke: 0; text-shadow: none; transform: translateY(-50%) scale(1.15); }
         .modal-prev { left: 8px; }
         .modal-next { right: 8px; }
-        .modal-fs { position: absolute; top: 14px; right: 52px; color: #fff; font-size: 20px; cursor: pointer; z-index: 1001; opacity: .7; transition: opacity .5s; line-height: 1; height: 26px; display: flex; align-items: center; }
-        .modal-fs:hover { opacity: 1; }
-        .modal-fit { position: absolute; top: 14px; right: 88px; cursor: pointer; z-index: 1001; opacity: .7; transition: opacity .5s; height: 26px; display: flex; align-items: center; }
-        .modal-fit:hover { opacity: 1; }
-        .modal-rot { position: absolute; top: 14px; color: #fff; font-size: 18px; cursor: pointer; z-index: 1001; opacity: .7; transition: opacity .5s; height: 26px; display: flex; align-items: center; user-select: none; }
-        .modal-rot:hover { opacity: 1; }
-        .modal-rot-l { right: 124px; }
-        .modal-rot-r { right: 160px; }
         .fit-icon { position: relative; transition: width .2s, height .2s; width: 18px; height: 10px; }
         .fit-icon i { position: absolute; width: 5px; height: 5px; border: 1.5px solid #fff; font-style: normal; transition: top .2s, left .2s, right .2s, bottom .2s; }
         .fit-icon i.tl { top: 0; left: 0; border-top: 1.5px solid #fff; border-left: 1.5px solid #fff; }
@@ -141,7 +141,7 @@
         .fit-icon.outer i.tr { top: -2px; right: -2px; }
         .fit-icon.outer i.bl { bottom: -2px; left: -2px; }
         .fit-icon.outer i.br { bottom: -2px; right: -2px; }
-        .modal-topbar { position: absolute; bottom: 16px; left: 16px; z-index: 1001; background: rgba(0,0,0,.6); padding: 4px 12px; border-radius: 6px; display: flex; align-items: center; gap: 10px; color: #c9d1d9; font-size: 13px; transition: opacity .5s; }
+        .modal-topbar { position: absolute; z-index: 1001; background: rgba(0,0,0,.6); padding: 4px 12px; border-radius: 0 0 6px 6px; display: flex; align-items: center; gap: 10px; color: #c9d1d9; font-size: 13px; transition: top .15s ease-out, left .15s ease-out, width .15s ease-out, opacity .5s; box-sizing: border-box; pointer-events: auto; }
         .modal-cam { color: #8b949e; font-size: 11px; margin-left: 6px; }
         .modal-raw { background: #f0883e; color: #fff; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 3px; margin-left: 6px; letter-spacing: 0.5px; }
         .modal-topbar .sep { color: rgba(255,255,255,.2); margin: 0 2px; }
@@ -160,7 +160,7 @@
         .modal-topbar.playing .ss-dir { display: none; }
         .modal-topbar .modal-del { font-size: 15px; }
         .modal-topbar .modal-del:hover { color: #f85149; }
-        .modal-fs.hidden, .modal-close.hidden, .modal-fit.hidden { opacity: 0; pointer-events: none; }
+        .modal-btns > .hidden, .modal-topbar.hidden { opacity: 0; pointer-events: none; }
         .card .expand-btn { position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,.6); color: #c9d1d9; border: none; border-radius: 3px; width: 28px; height: 28px; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity .15s; z-index: 3; }
         .card:hover .expand-btn { opacity: .8; }
         .card .expand-btn:hover { opacity: 1; background: rgba(0,0,0,.8); }
@@ -536,7 +536,7 @@
             .modal-close { font-size: 30px; top: 10px; right: 10px; min-width: 44px; min-height: 44px; }
             .modal-fs { font-size: 24px; top: 10px; right: 50px; min-width: 44px; min-height: 44px; }
             .modal-fit { top: 10px; right: 90px; min-width: 44px; min-height: 44px; }
-            .modal-topbar { bottom: 10px; left: 10px; font-size: 14px; padding: 6px 10px; flex-wrap: wrap; max-width: calc(100svw - 20px); }
+            .modal-topbar { font-size: 14px; padding: 6px 10px; flex-wrap: wrap; }
             .modal-topbar button { font-size: 20px; padding: 4px 8px; min-width: 44px; min-height: 44px; }
 
             .face-overlays .face-box { opacity: 1; }
@@ -715,17 +715,21 @@
     <div class="grid" id="grid"></div>
 
     <div class="modal-bg" id="photoModal">
-        <div class="modal-close" onclick="closePhotoModal()">&times;</div>
-        <div class="modal-fit" onclick="smartFit()" title="Растянуть"><div class="fit-icon" id="fitIcon"><i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i></div></div>
-         <div class="modal-fs" onclick="toggleFullscreen()">&#x26F6;</div>
-         <div class="modal-rot modal-rot-r" onclick="rotatePhoto(90)" title="Повернуть вправо">&#8635;</div>
-         <div class="modal-rot modal-rot-l" onclick="rotatePhoto(-90)" title="Повернуть влево">&#8634;</div>
         <div class="modal-nav modal-prev" onclick="modalNav(-1)">&#8249;</div>
         <div class="modal-nav modal-next" onclick="modalNav(1)">&#8250;</div>
-        <div class="modal-img-wrap" id="modalImgWrap" style="cursor:grab">
-            <img id="photoModalImg" src="" onclick="event.stopPropagation()">
-            <video id="photoModalVideo" src="" controls preload="metadata" onclick="event.stopPropagation()" style="display:none"></video>
-            <div class="face-overlays" id="faceOverlays"></div>
+        <div class="modal-content" id="modalContent">
+            <div class="modal-img-wrap" id="modalImgWrap" style="cursor:grab">
+                <img id="photoModalImg" src="" onclick="event.stopPropagation()">
+                <video id="photoModalVideo" src="" controls preload="metadata" onclick="event.stopPropagation()" style="display:none"></video>
+                <div class="face-overlays" id="faceOverlays"></div>
+            </div>
+        </div>
+        <div class="modal-btns" id="modalBtns">
+            <div class="modal-rot modal-rot-l" onclick="rotatePhoto(-90)" title="Повернуть влево">&#8634;</div>
+            <div class="modal-rot modal-rot-r" onclick="rotatePhoto(90)" title="Повернуть вправо">&#8635;</div>
+            <div class="modal-fit" onclick="smartFit()" title="Растянуть"><div class="fit-icon" id="fitIcon"><i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i></div></div>
+            <div class="modal-fs" onclick="toggleFullscreen()">&#x26F6;</div>
+            <div class="modal-close" onclick="closePhotoModal()">&times;</div>
         </div>
         <div class="modal-topbar" id="modalTopbar">
             <span id="modalDate"></span>
@@ -2392,6 +2396,7 @@ function rotatePhoto(deg) {
     }
     var saveAngle = ((_mRot % 360) + 360) % 360;
     saveRotate(p.content_hash, saveAngle);
+    setTimeout(_positionModalControls, 50);
 }
 
 var _dpRot = 0;
@@ -2598,6 +2603,13 @@ function openViewer(idx) {
             };
         }
         if (_mCoverMode) _updateFitIcon(p, true);
+        function onVidMeta() {
+            requestAnimationFrame(_positionModalControls);
+            vid.removeEventListener('loadedmetadata', onVidMeta);
+        }
+        if (vid.readyState >= 1) { requestAnimationFrame(_positionModalControls); }
+        else { vid.addEventListener('loadedmetadata', onVidMeta); }
+        setTimeout(_positionModalControls, 200);
     } else if (isMobile || _mCoverMode) {
         function onImgReady() {
             if (img.complete && img.naturalWidth) {
@@ -2607,6 +2619,13 @@ function openViewer(idx) {
         }
         if (img.complete && img.naturalWidth) { smartFit(); }
         else { img.addEventListener('load', onImgReady); }
+    } else {
+        function onImgPos() {
+            requestAnimationFrame(_positionModalControls);
+            img.removeEventListener('load', onImgPos);
+        }
+        if (img.complete && img.naturalWidth) { requestAnimationFrame(_positionModalControls); }
+        else { img.addEventListener('load', onImgPos); }
     }
     _syncTimelineToPhoto();
     var card = p.photo_id ? document.querySelector('.card[data-photo-id="' + CSS.escape(p.photo_id) + '"]') : null;
@@ -2933,11 +2952,12 @@ function formatDate(ds) {
          el.style.objectPosition = '';
          wrap.style.transform = '';
           wrap.style.transformOrigin = 'center center';
-     _mZoom = 1; _mPx = 0; _mPy = 0;
-     _mCoverMode = false;
-          _updateFitIcon(p, false);
-          if (!isVideo) _drawFaceBoxes(p, img);
-         return;
+      _mZoom = 1; _mPx = 0; _mPy = 0;
+       _mCoverMode = false;
+            _updateFitIcon(p, false);
+            if (!isVideo) _drawFaceBoxes(p, img);
+           requestAnimationFrame(_positionModalControls);
+           return;
      }
 
      el.classList.add('cover');
@@ -2971,9 +2991,10 @@ function formatDate(ds) {
       el.style.objectPosition = pctX + '% ' + pctY + '%';
       wrap.style.transform = _mRot ? 'rotate(' + _mRot + 'deg)' : '';
      _mZoom = 1; _mPx = 0; _mPy = 0;
-     _updateFitIcon(p, true);
-     if (!isVideo) _drawFaceBoxesCover(p, img);
- }
+      _updateFitIcon(p, true);
+      if (!isVideo) _drawFaceBoxesCover(p, img);
+     requestAnimationFrame(_positionModalControls);
+  }
 
 function _updateFitIcon(p, isCover) {
     var icon = document.getElementById('fitIcon');
@@ -3007,14 +3028,63 @@ function _updateFitIcon(p, isCover) {
     icon.style.height = h + 'px';
 }
 
-function applyModalTransform() {
-     document.getElementById('modalImgWrap').style.transform = 'rotate(' + _mRot + 'deg) translate(' + _mPx + 'px,' + _mPy + 'px) scale(' + _mZoom + ')';
-    var boxes = document.querySelectorAll('.face-box');
-    for (var i = 0; i < boxes.length; i++) {
-        boxes[i].style.borderWidth = (2 / _mZoom) + 'px';
-        var lbl = boxes[i].querySelector('.face-box-label');
-        if (lbl) lbl.style.fontSize = (13 / _mZoom) + 'px';
+function _positionModalControls() {
+    var img = document.getElementById('photoModalImg');
+    var vid = document.getElementById('photoModalVideo');
+    var btns = document.getElementById('modalBtns');
+    var bar = document.getElementById('modalTopbar');
+    var modal = document.getElementById('photoModal');
+    if (!btns || !bar || !modal || !modal.classList.contains('show')) return;
+
+    var isVideo = vid && vid.style.display !== 'none';
+    var el = isVideo ? vid : img;
+    if (!el || !el.offsetWidth) return;
+
+    var rect = el.getBoundingClientRect();
+    var vpW = window.innerWidth;
+    var vpH = window.innerHeight;
+    var pad = 10;
+
+    var rightEdge = Math.min(rect.right, vpW) - pad;
+    var topEdge = Math.max(rect.top, 0) + pad;
+    if (rightEdge < pad + 150) rightEdge = pad + 150;
+    if (topEdge > vpH - 40) topEdge = vpH - 40;
+    btns.style.top = topEdge + 'px';
+    btns.style.right = (vpW - rightEdge) + 'px';
+    btns.style.left = 'auto';
+
+    var bottomEdge = Math.min(rect.bottom, vpH);
+    var leftEdge = Math.max(rect.left, pad);
+    var barHeight = bar.offsetHeight || 30;
+    var isFs = modal.classList.contains('fs');
+    var barTop = bottomEdge + 4;
+    if (isFs && isVideo) barTop = bottomEdge - barHeight - 44;
+    if (barTop + barHeight > vpH - pad) barTop = bottomEdge - barHeight;
+    if (barTop < pad) barTop = pad;
+    if (_mZoom > 1) {
+        bar.style.top = barTop + 'px';
+        bar.style.left = leftEdge + 'px';
+        bar.style.width = 'auto';
+        bar.classList.add('zoomed');
+    } else {
+        var barWidth = Math.min(rect.width, vpW - 2 * pad);
+        bar.style.top = barTop + 'px';
+        bar.style.left = leftEdge + 'px';
+        bar.style.width = barWidth + 'px';
+        bar.classList.remove('zoomed');
     }
+    bar.style.transform = '';
+}
+
+function applyModalTransform() {
+      document.getElementById('modalImgWrap').style.transform = 'rotate(' + _mRot + 'deg) translate(' + _mPx + 'px,' + _mPy + 'px) scale(' + _mZoom + ')';
+     var boxes = document.querySelectorAll('.face-box');
+     for (var i = 0; i < boxes.length; i++) {
+         boxes[i].style.borderWidth = (2 / _mZoom) + 'px';
+         var lbl = boxes[i].querySelector('.face-box-label');
+         if (lbl) lbl.style.fontSize = (13 / _mZoom) + 'px';
+     }
+     _positionModalControls();
 }
 
 var _topbarHideTimer = null;
@@ -3061,6 +3131,7 @@ function toggleFullscreen() {
         else if (fsEl.webkitRequestFullscreen) fsEl.webkitRequestFullscreen();
         _scheduleTopbarHide();
     }
+    setTimeout(_positionModalControls, 100);
 }
 
 function goToGps(lat, lon) {
@@ -3290,6 +3361,7 @@ document.addEventListener('mouseup', function() {
 
 document.addEventListener('fullscreenchange', function() {
     if (!document.fullscreenElement) document.getElementById('photoModal').classList.remove('fs');
+    setTimeout(_positionModalControls, 100);
 });
 
 function filterByPerson(name) {
@@ -3756,6 +3828,7 @@ window.addEventListener('scroll', function() {
 
 window.addEventListener('resize', function() {
     if (_tlCanvas) { _clampTlOffset(); renderTimeline(); if (_needleDateISO) { var n = document.getElementById('tlNeedle'); if (n) { n.style.transition = 'none'; n.style.left = _dateToX(_needleDateISO) + 'px'; } } }
+    _positionModalControls();
 });
 
  function openMobileNav() {
