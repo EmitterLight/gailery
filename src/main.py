@@ -201,17 +201,6 @@ async def admin_page():
     return {"error": "Page not found"}
 
 
-@app.get("/control")
-async def control_page():
-    from pathlib import Path
-    from fastapi.responses import HTMLResponse
-    ctrl_html = Path(__file__).parent.parent / "web" / "control.html"
-    if ctrl_html.exists():
-        with open(ctrl_html) as f:
-            return HTMLResponse(f.read(), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
-    return {"error": "Page not found"}
-
-
 @app.get("/map")
 async def map_page():
     from pathlib import Path

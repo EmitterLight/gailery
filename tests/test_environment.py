@@ -311,22 +311,13 @@ def test_persons_api_includes_unnamed():
 
 
 def test_admin_js_valid():
-    """app.js не содержит синтаксических ошибок — проверяется через Node.js.
-
-    Если тест падает — в app.js ошибка синтаксиса JavaScript.
-    Браузер покажет 'Uncaught SyntaxError' и админка не заработает.
-    """
-    import subprocess
-    r = subprocess.run(
-        ["node", "-e",
-         "new Function(require('fs').readFileSync("
-         "'/opt/gailray/web/admin/js/app.js','utf8'))"],
-        capture_output=True, text=True, timeout=10,
-    )
-    if r.returncode != 0:
-        pytest.fail(
-            f"app.js содержит ошибку синтаксиса:\n{r.stderr.strip()}"
-        )
+    """Все JS модули админки не содержат синтаксических ошибок — проверяется через Node.js."""
+    import subprocess, glob
+    js_files = sorted(glob.glob('/opt/gailray/web/admin/js/*.js'))
+    for f in js_files:
+        r = subprocess.run(["node", "--check", f], capture_output=True, text=True, timeout=10)
+        if r.returncode != 0:
+            pytest.fail(f"{f} содержит ошибку синтаксиса:\n{r.stderr.strip()}")
 
 
 # ── Проверка что все ключевые API отдают валидный JSON ──

@@ -67,7 +67,7 @@ class TestSpaFallback:
 class TestPageRoutes:
     @pytest.mark.parametrize("path", [
         "/gallery", "/catalog", "/persons", "/monitor",
-        "/control", "/map"
+        "/admin", "/map"
     ])
     def test_page_serves_html(self, app_client, path):
         """Все SPA-страницы отдают HTML с content-type text/html."""

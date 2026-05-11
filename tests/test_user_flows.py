@@ -596,8 +596,8 @@ class TestConfigAndControl:
         assert "Пути" in group_names
         assert "Модели" in group_names
 
-    def test_control_page_loads(self):
-        code, body, elapsed = _get("/control")
+    def test_admin_page_loads(self):
+        code, body, elapsed = _get("/admin")
         assert code == 200
 
     def test_watchdog_crashes(self):
@@ -614,7 +614,7 @@ class TestConfigAndControl:
 # ═══════════════════════════════════════════════════════════════
 
 class TestPageNavigation:
-    @pytest.mark.parametrize("page", ["/gallery", "/map", "/catalog", "/monitor", "/persons", "/control", "/log"])
+    @pytest.mark.parametrize("page", ["/gallery", "/map", "/catalog", "/monitor", "/persons", "/admin", "/log"])
     def test_page_loads(self, page):
         code, body, elapsed = _get(page)
         assert code == 200, f"page {page} returned {code}"
