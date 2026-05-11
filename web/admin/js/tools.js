@@ -3,26 +3,39 @@
 
 var hashWorkerPid = 0, _hashPollTimer = null;
 
+A.registerBlock('hashes', 'Хеши и дубликаты', '🔗', function(cid) { A.renderBlock_hashes(cid); });
+A.registerBlock('maintenance', 'Обслуживание БД', '🛠️', function(cid) { A.renderBlock_maintenance(cid); });
+
 // ═══════ HASHES ═══════
 function buildHashes() {
     var el = A.$('page-hashes');
     if (!el) return;
     el.innerHTML =
-        '<h2 style="margin-bottom:16px;font-size:16px;color:#e6edf3">🔗 Хеши и дубликаты</h2>'+
-        '<div class="backup-sec"><h3>Контроль хешей</h3>'+
-        '<div id="hashStats" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px"></div>'+
-        '<div class="maint-row"><button class="btn btn-go" id="btnHashStart">Расчёт хешей</button><button class="btn btn-stop" id="btnHashStop" disabled>Стоп</button></div>'+
-        '<div class="maint-row"><button class="btn btn-go" id="btnHashDups">Найти дубликаты</button></div>'+
-        '<div id="hashStatus" class="backup-status"></div>'+
-        '<div id="dupList" style="max-height:300px;overflow:auto;margin-top:8px;font-size:12px"></div></div>';
-
-    A.$('btnHashStart').addEventListener('click', hashBackfill);
-    A.$('btnHashStop').addEventListener('click', hashBackfillStop);
-    A.$('btnHashDups').addEventListener('click', hashFindDuplicates);
-    loadHashStats();
+        '<h2 class="page-h2">🔗 Хеши и дубликаты</h2>'+
+        '<div id="hashesBlock"></div>';
+    A.renderBlock_hashes('hashesBlock');
 }
 
-function loadHashStats() {
+A.renderBlock_hashes = function(containerId) {
+    var el = document.getElementById(containerId);
+    if (!el) return;
+    var pfx = 'hs_'+containerId+'_';
+    el.innerHTML =
+        '<div class="backup-sec"><h3>Контроль хешей</h3>'+
+        '<div id="'+pfx+'stats" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px"></div>'+
+        '<div class="maint-row"><button class="btn btn-go" id="'+pfx+'start">Расчёт хешей</button><button class="btn btn-stop" id="'+pfx+'stop" disabled>Стоп</button></div>'+
+        '<div class="maint-row"><button class="btn btn-go" id="'+pfx+'dups">Найти дубликаты</button></div>'+
+        '<div id="'+pfx+'status" class="backup-status"></div>'+
+        '<div id="'+pfx+'dupList" style="max-height:300px;overflow:auto;margin-top:8px;font-size:12px"></div></div>';
+
+    document.getElementById(pfx+'start').addEventListener('click', function() { hashBackfill(containerId); });
+    document.getElementById(pfx+'stop').addEventListener('click', function() { hashBackfillStop(containerId); });
+    document.getElementById(pfx+'dups').addEventListener('click', function() { hashFindDuplicates(containerId); });
+    loadHashStats(containerId);
+};
+
+function loadHashStats(cid) {
+    var pfx = 'hs_'+cid+'_';
     A.ajax('/api/catalog/hash_status', function(d) {
         var total = d.total_files||0, withH = d.with_hash||0, withoutH = d.without_hash||0;
         var zeroByte = d.zero_byte||0, pendingH = d.pending_hash||0;
@@ -30,101 +43,116 @@ function loadHashStats() {
         var pct = total>0 ? Math.round(withH/total*100) : 0;
         var h = '';
         h += '<div class="maint-sbox"><div class="sv">'+withH+' / '+total+'</div><div class="sl">С хешем ('+pct+'%)</div></div>';
-        if (pendingH>0) h += '<div class="maint-sbox"><div class="sv" style="color:#f0883e">'+pendingH+'</div><div class="sl">Ждут хеширования</div></div>';
-        if (zeroByte>0) h += '<div class="maint-sbox" style="border-color:#f85149"><div class="sv" style="color:#f85149">'+zeroByte+'</div><div class="sl">Повреждены (0 байт)</div></div>';
-        if (dupGroups>0) h += '<div class="maint-sbox" style="border-color:#f85149"><div class="sv" style="color:#f85149">'+dupGroups+'</div><div class="sl">Групп дублей ('+dupFiles+' файлов)</div></div>';
-        A.$('hashStats').innerHTML = h;
-        if (withoutH===0) A.$('btnHashStart').disabled = true;
+        if (pendingH>0) h += '<div class="maint-sbox"><div class="sv c-orange">'+pendingH+'</div><div class="sl">Ждут хеширования</div></div>';
+        if (zeroByte>0) h += '<div class="maint-sbox bd-err"><div class="sv c-err">'+zeroByte+'</div><div class="sl">Повреждены (0 байт)</div></div>';
+        if (dupGroups>0) h += '<div class="maint-sbox bd-err"><div class="sv c-err">'+dupGroups+'</div><div class="sl">Групп дублей ('+dupFiles+' файлов)</div></div>';
+        var statsEl = document.getElementById(pfx+'stats');
+        if (statsEl) statsEl.innerHTML = h;
+        var startBtn = document.getElementById(pfx+'start');
+        if (withoutH===0 && startBtn) startBtn.disabled = true;
     });
     A.ajax('/api/catalog/hash_backfill_status', function(d) {
         if (d.running && d.pids && d.pids.length>0) {
             hashWorkerPid = d.pids[0];
-            A.$('btnHashStart').disabled = true;
-            A.$('btnHashStop').disabled = false;
-            A.$('hashStatus').className = 'backup-status ok';
-            A.$('hashStatus').textContent = 'Воркер работает (PID '+hashWorkerPid+')';
-            pollHashWorker();
+            var startBtn = document.getElementById(pfx+'start');
+            var stopBtn = document.getElementById(pfx+'stop');
+            var statusEl = document.getElementById(pfx+'status');
+            if (startBtn) startBtn.disabled = true;
+            if (stopBtn) stopBtn.disabled = false;
+            if (statusEl) { statusEl.className = 'backup-status ok'; statusEl.textContent = 'Воркер работает (PID '+hashWorkerPid+')'; }
+            pollHashWorker(cid);
         }
     });
 }
 
-function hashBackfill() {
-    var el = A.$('hashStatus');
+function hashBackfill(cid) {
+    var pfx = 'hs_'+cid+'_';
+    var el = document.getElementById(pfx+'status');
+    if (!el) return;
     el.className = 'backup-status'; el.textContent = 'Запуск расчёта хешей...';
     A.post('/api/catalog/hash_backfill', null, function(d) {
         hashWorkerPid = d.pid;
         el.className = 'backup-status ok';
         el.textContent = 'Воркер запущен (PID '+d.pid+')';
-        A.$('btnHashStart').disabled = true;
-        A.$('btnHashStop').disabled = false;
-        pollHashWorker();
+        var startBtn = document.getElementById(pfx+'start');
+        var stopBtn = document.getElementById(pfx+'stop');
+        if (startBtn) startBtn.disabled = true;
+        if (stopBtn) stopBtn.disabled = false;
+        pollHashWorker(cid);
     }, function(e) {
         el.className = 'backup-status err'; el.textContent = 'Ошибка: '+e.message;
     });
 }
 
-function hashBackfillStop() {
+function hashBackfillStop(cid) {
     if (!hashWorkerPid) return;
-    var el = A.$('hashStatus');
+    var pfx = 'hs_'+cid+'_';
+    var el = document.getElementById(pfx+'status');
     A.post('/api/catalog/hash_backfill_stop', null, function(d) {
-        el.className = 'backup-status ok';
-        el.textContent = 'Воркер остановлен (killed PIDs: '+(d.killed||[]).join(', ')+')';
+        if (el) { el.className = 'backup-status ok'; el.textContent = 'Воркер остановлен (killed PIDs: '+(d.killed||[]).join(', ')+')'; }
         hashWorkerPid = 0;
-        A.$('btnHashStart').disabled = false;
-        A.$('btnHashStop').disabled = true;
+        var startBtn = document.getElementById(pfx+'start');
+        var stopBtn = document.getElementById(pfx+'stop');
+        if (startBtn) startBtn.disabled = false;
+        if (stopBtn) stopBtn.disabled = true;
         if (_hashPollTimer) { clearTimeout(_hashPollTimer); _hashPollTimer = null; }
-        loadHashStats();
+        loadHashStats(cid);
     }, function(e) {
-        el.className = 'backup-status err'; el.textContent = 'Ошибка: '+e.message;
+        if (el) { el.className = 'backup-status err'; el.textContent = 'Ошибка: '+e.message; }
     });
 }
 
-function pollHashWorker() {
+function pollHashWorker(cid) {
+    var pfx = 'hs_'+cid+'_';
     A.ajax('/api/catalog/hash_backfill_status', function(d) {
+        var el = document.getElementById(pfx+'status');
+        var startBtn = document.getElementById(pfx+'start');
+        var stopBtn = document.getElementById(pfx+'stop');
         if (!d.running) {
-            A.$('hashStatus').className = 'backup-status ok';
-            A.$('hashStatus').textContent = 'Расчёт хешей завершён';
+            if (el) { el.className = 'backup-status ok'; el.textContent = 'Расчёт хешей завершён'; }
             hashWorkerPid = 0;
-            A.$('btnHashStart').disabled = false;
-            A.$('btnHashStop').disabled = true;
-            loadHashStats();
+            if (startBtn) startBtn.disabled = false;
+            if (stopBtn) stopBtn.disabled = true;
+            loadHashStats(cid);
             return;
         }
         if (d.pids && d.pids.length>0) hashWorkerPid = d.pids[0];
-        loadHashStats();
-        _hashPollTimer = setTimeout(pollHashWorker, 5000);
+        loadHashStats(cid);
+        _hashPollTimer = setTimeout(function() { pollHashWorker(cid); }, 5000);
     }, function() {
-        _hashPollTimer = setTimeout(pollHashWorker, 10000);
+        _hashPollTimer = setTimeout(function() { pollHashWorker(cid); }, 10000);
     });
 }
 
-function hashFindDuplicates() {
-    var el = A.$('hashStatus'), dl = A.$('dupList');
-    el.className = 'backup-status'; el.textContent = 'Поиск дубликатов...';
-    dl.innerHTML = '';
+function hashFindDuplicates(cid) {
+    var pfx = 'hs_'+cid+'_';
+    var el = document.getElementById(pfx+'status');
+    var dl = document.getElementById(pfx+'dupList');
+    if (el) { el.className = 'backup-status'; el.textContent = 'Поиск дубликатов...'; }
+    if (dl) dl.innerHTML = '';
     A.ajax('/api/catalog/duplicates?limit=100', function(d) {
         var groups = d.duplicates||[];
         if (groups.length===0) {
-            el.className = 'backup-status ok'; el.textContent = 'Дубликатов не найдено';
+            if (el) { el.className = 'backup-status ok'; el.textContent = 'Дубликатов не найдено'; }
             return;
         }
-        el.className = 'backup-status ok'; el.textContent = 'Найдено '+groups.length+' групп дубликатов';
+        if (el) { el.className = 'backup-status ok'; el.textContent = 'Найдено '+groups.length+' групп дубликатов'; }
         var h = '';
         for (var i=0;i<groups.length;i++) {
             var g = groups[i];
-            h += '<div style="margin-bottom:8px;padding:6px;background:#21262d;border:1px solid #30363d;border-radius:4px">';
-            h += '<b style="color:#f0883e">'+g.count+' копий</b> <span style="color:#6e7681">'+A.esc(g.hash)+'</span>';
+            h += '<div class="bg-deep bd-strong" style="margin-bottom:8px;padding:6px;border-width:1px;border-style:solid;border-radius:4px">';
+            h += '<b class="c-orange">'+g.count+' копий</b> <span class="c-dim">'+A.esc(g.hash)+'</span>';
             for (var j=0;j<g.paths.length;j++) {
                 var p = g.paths[j].replace(/\\\\/g,'/');
                 var short = p.split('/').slice(-2).join('/');
-                h += '<div style="padding-left:12px;color:#8b949e;word-break:break-all" title="'+A.esc(p)+'">'+A.esc(short)+'</div>';
+                h += '<div class="c-muted" style="padding-left:12px;word-break:break-all" title="'+A.esc(p)+'">'+A.esc(short)+'</div>';
             }
             h += '</div>';
         }
-        dl.innerHTML = h;
-        loadHashStats();
+        if (dl) dl.innerHTML = h;
+        loadHashStats(cid);
     }, function(e) {
-        el.className = 'backup-status err'; el.textContent = 'Ошибка: '+e.message;
+        if (el) { el.className = 'backup-status err'; el.textContent = 'Ошибка: '+e.message; }
     });
 }
 
@@ -133,26 +161,36 @@ function buildMaint() {
     var el = A.$('page-maint');
     if (!el) return;
     el.innerHTML =
-        '<h2 style="margin-bottom:16px;font-size:16px;color:#e6edf3">🛠️ Обслуживание БД</h2>'+
-        '<div class="backup-sec"><h3>Бекап</h3>'+
-        '<div class="backup-row"><button class="btn btn-go" id="btnBackupDownload">📥 Скачать</button>'+
-        '<label class="btn btn-go btn-sm" style="cursor:pointer">📤 Загрузить <input type="file" accept=".gz,.db" id="backupUploadInput" style="display:none"></label>'+
-        '<span class="backup-info" id="backupInfo"></span></div>'+
-        '<div id="backupStatus" class="backup-status"></div></div>'+
-        '<div class="maint-sec"><h3>Обслуживание</h3>'+
-        '<div id="maintSizes" class="maint-sizes"></div>'+
-        '<div class="maint-row"><button class="btn btn-go" id="btnVacuum">VACUUM SQLite</button><span class="maint-info">Сжать базу</span></div>'+
-        '<div class="maint-row"><button class="btn btn-go" id="btnDedup">Удалить дубли индексов</button><span class="maint-info">LanceDB дедупликация</span></div>'+
-        '<div id="maintStatus" class="backup-status"></div></div>';
-
-    A.$('btnBackupDownload').addEventListener('click', backupDownload);
-    A.$('backupUploadInput').addEventListener('change', function() { backupUpload(this); });
-    A.$('btnVacuum').addEventListener('click', maintVacuum);
-    A.$('btnDedup').addEventListener('click', maintDedup);
-    loadMaintStats();
+        '<h2 class="page-h2">🛠️ Обслуживание БД</h2>'+
+        '<div id="maintBlock"></div>';
+    A.renderBlock_maintenance('maintBlock');
 }
 
-function loadMaintStats() {
+A.renderBlock_maintenance = function(containerId) {
+    var el = document.getElementById(containerId);
+    if (!el) return;
+    var pfx = 'mt_'+containerId+'_';
+    el.innerHTML =
+        '<div class="backup-sec"><h3>Бекап</h3>'+
+        '<div class="backup-row"><button class="btn btn-go" id="'+pfx+'dl">📥 Скачать</button>'+
+        '<label class="btn btn-go btn-sm" style="cursor:pointer">📤 Загрузить <input type="file" accept=".gz,.db" id="'+pfx+'ul" style="display:none"></label>'+
+        '<span class="backup-info" id="'+pfx+'info"></span></div>'+
+        '<div id="'+pfx+'bkStatus" class="backup-status"></div></div>'+
+        '<div class="maint-sec"><h3>Обслуживание</h3>'+
+        '<div id="'+pfx+'sizes" class="maint-sizes"></div>'+
+        '<div class="maint-row"><button class="btn btn-go" id="'+pfx+'vacuum">VACUUM SQLite</button><span class="maint-info">Сжать базу</span></div>'+
+        '<div class="maint-row"><button class="btn btn-go" id="'+pfx+'dedup">Удалить дубли индексов</button><span class="maint-info">LanceDB дедупликация</span></div>'+
+        '<div id="'+pfx+'mtStatus" class="backup-status"></div></div>';
+
+    document.getElementById(pfx+'dl').addEventListener('click', function() { backupDownload(cid); });
+    document.getElementById(pfx+'ul').addEventListener('change', function() { backupUpload(cid, this); });
+    document.getElementById(pfx+'vacuum').addEventListener('click', function() { maintVacuum(cid); });
+    document.getElementById(pfx+'dedup').addEventListener('click', function() { maintDedup(cid); });
+    loadMaintStats(cid);
+};
+
+function loadMaintStats(cid) {
+    var pfx = 'mt_'+cid+'_';
     A.ajax('/api/maintenance/stats', function(d) {
         var h = '';
         var sqliteMain = d['gallery.db']||0, sqliteWAL = d['gallery.db-wal']||0;
@@ -176,12 +214,15 @@ function loadMaintStats() {
             }
         }
         h += '<div class="maint-sbox total"><div class="sv">'+A.fmtBytes(d.data_total)+'</div><div class="sl">Всего данных</div></div>';
-        A.$('maintSizes').innerHTML = h;
+        var sizesEl = document.getElementById(pfx+'sizes');
+        if (sizesEl) sizesEl.innerHTML = h;
     });
 }
 
-function backupDownload() {
-    var el = A.$('backupStatus');
+function backupDownload(cid) {
+    var pfx = 'mt_'+cid+'_';
+    var el = document.getElementById(pfx+'bkStatus');
+    if (!el) return;
     el.className = 'backup-status'; el.textContent = 'Создание бекапа...';
     fetch('/api/backup/download').then(function(r) {
         if (!r.ok) throw new Error('HTTP '+r.status);
@@ -200,10 +241,12 @@ function backupDownload() {
     });
 }
 
-function backupUpload(input) {
+function backupUpload(cid, input) {
     if (!input.files || !input.files[0]) return;
     var file = input.files[0];
-    var el = A.$('backupStatus');
+    var pfx = 'mt_'+cid+'_';
+    var el = document.getElementById(pfx+'bkStatus');
+    if (!el) return;
     el.className = 'backup-status'; el.textContent = 'Загрузка '+file.name+' ('+(file.size/1048576).toFixed(1)+'MB)...';
     var fd = new FormData(); fd.append('file', file);
     fetch('/api/backup/upload', {method:'POST', body:fd}).then(function(r) {
@@ -217,25 +260,29 @@ function backupUpload(input) {
     input.value = '';
 }
 
-function maintVacuum() {
-    var el = A.$('maintStatus');
+function maintVacuum(cid) {
+    var pfx = 'mt_'+cid+'_';
+    var el = document.getElementById(pfx+'mtStatus');
+    if (!el) return;
     el.className = 'backup-status'; el.textContent = 'VACUUM...';
     A.post('/api/maintenance/vacuum', null, function(d) {
         el.className = 'backup-status ok';
         el.textContent = 'VACUUM: '+A.fmtBytes(d.before)+' → '+A.fmtBytes(d.after)+' (освобождено '+A.fmtBytes(d.freed)+')';
-        loadMaintStats();
+        loadMaintStats(cid);
     }, function(e) {
         el.className = 'backup-status err'; el.textContent = 'Ошибка: '+e.message;
     });
 }
 
-function maintDedup() {
-    var el = A.$('maintStatus');
+function maintDedup(cid) {
+    var pfx = 'mt_'+cid+'_';
+    var el = document.getElementById(pfx+'mtStatus');
+    if (!el) return;
     el.className = 'backup-status'; el.textContent = 'Дедупликация семантических индексов... (может занять минуту)';
     A.post('/api/maintenance/dedup_embeddings', null, function(d) {
         el.className = 'backup-status ok';
         el.textContent = 'Было '+d.before+' → стало '+d.after+' (удалено '+d.removed+' дублей)';
-        loadMaintStats();
+        loadMaintStats(cid);
     }, function(e) {
         el.className = 'backup-status err'; el.textContent = 'Ошибка: '+e.message;
     });

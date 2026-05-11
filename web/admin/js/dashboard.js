@@ -1,78 +1,141 @@
-// Dashboard module
+// Dashboard module — popup selector, close buttons, single-poll, theme-aware
 (function(A) {
 
 var _timer = null;
+var _lastStatus = null;
+var _lastWorkers = null;
+var _ddDocHandler = null;
 
 function buildUI() {
     var el = A.$('page-dashboard');
     if (!el) return;
     el.innerHTML =
-        '<h2 style="margin-bottom:16px;font-size:16px;color:#e6edf3">📊 Дашборд</h2>'+
-        '<div class="card-grid big">'+
-        '<div class="card" id="dashStatus"></div>'+
-        '<div class="card" id="dashProgress"></div></div>'+
-        '<div class="workers-panel" id="dashWorkersPanel"><h3>🔌 Воркеры MQTT</h3><div class="workers-grid" id="dashWorkers">—</div></div>'+
-        '<div class="card"><h3>📋 Последние события</h3><div class="log-lines" id="dashEvents">Загрузка...</div></div>';
+        '<h2 class="page-h2">📊 Дашборд</h2>'+
+        '<div style="margin-bottom:16px;display:flex;align-items:center;gap:8px">'+
+        '<div class="dash-pick" id="dashPick">'+
+        '<button class="dash-pick-btn" id="dashPickBtn">＋ Добавить блок</button>'+
+        '<div class="dash-pick-dd" id="dashPickDd"></div>'+
+        '</div></div>'+
+        '<div id="dashBlocks"></div>';
+    setupPicker();
+    renderDashBlocks();
+    startPolling();
 }
 
-function render() {
-    var d = A.st || {};
-    var sec = A.$('dashStatus');
-    if (sec) {
-        var run = d.current_step !== 'idle';
-        sec.innerHTML =
-            '<h3>📡 Статус</h3>'+
-            '<div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap">'+
-            '<div class="metric'+(run?'':' warn')+'"><div class="val">'+(run?'Активен':'Остановлен')+'</div><div class="lbl">пайплайн — '+A.esc(d.current_step||'idle')+'</div></div>'+
-            '<div class="metric"><div class="val">'+(d.photos_total||0).toLocaleString()+'</div><div class="lbl">фото</div></div>'+
-            '<div class="metric"><div class="val">'+(d.faces_total||0).toLocaleString()+'</div><div class="lbl">лиц</div></div>'+
-            '<div class="metric"><div class="val">'+(d.personas_total||0).toLocaleString()+'</div><div class="lbl">персон</div></div></div>';
+function setupPicker() {
+    var btn = A.$('dashPickBtn');
+    var dd = A.$('dashPickDd');
+    var pick = A.$('dashPick');
+    if (!btn || !dd || !pick) return;
+    var blocks = A.getBlocks();
+    var selected = A.getDashBlocks();
+    var h = '';
+    for (var i = 0; i < blocks.length; i++) {
+        var b = blocks[i];
+        var checked = selected.indexOf(b.id) >= 0;
+        h += '<label><input type="checkbox" class="dpick-cb" data-bid="'+b.id+'"'+(checked?' checked':'')+'> '+b.icon+' '+A.esc(b.name)+'</label>';
     }
+    dd.innerHTML = h;
 
-    var pr = A.$('dashProgress');
-    if (pr) {
-        var bars = [
-            {l:'Наполнение', p:d.pct_ingested, d:d.catalog_ingested||0, t:d.catalog_total||1},
-            {l:'Описание', p:d.pct_described, d:d.photos_described||0, t:d.photos_total||1},
-            {l:'Лица', p:d.pct_faces, d:d.catalog_faces_done||0, t:d.photos_faces_flagged||1},
-            {l:'EXIF', p:d.pct_exif, d:d.catalog_exif_done||0, t:d.photos_total||1},
-            {l:'Семант.индекс', p:d.pct_embedded, d:d.photos_embedded||0, t:d.photos_total||1},
-        ];
-        pr.innerHTML = '<h3>📈 Прогресс</h3>' + bars.map(function(b) {
-            return '<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:11px">'+
-            '<span>'+b.l+'</span><span>'+b.d+' / '+b.t+' ('+A.fmtPct(b.p)+')</span></div>'+
-            '<div class="progress-bar"><div class="fill" style="width:'+b.p+'%"></div></div></div>';
-        }).join('');
-    }
-
-    var ev = A.$('dashEvents');
-    if (ev) {
-        A.ajax('/api/log?lines=20', function(data) {
-            var lines = (data.lines||[]).filter(function(l) {
-                return /\[(PIPELINE|DESCRIBE|FACES|EMBED|WATCHDOG)\].*?(DONE|done|FAILED|START|Clustering|запускаю)/.test(l);
-            });
-            ev.innerHTML = '<pre style="margin:0;white-space:pre-wrap;font-size:11px;line-height:1.5">'+A.esc(lines.join('\n'))+'</pre>';
-        }, function() { ev.textContent = '⚠ лог недоступен'; });
-    }
-
-    A.ajax('/api/mqtt/workers', function(d) {
-        A.renderWorkerCards('dashWorkers', d.workers || {});
+    btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        dd.classList.toggle('open');
+        if (dd.classList.contains('open')) {
+            if (_ddDocHandler) document.removeEventListener('click', _ddDocHandler);
+            _ddDocHandler = function(ev) {
+                if (!pick.contains(ev.target)) dd.classList.remove('open');
+            };
+            setTimeout(function() { document.addEventListener('click', _ddDocHandler); }, 0);
+        }
     });
 
-    var ms = A.$('mqttSummary');
-    if (ms) {
-        var proc = d.processes || {};
-        var map = {vlm:'describe',face_pipeline:'faces',embed:'embed'};
-        var active = [];
-        for (var k in map) if (proc[k]) active.push(map[k]);
-        ms.innerHTML = active.map(function(n) { return '<span class="w run">⚡ '+n+'</span>'; }).join('') || '<span style="color:#6e7681">idle</span>';
+    dd.querySelectorAll('.dpick-cb').forEach(function(cb) {
+        cb.addEventListener('click', function(e) {
+            e.stopPropagation();
+        });
+        cb.addEventListener('change', function() {
+            var bid = this.getAttribute('data-bid');
+            var selected = A.getDashBlocks();
+            if (this.checked) {
+                if (selected.indexOf(bid) < 0) selected.push(bid);
+            } else {
+                var idx = selected.indexOf(bid);
+                if (idx >= 0) selected.splice(idx, 1);
+            }
+            A.setDashBlocks(selected);
+            renderDashBlocks();
+        });
+    });
+}
+
+function renderDashBlocks() {
+    var el = A.$('dashBlocks');
+    if (!el) return;
+    var selected = A.getDashBlocks();
+    el.innerHTML = '';
+    if (selected.length === 0) {
+        el.innerHTML = '<div class="c-dim" style="padding:40px 0;text-align:center;font-size:14px">Добавьте блоки кнопкой «＋ Добавить блок» выше</div>';
+        return;
+    }
+    for (var i = 0; i < selected.length; i++) {
+        var bid = selected[i];
+        var block = A.getBlock(bid);
+        if (!block) continue;
+        var wrap = document.createElement('div');
+        wrap.className = 'card';
+        wrap.style.marginBottom = '16px';
+        wrap.id = 'dash_blk_'+bid;
+        var closeBtn = document.createElement('button');
+        closeBtn.className = 'card-close';
+        closeBtn.textContent = '×';
+        closeBtn.setAttribute('data-bid', bid);
+        closeBtn.addEventListener('click', function() {
+            removeBlock(this.getAttribute('data-bid'));
+        });
+        wrap.appendChild(closeBtn);
+        el.appendChild(wrap);
+        block.render('dash_blk_'+bid);
+    }
+    if (_lastStatus) refreshBlocks(_lastStatus);
+}
+
+function removeBlock(bid) {
+    var selected = A.getDashBlocks();
+    var idx = selected.indexOf(bid);
+    if (idx >= 0) {
+        selected.splice(idx, 1);
+        A.setDashBlocks(selected);
+    }
+    var dd = A.$('dashPickDd');
+    if (dd) {
+        var cb = dd.querySelector('.dpick-cb[data-bid="'+bid+'"]');
+        if (cb) cb.checked = false;
+    }
+    var wrap = document.getElementById('dash_blk_'+bid);
+    if (wrap) wrap.remove();
+    var selected2 = A.getDashBlocks();
+    if (selected2.length === 0) {
+        var el = A.$('dashBlocks');
+        if (el) el.innerHTML = '<div class="c-dim" style="padding:40px 0;text-align:center;font-size:14px">Добавьте блоки кнопкой «＋ Добавить блок» выше</div>';
+    }
+}
+
+function refreshBlocks(d) {
+    var selected = A.getDashBlocks();
+    for (var i = 0; i < selected.length; i++) {
+        var bid = selected[i];
+        var block = A.getBlock(bid);
+        if (!block || !block.refresh) continue;
+        var payload = (bid === 'workers') ? _lastWorkers : d;
+        try { block.refresh('dash_blk_'+bid, payload); } catch(e) {}
     }
 }
 
 function startPolling() {
-    if (_timer) clearInterval(_timer);
+    stopPolling();
     loadStatus();
-    _timer = setInterval(loadStatus, 3000);
+    _timer = setInterval(loadStatus, 5000);
 }
 
 function stopPolling() {
@@ -81,13 +144,18 @@ function stopPolling() {
 
 function loadStatus() {
     A.ajax('/api/status', function(d) {
+        _lastStatus = d;
         A.st = d;
-        render();
+        refreshBlocks(d);
+    });
+    A.ajax('/api/mqtt/workers', function(d) {
+        _lastWorkers = d;
+        if (_lastStatus) refreshBlocks(_lastStatus);
     });
 }
 
 A.on('navigate', function(page) {
-    if (page === 'dashboard') { buildUI(); startPolling(); }
+    if (page === 'dashboard') { buildUI(); }
     else { stopPolling(); }
 });
 

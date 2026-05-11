@@ -6,6 +6,61 @@ body {
 }
 a { color: inherit; text-decoration: none; }
 
+/* ═══════ UTILITY CLASSES (theme-aware) ═══════ */
+.page-h2 { margin-bottom:16px; font-size:16px; color:var(--c-text-primary); }
+:root {
+    --c-text-primary:#e6edf3; --c-text-muted:#8b949e; --c-text-secondary:#6e7681;
+    --c-bg-card:#161b22; --c-bg-deep:#0d1117; --c-bg-input:#0d1117;
+    --c-border-default:#21262d; --c-border-strong:#30363d;
+    --c-accent:#58a6ff; --c-success:#3fb950; --c-warning:#d29922; --c-danger:#f85149; --c-info:#58a6ff; --c-orange:#f0883e;
+    --c-label-bg:#161b22;
+}
+.light-theme {
+    --c-text-primary:#24292f; --c-text-muted:#57606a; --c-text-secondary:#57606a;
+    --c-bg-card:#ffffff; --c-bg-deep:#f6f8fa; --c-bg-input:#f6f8fa;
+    --c-border-default:#d0d7de; --c-border-strong:#d0d7de;
+    --c-accent:#0969da; --c-success:#1f883d; --c-warning:#9a6700; --c-danger:#cf222e; --c-info:#0969da; --c-orange:#bc4c00;
+    --c-label-bg:#f6f8fa;
+}
+.c-ok { color:var(--c-success); }
+.c-err { color:var(--c-danger); }
+.c-warn { color:var(--c-warning); }
+.c-info { color:var(--c-info); }
+.c-muted { color:var(--c-text-muted); }
+.c-dim { color:var(--c-text-secondary); }
+.c-text { color:var(--c-text-primary); }
+.c-orange { color:var(--c-orange); }
+.c-accent { color:var(--c-accent); }
+.c-gold { color:#e3b341; }
+.light-theme .c-gold { color:#0969da; }
+.bd-ok { border-color:var(--c-success); }
+.bd-err { border-color:var(--c-danger); }
+.bd-warn { border-color:var(--c-warning); }
+.bd-default { border-color:var(--c-border-default); }
+.bd-strong { border-color:var(--c-border-strong); }
+.bg-deep { background:var(--c-bg-deep); }
+.bg-card { background:var(--c-bg-card); }
+.bg-input { background:var(--c-bg-input); }
+.dash-chip { display:inline-flex; align-items:center; gap:3px; padding:3px 8px; border-radius:4px; border:1px solid var(--c-border-default); background:var(--c-label-bg); cursor:pointer; font-size:11px; color:var(--c-text-primary); user-select:none; }
+.dash-chip input { margin:0; }
+.card { background:var(--c-bg-card); border:1px solid var(--c-border-strong); border-radius:8px; padding:16px; position:relative; }
+.card .card-close { position:absolute; top:8px; right:10px; background:none; border:none; color:var(--c-text-muted); cursor:pointer; font-size:16px; padding:2px 6px; line-height:1; }
+.card .card-close:hover { color:var(--c-danger); }
+.dash-pick { position:relative; display:inline-block; }
+.dash-pick-btn { padding:4px 10px; border-radius:4px; border:1px solid var(--c-border-default); background:var(--c-label-bg); color:var(--c-text-primary); cursor:pointer; font-size:12px; font-family:monospace; }
+.dash-pick-btn:hover { background:var(--c-border-default); }
+.dash-pick-dd { display:none; position:absolute; top:100%; left:0; margin-top:4px; background:var(--c-bg-card); border:1px solid var(--c-border-strong); border-radius:6px; padding:8px 10px; z-index:50; min-width:220px; box-shadow:0 8px 24px rgba(0,0,0,.4); }
+.dash-pick-dd.open { display:block; }
+.dash-pick-dd label { display:flex; align-items:center; gap:6px; padding:4px 4px; font-size:12px; color:var(--c-text-primary); cursor:pointer; border-radius:3px; }
+.dash-pick-dd label:hover { background:var(--c-border-default); }
+.dash-pick-dd label input { margin:0; }
+.light-theme .dash-pick-dd { box-shadow:0 8px 24px rgba(0,0,0,.15); }
+.dup-group { margin-bottom:8px; padding:6px; background:var(--c-bg-deep); border:1px solid var(--c-border-default); border-radius:4px; }
+.dup-hash { color:var(--c-orange); font-weight:bold; }
+.dup-path { padding-left:12px; color:var(--c-text-muted); word-break:break-all; }
+.status-label { font-size:11px; color:var(--c-text-muted); }
+.status-val { font-size:10px; }
+
 /* ═══════ TOPBAR ═══════ */
 .topbar {
     grid-column: 1 / -1; background: #161b22; border-bottom: 1px solid #30363d;
@@ -36,7 +91,7 @@ a { color: inherit; text-decoration: none; }
 .page.active { display: block; }
 
 /* === FROM control.html — summary boxes === */
-.summary { display: grid; grid-template-columns: repeat(5,1fr); gap: 8px; margin-bottom: 20px; }
+.summary { display: grid; grid-template-columns: repeat(6,1fr); gap: 8px; margin-bottom: 20px; }
 .sbox { background: #161b22; border: 1px solid #21262d; border-radius: 6px; padding: 10px 12px; text-align: center; }
 .sbox .sv { font-size: 22px; color: #58a6ff; font-weight: bold; }
 .sbox .sl { font-size: 10px; color: #8b949e; margin-top: 2px; }

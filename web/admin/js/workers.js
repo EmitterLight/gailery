@@ -2,15 +2,35 @@
 (function(A) {
 
 var _crashVisible = false;
+var _workerTimers = {};
+
+A.registerBlock('workers', 'Воркеры MQTT', '🔌', function(cid) { A.renderBlock_workers(cid); }, function(cid, d) { A.refreshBlock_workers(cid, d); });
+
+A.renderBlock_workers = function(containerId) {
+    var el = document.getElementById(containerId);
+    if (!el) return;
+    el.innerHTML =
+        '<div class="workers-panel"><h3>🔌 Воркеры MQTT</h3>'+
+        '<div class="workers-grid" id="wkGrid_'+containerId+'"></div></div>';
+    A.ajax('/api/mqtt/workers', function(d) {
+        A.renderWorkerCards('wkGrid_'+containerId, d.workers || {});
+    });
+};
+
+A.refreshBlock_workers = function(containerId, d) {
+    if (!d) return;
+    var gridEl = document.getElementById('wkGrid_'+containerId);
+    if (gridEl && d.workers) A.renderWorkerCards('wkGrid_'+containerId, d.workers);
+};
 
 function buildUI() {
     var el = A.$('page-workers');
     if (!el) return;
     el.innerHTML =
-        '<h2 style="margin-bottom:16px;font-size:16px;color:#e6edf3">🔌 Воркеры MQTT</h2>'+
+        '<h2 class="page-h2">🔌 Воркеры MQTT</h2>'+
         '<div class="workers-panel"><h3>Воркеры MQTT <span id="watchdogStatus" style="font-weight:normal;font-size:11px"></span></h3>'+
         '<div class="workers-grid" id="workersGrid"></div>'+
-        '<div style="margin-top:8px"><button class="btn btn-go btn-sm" id="btnCrashLog">Журнал срабатываний</button><span id="crashCount" style="font-size:11px;color:#f0883e;margin-left:8px"></span></div>'+
+        '<div style="margin-top:8px"><button class="btn btn-go btn-sm" id="btnCrashLog">Журнал срабатываний</button><span id="crashCount" class="c-orange" style="font-size:11px;margin-left:8px"></span></div>'+
         '<div id="crashLog" class="crash-log" style="display:none"></div></div>';
     A.$('btnCrashLog').addEventListener('click', toggleCrashLog);
     loadWorkers();
@@ -70,16 +90,16 @@ function loadCrashes() {
         var mode = d.mode||'active';
         if (mode==='sleeping') {
             dotEl.className = 'wcard-dot sleeping';
-            statusEl.innerHTML = '<span style="color:#8b949e">🐶 Сторожевой пёс: </span><b style="color:#d29922">дремлет</b>';
+            statusEl.innerHTML = '<span class="c-muted">🐶 Сторожевой пёс: </span><b class="c-warn">дремлет</b>';
         } else {
             dotEl.className = 'wcard-dot alive';
-            statusEl.innerHTML = '<span style="color:#8b949e">🐶 Сторожевой пёс: </span><b style="color:#3fb950">активен</b>';
+            statusEl.innerHTML = '<span class="c-muted">🐶 Сторожевой пёс: </span><b class="c-ok">активен</b>';
         }
 
         if (_crashVisible) {
             var el = A.$('crashLog');
             if (crashes.length===0) {
-                el.innerHTML = '<span style="color:#6e7681">Срабатываний нет — все процессы работают штатно</span>';
+                el.innerHTML = '<span class="c-dim">Срабатываний нет — все процессы работают штатно</span>';
             } else {
                 el.innerHTML = crashes.map(function(c) {
                     var t = A.esc(c);
@@ -92,10 +112,10 @@ function loadCrashes() {
                             t = t.replace(m[1], local);
                         }
                     }
-                    if (t.indexOf('LWT DEAD')>=0) return '<span style="color:#f85149">'+t+'</span>';
-                    if (t.indexOf('RESTART')>=0) return '<span style="color:#d29922">'+t+'</span>';
-                    if (t.indexOf('RECOVERY')>=0) return '<span style="color:#3fb950">'+t+'</span>';
-                    if (t.indexOf('STALE')>=0) return '<span style="color:#f0883e">'+t+'</span>';
+                    if (t.indexOf('LWT DEAD')>=0) return '<span class="c-err">'+t+'</span>';
+                    if (t.indexOf('RESTART')>=0) return '<span class="c-warn">'+t+'</span>';
+                    if (t.indexOf('RECOVERY')>=0) return '<span class="c-ok">'+t+'</span>';
+                    if (t.indexOf('STALE')>=0) return '<span class="c-orange">'+t+'</span>';
                     return t;
                 }).join('<br>');
             }

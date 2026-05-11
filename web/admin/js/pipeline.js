@@ -8,20 +8,60 @@ var STEPS = [
     {id:'describe', name:'Описание', icon:'🖼️', color:'#58a6ff'},
     {id:'faces', name:'Лица', icon:'👤', color:'#d29922'},
     {id:'exif', name:'EXIF', icon:'📷', color:'#a5d6ff'},
-    {id:'embed', name:'Семант. индексация', icon:'🔍', color:'#bc8cff'},
+    {id:'embed', name:'Семантическая индексация', icon:'🔍', color:'#bc8cff'},
 ];
 
 var TASKS = [
     {id:'ingest', name:'Наполнение базы', icon:'📂', desc:'Сканирование фото, добавление записей в базу',
      params:[{k:'ingest_limit',l:'Количество фото',v:100,t:'n'},{k:'exif',l:'Читать EXIF',v:'1',t:'s',opts:[['1','Да'],['0','Нет']]}]},
     {id:'describe', name:'Описание фото', icon:'🖼️', desc:'VLM (Qwen3.5-4B) генерирует описание и флаг лиц',
-     params:[{k:'desc_limit',l:'Лимит описаний (0=все)',v:60,t:'n'},{k:'batch_size',l:'Размер батча VLM',v:6,t:'n'}]},
+     params:[{k:'desc_limit',l:'Лимит описаний (0=все)',v:60,t:'n'},{k:'batch_size',l:'Размер батча ВЛМ',v:6,t:'n'}]},
     {id:'faces', name:'Поиск лиц', icon:'👤', desc:'InsightFace: детекция, векторные представления, кластеризация в персоны', params:[]},
     {id:'exif', name:'Чтение EXIF', icon:'📷', desc:'Дата, GPS, камера из метаданных фото', params:[]},
     {id:'embed', name:'Семантическая индексация', icon:'🔍', desc:'Qwen3-Embedding: векторный индекс для смыслового поиска', params:[]},
 ];
 
 TASKS.forEach(function(t) { taskState[t.id] = {status:'idle', started:null, stopped:null, startPct:0, baseCount:0}; });
+
+A.registerBlock('pipeline_status', 'Статус пайплайна', '📊', function(cid) { A.renderBlock_pipelineStatus(cid); }, function(cid, d) { A.refreshBlock_pipelineStatus(cid, d); });
+A.registerBlock('pipeline_tasks', 'Задачи пайплайна', '📋', function(cid) { A.renderBlock_pipelineTasks(cid); }, function(cid, d) { A.refreshBlock_pipelineTasks(cid, d); });
+
+A.renderBlock_pipelineStatus = function(containerId) {
+    var el = document.getElementById(containerId);
+    if (!el) return;
+    el.innerHTML = '<div id="psSummary_'+containerId+'"></div><div id="psBanner_'+containerId+'"></div>';
+    A.ajax('/api/status', function(d) {
+        st = d; A.st = d;
+        renderSummaryInto('psSummary_'+containerId);
+        renderCycloInto('psBanner_'+containerId);
+    });
+};
+
+A.refreshBlock_pipelineStatus = function(containerId, d) {
+    if (!d) return;
+    st = d; A.st = d;
+    var sEl = document.getElementById('psSummary_'+containerId);
+    var cEl = document.getElementById('psBanner_'+containerId);
+    if (sEl) sEl.innerHTML = buildSummaryHtml();
+    if (cEl) cEl.innerHTML = buildCycloHtml();
+};
+
+A.renderBlock_pipelineTasks = function(containerId) {
+    var el = document.getElementById(containerId);
+    if (!el) return;
+    el.innerHTML = '<div id="psTasks_'+containerId+'"></div>';
+    A.ajax('/api/status', function(d) {
+        st = d; A.st = d;
+        renderTasksInto('psTasks_'+containerId);
+    });
+};
+
+A.refreshBlock_pipelineTasks = function(containerId, d) {
+    if (!d) return;
+    st = d; A.st = d;
+    var tEl = document.getElementById('psTasks_'+containerId);
+    if (tEl) renderTasksInto('psTasks_'+containerId);
+};
 
 // Persist param values and open tasks between re-renders
 var _paramValues = {};
@@ -72,35 +112,34 @@ function buildUI(mode) {
     if (mode === 'tasks') {
         el = A.$('page-tasks');
         if (!el) return;
-        el.innerHTML = '<h2 style="margin-bottom:16px;font-size:16px;color:#e6edf3">📋 Индивидуальные задачи</h2><div class="tasks" id="taskList-tasks"><div style="color:#6e7681;padding:12px">⏳ Загрузка...</div></div>';
+        el.innerHTML = '<h2 class="page-h2">📋 Индивидуальные задачи</h2><div class="tasks" id="taskList-tasks"><div style="color:var(--c-text-muted);padding:12px">⏳ Загрузка...</div></div>';
     } else {
         el = A.$('page-pipeline');
         if (!el) return;
         el.innerHTML =
-            '<h2 style="margin-bottom:16px;font-size:16px;color:#e6edf3">🔄 Пайплайн</h2>'+
-            '<div class="summary" id="summary"><div style="color:#6e7681;padding:12px">⏳ Загрузка статуса...</div></div>'+
+            '<h2 class="page-h2">🔄 Пайплайн</h2>'+
+            '<div class="summary" id="summary"><div style="color:var(--c-text-muted);padding:12px">⏳ Загрузка статуса...</div></div>'+
             '<div class="pipeline-banner idle" id="pipelineBanner">'+
             '<div class="pb-top"><div><div class="pb-title" id="pbTitle">Пайплайн остановлен</div><div class="pb-pipeline-time" id="pbPipelineTime"></div></div><div class="pb-status s-idle" id="pbStatus">IDLE</div></div>'+
             '<div class="cyclo" id="cyclo"></div>'+
             '<div class="pb-ctrl">'+
             '<label>Лимит:</label><input type="number" id="chainLimit" value="100" min="0">'+
-            '<label style="margin-left:8px">Источник:</label><select id="chainRoot"></select>'+
+            '<label style="margin-left:8px">Источник:</label><select id="chainRoot" class="ctrl-select"></select>'+
             '<button class="btn btn-go" id="btnStart">Запустить цепочку</button>'+
             '<button class="btn btn-stop" id="btnStop" disabled>Остановить всё</button>'+
-            '<span style="color:#6e7681;font-size:11px" id="chainInfo"></span></div></div>'+
-            '<div class="tasks" id="taskList-pipeline"><div style="color:#6e7681;padding:12px">⏳ Загрузка задач...</div></div>';
+            '<span class="c-dim" style="font-size:11px" id="chainInfo"></span></div></div>'+
+            '<div class="tasks" id="taskList-pipeline"><div style="color:var(--c-text-muted);padding:12px">⏳ Загрузка задач...</div></div>';
         A.$('btnStart').addEventListener('click', runChain);
         A.$('btnStop').addEventListener('click', stopAll);
+        A.$('chainRoot').addEventListener('change', loadStatus);
         loadRoots();
     }
 }
 
-function renderSummary() {
-    var sec = A.$('summary');
-    if (!sec) return;
-    if (!st || !st.photos_total) { sec.innerHTML = ''; return; }
+function buildSummaryHtml() {
+    if (!st || !st.photos_total) return '';
     var ct = st.catalog_total || 0, ci = st.catalog_ingested || 0;
-    var h = '<div class="card-grid" style="grid-template-columns:repeat(6,1fr);gap:8px">';
+    var h = '<div class="summary">';
     h += '<div class="sbox"><div class="sv">'+ci+'</div><div class="sl">Внесено из '+ct+'</div></div>';
     h += '<div class="sbox"><div class="sv">'+(st.catalog_described||0)+'</div><div class="sl">Описано из '+ci+'</div></div>';
     h += '<div class="sbox"><div class="sv">'+(st.catalog_faces_done||0)+'</div><div class="sl">Лица из '+(st.faces_flagged_in_db||0)+'</div></div>';
@@ -112,6 +151,106 @@ function renderSummary() {
         h += '<div class="sbox"><div class="sv">0</div><div class="sl">Видео</div></div>';
     }
     h += '</div>';
+    if (st.per_root && st.per_root.length > 1) {
+        h += '<div class="src-section"><div class="src-title">По источникам:</div>';
+        for (var i=0;i<st.per_root.length;i++) {
+            var r = st.per_root[i];
+            h += '<div class="src-row"><span class="src-alias">'+A.esc(r.alias)+'</span><span class="src-counts">'+r.ingested+' / '+r.catalog_total+'</span><span class="src-details">D:'+r.described+' E:'+r.exif_done+' I:'+r.embedded+'</span></div>';
+        }
+        h += '</div>';
+    }
+    return h;
+}
+
+function buildCycloHtml() {
+    if (!st) return '<div class="c-dim" style="padding:12px">Нет данных</div>';
+    var cur = (st.step_details||'').toLowerCase();
+    var run = st.current_step !== 'idle';
+    var h = '<div class="pipeline-banner '+(run?'running':'idle')+'">';
+    h += '<div class="pb-top"><div><div class="pb-title '+(run?'c-ok':'c-text')+'">'+(run?'⚡ Пайплайн работает: '+A.esc(st.step_details):'Пайплайн остановлен')+'</div>';
+    if (run && st.pipeline_started_at) {
+        var ps = new Date(st.pipeline_started_at + (st.pipeline_started_at.indexOf('+')<0&&st.pipeline_started_at.indexOf('Z')<0?'+00:00':''));
+        h += '<div class="pb-pipeline-time '+(run?'c-ok':'c-muted')+'">Цепочка идёт: '+A.fmtDur(Date.now()-ps.getTime())+'</div>';
+    } else if (!run && st.pipeline_started_at) {
+        var ps2 = new Date(st.pipeline_started_at + (st.pipeline_started_at.indexOf('+')<0&&st.pipeline_started_at.indexOf('Z')<0?'+00:00':''));
+        h += '<div class="pb-pipeline-time">Последний запуск: '+ps2.toLocaleTimeString()+'</div>';
+    }
+    h += '</div><div class="pb-status '+(run?'s-run':'s-idle')+'">'+(run?'● '+A.esc(st.step_details):'IDLE')+'</div></div>';
+    h += '<div class="cyclo">';
+    for (var i=0;i<STEPS.length;i++) {
+        var s = STEPS[i], pct = stepPct(s.id), cnt = stepCount(s.id);
+        var isActive = (s.id===cur&&run), ts = taskState[s.id], isDone = pct>=100, isFailed = ts&&ts.status==='fail';
+        var cls = 'st-wait', badgeHtml = '○ ожидание';
+        if (isFailed) { cls = 'st-fail'; badgeHtml = '✗ ошибка'; }
+        else if (isActive) { cls = 'st-run'; badgeHtml = '● работает'; }
+        else if (isDone) { cls = 'st-done'; badgeHtml = '✓ готово'; }
+        var pctStr = A.fmtPct(pct), barW = Math.min(pct,100);
+        h += '<div class="cy-step '+cls+'">';
+        h += '<div class="cy-icon">'+s.icon+'</div>';
+        h += '<div class="cy-name">'+s.name+'</div>';
+        h += '<div class="cy-pct">'+pctStr+'</div>';
+        h += '<div class="cy-count">'+cnt.done+'/'+cnt.total+'</div>';
+        h += '<div class="cy-bar-bg"><div class="cy-bar" style="width:'+barW+'%"></div></div>';
+        h += '<div class="cy-badge">'+badgeHtml+'</div>';
+        if (isDone&&!isActive) h += '<div class="cy-check">✓</div>';
+        h += '</div>';
+        if (i<STEPS.length-1) {
+            var arrowLit = run && STEPS.slice(0,i+1).some(function(ss){return ss.id===cur;});
+            h += '<div class="cy-arrow'+(arrowLit?' lit':'')+'">→</div>';
+        }
+    }
+    h += '</div></div>';
+    return h;
+}
+
+function renderSummaryInto(cid) {
+    var el = document.getElementById(cid);
+    if (el) el.innerHTML = buildSummaryHtml();
+}
+function renderCycloInto(cid) {
+    var el = document.getElementById(cid);
+    if (el) el.innerHTML = buildCycloHtml();
+}
+function renderTasksInto(cid) {
+    var el = document.getElementById(cid);
+    if (!el || !st) return;
+    var cur = (st.step_details||'').toLowerCase();
+    var run = st.current_step !== 'idle';
+    var h = '';
+    for (var i=0;i<TASKS.length;i++) {
+        var t = TASKS[i], ts = taskState[t.id];
+        var isActive = (t.id===cur&&run);
+        if (isActive && ts.status !== 'run') ts.status = 'run';
+        else if (!isActive && ts.status==='run') ts.status = 'done';
+        var badgeCls = 'tb-idle', badgeText = 'Остановлено';
+        if (ts.status==='run') { badgeCls='tb-run'; badgeText='● Выполняется'; }
+        else if (ts.status==='done') { badgeCls='tb-done'; badgeText='✓ Завершено'; }
+        var cnt = stepCount(t.id);
+        var descHtml = t.desc;
+        if (cnt.total>0) descHtml += ' · <b class="c-info">'+cnt.done+'/'+cnt.total+' ('+A.fmtPct(stepPct(t.id))+')</b>';
+        h += '<div class="task"><div class="task-head"><div class="task-icon">'+t.icon+'</div>';
+        h += '<div class="task-info"><div class="tn">'+t.name+'</div><div class="td">'+descHtml+'</div></div>';
+        h += '<div class="task-badge '+badgeCls+'">'+badgeText+'</div></div></div>';
+    }
+    el.innerHTML = h;
+}
+
+function renderSummary() {
+    var sec = A.$('summary');
+    if (!sec) return;
+    if (!st || !st.photos_total) { sec.innerHTML = ''; return; }
+    var ct = st.catalog_total || 0, ci = st.catalog_ingested || 0;
+    var h = '';
+    h += '<div class="sbox"><div class="sv">'+ci+'</div><div class="sl">Внесено из '+ct+'</div></div>';
+    h += '<div class="sbox"><div class="sv">'+(st.catalog_described||0)+'</div><div class="sl">Описано из '+ci+'</div></div>';
+    h += '<div class="sbox"><div class="sv">'+(st.catalog_faces_done||0)+'</div><div class="sl">Лица из '+(st.faces_flagged_in_db||0)+'</div></div>';
+    h += '<div class="sbox"><div class="sv">'+(st.catalog_exif_done||0)+'</div><div class="sl">EXIF из '+ci+'</div></div>';
+    h += '<div class="sbox"><div class="sv">'+(st.photos_embedded||0)+'</div><div class="sl">Индекс из '+(st.photos_total||0)+'</div></div>';
+    if (st.videos && st.videos.catalog) {
+        h += '<div class="sbox"><div class="sv">'+st.videos.ingested+'</div><div class="sl">Видео из '+st.videos.catalog+'</div></div>';
+    } else {
+        h += '<div class="sbox"><div class="sv">0</div><div class="sl">Видео</div></div>';
+    }
     if (st.per_root && st.per_root.length > 1) {
         h += '<div class="src-section"><div class="src-title">По источникам:</div>';
         for (var i=0;i<st.per_root.length;i++) {
@@ -185,14 +324,14 @@ function renderCyclo() {
         }
         var cycleDelta = cnt.done - ts.baseCount;
         if (ts.baseCount>0&&cycleDelta>0) {
-            h += '<div class="cy-count" style="color:#3fb950">+'+cycleDelta+' за цикл</div>';
+            h += '<div class="cy-count c-ok">+'+cycleDelta+' за цикл</div>';
         }
         if (isDone&&!isActive) h += '<div class="cy-check">✓</div>';
         if (s.id==='faces'&&isActive&&st.faces_phase) {
             var phaseNames = {loading:'Загрузка',detecting:'Детекция',lance_write:'LanceDB',clustering:'Кластеризация',detection_done:'Завершение',done:'Готово'};
             var phaseLabel = phaseNames[st.faces_phase]||st.faces_phase;
             var detailHtml = st.faces_detail ? A.esc(st.faces_detail) : '';
-            h += '<div style="font-size:9px;color:#d29922;margin-top:3px">'+phaseLabel+(detailHtml?': '+detailHtml:'')+'</div>';
+            h += '<div style="font-size:9px;margin-top:3px" class="c-warn">'+phaseLabel+(detailHtml?': '+detailHtml:'')+'</div>';
         }
         h += '</div>';
         if (i<STEPS.length-1) {
@@ -250,7 +389,7 @@ function renderTasks() {
 
         var descHtml = t.desc;
         var cnt = stepCount(t.id);
-        if (cnt.total>0) descHtml += ' · <b style="color:#58a6ff">'+cnt.done+'/'+cnt.total+' ('+A.fmtPct(stepPct(t.id))+')</b>';
+        if (cnt.total>0) descHtml += ' · <b class="c-info">'+cnt.done+'/'+cnt.total+' ('+A.fmtPct(stepPct(t.id))+')</b>';
 
         h += '<div class="task">';
         h += '<div class="task-head" data-task="'+t.id+'" data-action="toggle">';
@@ -381,7 +520,7 @@ function renderMQTT() {
     if (ms) {
         var active = [];
         for (var k in map) if (proc[k]) active.push(map[k]);
-        ms.innerHTML = active.map(function(n) { return '<span class="w run">⚡ '+n+'</span>'; }).join('') || '<span style="color:#6e7681">idle</span>';
+        ms.innerHTML = active.map(function(n) { return '<span class="w run">⚡ '+n+'</span>'; }).join('') || '<span class="c-dim">idle</span>';
     }
 }
 

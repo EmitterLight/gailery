@@ -148,7 +148,36 @@ var A = {
     WORKER_LABELS: WORKER_LABELS,
     DUAL_TASKS: DUAL_TASKS,
     renderWorkerCards: renderWorkerCards,
+    registerBlock: registerBlock,
+    getBlocks: function() { return _blocks; },
+    getBlock: getBlock,
+    getDashBlocks: getDashBlocks,
+    setDashBlocks: setDashBlocks,
 };
+
+var _blocks = [];
+var DEFAULT_DASH_BLOCKS = ['pipeline_status', 'workers'];
+
+function registerBlock(id, name, icon, renderFn, refreshFn) {
+    _blocks.push({id: id, name: name, icon: icon, render: renderFn, refresh: refreshFn || null});
+}
+
+function getDashBlocks() {
+    var saved = localStorage.getItem('admin-dash-blocks');
+    if (!saved) return DEFAULT_DASH_BLOCKS.slice();
+    try { return JSON.parse(saved); } catch(e) { return DEFAULT_DASH_BLOCKS.slice(); }
+}
+
+function setDashBlocks(ids) {
+    localStorage.setItem('admin-dash-blocks', JSON.stringify(ids));
+}
+
+function getBlock(id) {
+    for (var i = 0; i < _blocks.length; i++) {
+        if (_blocks[i].id === id) return _blocks[i];
+    }
+    return null;
+}
 
 function renderWorkerCards(containerId, workers) {
     var el = byId(containerId);

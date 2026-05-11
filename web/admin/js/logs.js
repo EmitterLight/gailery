@@ -2,77 +2,108 @@
 (function(A) {
 
 var _logFilter = '';
+var _logFilterMap = {};
+
+A.registerBlock('logs', 'Логи', '📋', function(cid) { A.renderBlock_logs(cid); });
 
 function buildUI() {
     var el = A.$('page-logs');
     if (!el) return;
     el.innerHTML =
-        '<h2 style="margin-bottom:16px;font-size:16px;color:#e6edf3">📋 Логи</h2>'+
-        '<div class="log-sec"><h3>Лог <span id="logInfo"></span></h3>'+
-        '<div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap;align-items:center">'+
-        '<input id="logFilter" type="text" placeholder="Фильтр..." class="log-filter-input">'+
-        '<button class="fbtn" data-f="DESCRIBE">VLM</button>'+
-        '<button class="fbtn" data-f="FACES">Лица</button>'+
-        '<button class="fbtn" data-f="EMBED">Индекс</button>'+
-        '<button class="fbtn" data-f="PIPELINE">Пайплайн</button>'+
-        '<button class="fbtn" data-f="ENRICH">Обогащ.</button>'+
-        '<button class="fbtn fbtn-err" data-f="ERROR,FAILED">Ошибки</button>'+
-        '<button class="fbtn fbtn-all" data-f="">Все</button></div>'+
-        '<div id="logC"></div></div>';
+        '<h2 class="page-h2">📋 Логи</h2>'+
+        '<div id="logsBlock"></div>';
+    A.renderBlock_logs('logsBlock');
+}
 
-    // Hook up filter buttons
-    A.$$('#page-logs .fbtn').forEach(function(b) {
+A.renderBlock_logs = function(containerId) {
+    var el = document.getElementById(containerId);
+    if (!el) return;
+    var fId = 'logFilter_'+containerId;
+    var cId = 'logC_'+containerId;
+    var iId = 'logInfo_'+containerId;
+    el.innerHTML =
+        '<div class="log-sec"><h3>Лог <span id="'+iId+'"></span></h3>'+
+        '<div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap;align-items:center">'+
+        '<input id="'+fId+'" type="text" placeholder="Фильтр..." class="log-filter-input">'+
+        '<button class="fbtn" data-f="DESCRIBE" data-cid="'+containerId+'">VLM</button>'+
+        '<button class="fbtn" data-f="FACES" data-cid="'+containerId+'">Лица</button>'+
+        '<button class="fbtn" data-f="EMBED" data-cid="'+containerId+'">Индекс</button>'+
+        '<button class="fbtn" data-f="PIPELINE" data-cid="'+containerId+'">Пайплайн</button>'+
+        '<button class="fbtn" data-f="ENRICH" data-cid="'+containerId+'">Обогащ.</button>'+
+        '<button class="fbtn fbtn-err" data-f="ERROR,FAILED" data-cid="'+containerId+'">Ошибки</button>'+
+        '<button class="fbtn fbtn-all" data-f="" data-cid="'+containerId+'">Все</button></div>'+
+        '<div id="'+cId+'"></div></div>';
+
+    el.querySelectorAll('.fbtn[data-cid="'+containerId+'"]').forEach(function(b) {
         b.addEventListener('click', function() {
-            A._setLogFilter(this.getAttribute('data-f'));
+            setFilter(containerId, this.getAttribute('data-f'));
         });
     });
 
-    // Hook up text filter
-    A.$('logFilter').addEventListener('input', function() {
+    var inp = document.getElementById(fId);
+    if (inp) inp.addEventListener('input', function() {
         var v = this.value.trim();
-        if (!v) { _logFilter = ''; A.$$('.fbtn').forEach(function(b){b.classList.remove('active');}); }
-        else { _logFilter = v; A.$$('.fbtn').forEach(function(b){b.classList.remove('active');}); }
-        loadLog();
+        if (!v) { _logFilterMap[containerId] = ''; el.querySelectorAll('.fbtn').forEach(function(b){b.classList.remove('active');}); }
+        else { _logFilterMap[containerId] = v; el.querySelectorAll('.fbtn').forEach(function(b){b.classList.remove('active');}); }
+        loadLogInto(containerId);
     });
 
-    loadLog();
+    loadLogInto(containerId);
+};
+
+function setFilter(cid, f) {
+    _logFilterMap[cid] = f;
+    var el = document.getElementById(cid);
+    var fId = 'logFilter_'+cid;
+    var inp = document.getElementById(fId);
+    if (inp) inp.value = f.indexOf(',')>=0 ? '' : f;
+    if (el) el.querySelectorAll('.fbtn').forEach(function(b) { b.classList.toggle('active', b.getAttribute('data-f')===f); });
+    applyFilter(cid);
 }
 
 A._setLogFilter = function(f) {
     _logFilter = f;
-    A.$('logFilter').value = f.indexOf(',')>=0 ? '' : f;
+    var inp = A.$('logFilter');
+    if (inp) inp.value = f.indexOf(',')>=0 ? '' : f;
     A.$$('.fbtn').forEach(function(b) { b.classList.toggle('active', b.getAttribute('data-f')===f); });
-    applyLogFilter();
+    applyFilter('');
 };
 
-function applyLogFilter() {
-    var el = A.$('logC');
+function applyFilter(cid) {
+    var cId = cid ? 'logC_'+cid : 'logC';
+    var iId = cid ? 'logInfo_'+cid : 'logInfo';
+    var filter = cid ? (_logFilterMap[cid]||'') : _logFilter;
+    var el = document.getElementById(cId);
     if (!el) return;
-    if (!_logFilter) {
+    if (!filter) {
         el.querySelectorAll('.ll').forEach(function(s){s.style.display='';});
-        updateLogInfo(el);
+        updateInfo(cid, el);
         return;
     }
-    var terms = _logFilter.toUpperCase().split(',');
+    var terms = filter.toUpperCase().split(',');
     el.querySelectorAll('.ll').forEach(function(s) {
         var txt = s.textContent.toUpperCase();
         var show = terms.some(function(t) { return t && txt.indexOf(t)>=0; });
         s.style.display = show ? '' : 'none';
     });
-    updateLogInfo(el);
+    updateInfo(cid, el);
 }
 
-function updateLogInfo(el) {
+function updateInfo(cid, el) {
+    var iId = cid ? 'logInfo_'+cid : 'logInfo';
+    var filter = cid ? (_logFilterMap[cid]||'') : _logFilter;
     var total = el ? (el.getAttribute('data-total')||'0') : '0';
     var shown = el ? el.querySelectorAll('.ll').length : 0;
-    var visible = _logFilter ? (el?el.querySelectorAll('.ll:not([style*="display: none"])').length:0) : shown;
-    var info = A.$('logInfo');
-    if (info) info.textContent = _logFilter ? visible+'/'+shown+'/'+total : shown+'/'+total;
+    var visible = filter ? (el?el.querySelectorAll('.ll:not([style*="display: none"])').length:0) : shown;
+    var info = document.getElementById(iId);
+    if (info) info.textContent = filter ? visible+'/'+shown+'/'+total : shown+'/'+total;
 }
 
-function loadLog() {
+function loadLogInto(cid) {
+    var cId = 'logC_'+cid;
+    var iId = 'logInfo_'+cid;
     A.ajax('/api/log?lines=2000', function(d) {
-        var el = A.$('logC');
+        var el = document.getElementById(cId);
         if (!el) return;
         var wasBot = el.scrollTop+el.clientHeight >= el.scrollHeight-20;
         var h = '';
@@ -102,21 +133,17 @@ function loadLog() {
         }
         el.innerHTML = h;
         el.setAttribute('data-total', d.total);
-        var info = A.$('logInfo');
-        if (info) info.textContent = _logFilter ? '?/'+d.lines.length+'/'+d.total : d.lines.length+'/'+d.total;
+        var filter = _logFilterMap[cid]||'';
+        var info = document.getElementById(iId);
+        if (info) info.textContent = filter ? '?/'+d.lines.length+'/'+d.total : d.lines.length+'/'+d.total;
         if (wasBot) el.scrollTop = el.scrollHeight;
-        applyLogFilter();
-        updateLogInfo(el);
+        applyFilter(cid);
+        updateInfo(cid, el);
     });
 }
 
 A.on('navigate', function(page) {
     if (page==='logs') buildUI();
 });
-
-setInterval(function() {
-    var el = A.$('page-logs');
-    if (el && el.classList.contains('active')) loadLog();
-}, 5000);
 
 })(window.Admin);
