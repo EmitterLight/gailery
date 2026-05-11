@@ -24,7 +24,7 @@ A.renderBlock_config = function(containerId) {
         var h = '';
         for (var i=0;i<groups.length;i++) {
             var g = groups[i];
-            h += '<div class="cfg-group"><div class="cfg-group-head">'+A.esc(g.name)+'</div>';
+            h += '<div class="cfg-group"><div class="cfg-group-head">'+(g.icon||'')+' '+A.esc(g.name)+'</div>';
             for (var j=0;j<g.params.length;j++) {
                 var p = g.params[j];
                 var isPrompt = p.k.indexOf('SYSTEM_PROMPT')!==-1||p.k.indexOf('tool:')!==-1;
@@ -56,15 +56,19 @@ A.renderBlock_models = function(containerId) {
     var pfx = 'mdl_'+containerId+'_';
     el.innerHTML =
         '<div class="mdl-token-box">'+
-        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">'+
+        '<div style="margin-bottom:12px"><div style="font-weight:600;font-size:13px;margin-bottom:4px">📁 Папка моделей</div>'+
+        '<div class="c-muted" style="font-size:11px;margin-bottom:6px">Все модели должны быть внутри этой директории</div>'+
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+
         '<input id="'+pfx+'dir" class="mdl-input" style="min-width:280px" placeholder="/opt/gailray/models/gguf">'+
         '<button class="btn btn-go btn-sm" id="'+pfx+'saveDir">Сохранить</button>'+
-        '<span id="'+pfx+'dirSt" style="font-size:11px"></span></div>'+
-        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">'+
+        '<span id="'+pfx+'dirSt" style="font-size:11px"></span></div></div>'+
+        '<div style="margin-bottom:12px"><div style="font-weight:600;font-size:13px;margin-bottom:4px">🔑 HuggingFace API Token</div>'+
+        '<div class="c-muted" style="font-size:11px;margin-bottom:6px">Нужен для скачивания моделей с HuggingFace</div>'+
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+
         '<input id="'+pfx+'hfToken" class="mdl-input" style="min-width:280px" type="password" placeholder="hf_token...">'+
         '<button class="btn btn-sec btn-sm" id="'+pfx+'showToken">👁</button>'+
         '<button class="btn btn-go btn-sm" id="'+pfx+'saveToken">Сохранить</button>'+
-        '<span id="'+pfx+'hfSt" style="font-size:11px"></span></div>'+
+        '<span id="'+pfx+'hfSt" style="font-size:11px"></span></div></div>'+
         '<div id="'+pfx+'status" class="mdl-status"></div></div>'+
         '<div id="'+pfx+'list">⏳ Загрузка моделей...</div>';
 
@@ -142,6 +146,7 @@ function loadModels(cid) {
                     if (f.exists && f.sha256_ok===true) hashIcon = ' <span class="c-ok" title="SHA256 совпадает">🔒</span>';
                     else if (f.exists && f.sha256_ok===false) hashIcon = ' <span class="c-err" title="SHA256 НЕ совпадает!">🔓</span>';
                     else if (f.exists && f.size_ok===false) hashIcon = ' <span class="c-err" title="Размер не совпадает!">⚠</span>';
+                    else if (f.exists && f.size_ok && f.sha256_ok===undefined) hashIcon = ' <span class="c-info" title="Размер совпадает, SHA256 не проверен">🔍</span>';
                     html += '<div class="mdl-file-item"><span class="'+fc+'">'+(f.exists?'✓':'✗')+'</span> '+A.esc(f.name)+fs+hashIcon+'</div>';
                 }
                 html += '</div>';
@@ -220,9 +225,10 @@ A.renderBlock_family = function(containerId) {
     if (!el) return;
     var pfx = 'fm_'+containerId+'_';
     el.innerHTML =
-        '<div class="backup-sec"><h3>Семейные факты и контекст</h3>'+
-        '<textarea class="c-text bg-deep bd-strong" style="width:100%;height:200px;border-width:1px;border-style:solid;border-radius:6px;padding:10px;font-family:monospace;font-size:12px" id="'+pfx+'facts"></textarea>'+
-        '<div class="maint-row"><button class="btn btn-go btn-sm" id="'+pfx+'save">Сохранить</button><button class="btn btn-sec btn-sm" id="'+pfx+'fill">Заполнить топ-персон</button><span id="'+pfx+'status" style="font-size:12px"></span></div></div>';
+        '<div class="backup-sec"><h3>Факты о семье и связях</h3>'+
+        '<p class="c-muted" style="font-size:12px;margin:4px 0 8px">Имена, родственные связи, даты, события. Модель обогащения описаний будет использовать этот текст для подстановки имён и контекста.</p>'+
+        '<textarea class="c-text bg-deep bd-strong" style="width:100%;min-height:400px;border-width:1px;border-style:solid;border-radius:6px;padding:10px;font-family:monospace;font-size:13px;line-height:1.6;resize:vertical" id="'+pfx+'facts"></textarea>'+
+        '<div class="maint-row"><button class="btn btn-go btn-sm" id="'+pfx+'save">Сохранить</button><button class="btn btn-sec btn-sm" id="'+pfx+'fill">Заполнить топ-10 персон</button><span id="'+pfx+'status" style="font-size:12px"></span></div></div>';
 
     document.getElementById(pfx+'save').addEventListener('click', function() { saveFamilyFacts(containerId); });
     document.getElementById(pfx+'fill').addEventListener('click', function() { fillTopPersonas(containerId); });

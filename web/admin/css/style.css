@@ -13,6 +13,7 @@ a { color: inherit; text-decoration: none; }
     --c-bg-card:#161b22; --c-bg-deep:#0d1117; --c-bg-input:#0d1117;
     --c-border-default:#21262d; --c-border-strong:#30363d;
     --c-accent:#58a6ff; --c-success:#3fb950; --c-warning:#d29922; --c-danger:#f85149; --c-info:#58a6ff; --c-orange:#f0883e;
+    --c-exif:#a5d6ff; --c-embed:#bc8cff;
     --c-label-bg:#161b22;
 }
 .light-theme {
@@ -20,6 +21,7 @@ a { color: inherit; text-decoration: none; }
     --c-bg-card:#ffffff; --c-bg-deep:#f6f8fa; --c-bg-input:#f6f8fa;
     --c-border-default:#d0d7de; --c-border-strong:#d0d7de;
     --c-accent:#0969da; --c-success:#1f883d; --c-warning:#9a6700; --c-danger:#cf222e; --c-info:#0969da; --c-orange:#bc4c00;
+    --c-exif:#6eadd8; --c-embed:#8250df;
     --c-label-bg:#f6f8fa;
 }
 .c-ok { color:var(--c-success); }
@@ -30,6 +32,8 @@ a { color: inherit; text-decoration: none; }
 .c-dim { color:var(--c-text-secondary); }
 .c-text { color:var(--c-text-primary); }
 .c-orange { color:var(--c-orange); }
+.c-exif { color:var(--c-exif); }
+.c-embed { color:var(--c-embed); }
 .c-accent { color:var(--c-accent); }
 .c-gold { color:#e3b341; }
 .light-theme .c-gold { color:#0969da; }
@@ -180,6 +184,7 @@ a { color: inherit; text-decoration: none; }
 .tasks { margin-bottom: 20px; }
 .task { background: #161b22; border: 1px solid #21262d; border-radius: 8px; margin-bottom: 8px; overflow: hidden; }
 .task-head { display: grid; grid-template-columns: 36px 1fr auto auto; align-items: center; padding: 10px 14px; gap: 10px; cursor: pointer; }
+.task-head.mini { grid-template-columns: 36px 1fr auto; cursor: default; }
 .task-icon { font-size: 18px; text-align: center; }
 .task-info .tn { font-size: 13px; color: #c9d1d9; font-weight: bold; }
 .task-info .td { font-size: 10px; color: #6e7681; margin-top: 2px; }
@@ -269,7 +274,7 @@ a { color: inherit; text-decoration: none; }
 .log-sec { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 14px; }
 .log-sec h3 { font-size: 13px; color: #58a6ff; margin-bottom: 6px; display: flex; justify-content: space-between; }
 .log-sec h3 span { color: #6e7681; font-weight: normal; font-size: 11px; }
-#logC { font-size: 10px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; max-height: 70vh; overflow-y: auto; background: #0d1117; border-radius: 4px; padding: 8px; }
+#logC, [id^="logC_"] { font-size: 10px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; min-height: 150px; height: 300px; resize: vertical; overflow-y: auto; background: #0d1117; border-radius: 4px; padding: 8px; border: 1px solid #21262d; }
 .fbtn { font-size:11px; padding:3px 8px; border-radius:4px; border:1px solid #21262d; background:#161b22; color:#8b949e; cursor:pointer; }
 .fbtn:hover { background:#21262d; color:#c9d1d9; }
 .fbtn.active { background:#1f6feb; color:#fff; border-color:#1f6feb; }
@@ -297,7 +302,7 @@ a { color: inherit; text-decoration: none; }
 .routing-toggle { display:flex; align-items:center; gap:6px; padding:6px 0; }
 .routing-dot { width:14px; height:14px; border-radius:50%; border:2px solid #30363d; cursor:pointer; transition:all .2s; }
 .routing-dot.active { background:#58a6ff; border-color:#58a6ff; box-shadow:0 0 6px rgba(88,166,255,.4); }
-.routing-line { flex:1; height:2px; background:#30363d; }
+.routing-line { width:36px; flex-shrink:0; height:2px; background:#30363d; }
 .ollama-table { width:100%; border-collapse:collapse; font-size:12px; margin-top:8px; }
 .ollama-table th { text-align:left; padding:6px 8px; border-bottom:1px solid #30363d; color:#8b949e; font-weight:500; }
 .ollama-table td { padding:6px 8px; border-bottom:1px solid #21262d; }
@@ -411,7 +416,7 @@ a { color: inherit; text-decoration: none; }
 .light-theme .log-sec { background: #ffffff; border-color: #d0d7de; }
 .light-theme .log-sec h3 { color: #0969da; }
 .light-theme .log-sec h3 span { color: #57606a; }
-.light-theme #logC { background: #f6f8fa; color: #24292f; }
+.light-theme #logC, .light-theme [id^="logC_"] { background: #f6f8fa; color: #24292f; }
 .light-theme .fbtn { background: #fff; color: #24292f; border-color: #d0d7de; }
 .light-theme .fbtn:hover { background: #f3f4f6; }
 .light-theme .fbtn.active { background: #0969da; color: #fff; border-color: #0969da; }

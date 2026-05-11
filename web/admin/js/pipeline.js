@@ -4,11 +4,11 @@ var st = null, taskState = {};
 var _statusTimer = null, _durationTimer = null;
 
 var STEPS = [
-    {id:'ingest', name:'Наполнение', icon:'📂', color:'#c9d1d9'},
-    {id:'describe', name:'Описание', icon:'🖼️', color:'#58a6ff'},
-    {id:'faces', name:'Лица', icon:'👤', color:'#d29922'},
-    {id:'exif', name:'EXIF', icon:'📷', color:'#a5d6ff'},
-    {id:'embed', name:'Семантическая индексация', icon:'🔍', color:'#bc8cff'},
+    {id:'ingest', name:'Наполнение', icon:'📂', cls:'c-text'},
+    {id:'describe', name:'Описание', icon:'🖼️', cls:'c-info'},
+    {id:'faces', name:'Лица', icon:'👤', cls:'c-warn'},
+    {id:'exif', name:'EXIF', icon:'📷', cls:'c-exif'},
+    {id:'embed', name:'Семантическая индексация', icon:'🔍', cls:'c-embed'},
 ];
 
 var TASKS = [
@@ -29,11 +29,12 @@ A.registerBlock('pipeline_tasks', 'Задачи пайплайна', '📋', fun
 A.renderBlock_pipelineStatus = function(containerId) {
     var el = document.getElementById(containerId);
     if (!el) return;
-    el.innerHTML = '<div id="psSummary_'+containerId+'"></div><div id="psBanner_'+containerId+'"></div>';
+    el.innerHTML = '<div id="psSummary_'+containerId+'"></div><div id="psCyclo_'+containerId+'"></div><div id="psCtrl_'+containerId+'"></div>';
     A.ajax('/api/status', function(d) {
         st = d; A.st = d;
         renderSummaryInto('psSummary_'+containerId);
-        renderCycloInto('psBanner_'+containerId);
+        renderCycloInto('psCyclo_'+containerId);
+        renderCtrlInto('psCtrl_'+containerId, containerId);
     });
 };
 
@@ -41,9 +42,10 @@ A.refreshBlock_pipelineStatus = function(containerId, d) {
     if (!d) return;
     st = d; A.st = d;
     var sEl = document.getElementById('psSummary_'+containerId);
-    var cEl = document.getElementById('psBanner_'+containerId);
+    var cEl = document.getElementById('psCyclo_'+containerId);
     if (sEl) sEl.innerHTML = buildSummaryHtml();
     if (cEl) cEl.innerHTML = buildCycloHtml();
+    updateCtrlState(containerId);
 };
 
 A.renderBlock_pipelineTasks = function(containerId) {
@@ -211,6 +213,74 @@ function renderCycloInto(cid) {
     var el = document.getElementById(cid);
     if (el) el.innerHTML = buildCycloHtml();
 }
+
+function renderCtrlInto(cid, blockCid) {
+    var el = document.getElementById(cid);
+    if (!el) return;
+    var run = st && st.current_step !== 'idle';
+    var pfx = 'ps_'+blockCid+'_';
+    el.innerHTML =
+        '<div class="pb-ctrl">'+
+        '<label>Лимит:</label><input type="number" id="'+pfx+'chainLimit" value="100" min="0">'+
+        '<label style="margin-left:8px">Источник:</label><select id="'+pfx+'chainRoot" class="ctrl-select"></select>'+
+        '<button class="btn btn-go" id="'+pfx+'btnStart" '+(run?'disabled':'')+'>Запустить цепочку</button>'+
+        '<button class="btn btn-stop" id="'+pfx+'btnStop" '+(run?'':'disabled')+'>Остановить всё</button>'+
+        '<span class="c-dim" style="font-size:11px" id="'+pfx+'chainInfo"></span></div>';
+    document.getElementById(pfx+'btnStart').addEventListener('click', function() { runChainBlock(blockCid); });
+    document.getElementById(pfx+'btnStop').addEventListener('click', function() { stopAllBlock(blockCid); });
+    loadRootsBlock(blockCid);
+}
+
+function updateCtrlState(blockCid) {
+    if (!st) return;
+    var run = st.current_step !== 'idle';
+    var pfx = 'ps_'+blockCid+'_';
+    var startBtn = document.getElementById(pfx+'btnStart');
+    var stopBtn = document.getElementById(pfx+'btnStop');
+    if (startBtn) startBtn.disabled = run;
+    if (stopBtn) stopBtn.disabled = !run;
+}
+
+function runChainBlock(blockCid) {
+    var pfx = 'ps_'+blockCid+'_';
+    var limEl = document.getElementById(pfx+'chainLimit');
+    var rootEl = document.getElementById(pfx+'chainRoot');
+    var infoEl = document.getElementById(pfx+'chainInfo');
+    var lim = limEl ? limEl.value : 100;
+    var rootId = rootEl ? rootEl.value : '';
+    var params = {step:'chain',ingest_limit:lim,desc_limit:lim,batch_size:10,exif:'1'};
+    if (rootId) params.root_id = rootId;
+    A.post('/api/control/start', params, function(d) {
+        if (d.ok) {
+            if (infoEl) infoEl.textContent = '⚡ Запущено '+new Date().toLocaleTimeString();
+            TASKS.forEach(function(t) { taskState[t.id].baseCount = stepCount(t.id).done; });
+        }
+    });
+}
+
+function stopAllBlock(blockCid) {
+    var pfx = 'ps_'+blockCid+'_';
+    var infoEl = document.getElementById(pfx+'chainInfo');
+    A.post('/api/control/stop', null, function() {
+        TASKS.forEach(function(t) {
+            if (taskState[t.id].status==='run') taskState[t.id] = {status:'idle',started:taskState[t.id].started,stopped:new Date(),baseCount:0};
+        });
+        if (infoEl) infoEl.textContent = 'Остановлено '+new Date().toLocaleTimeString();
+    });
+}
+
+function loadRootsBlock(blockCid) {
+    var pfx = 'ps_'+blockCid+'_';
+    A.ajax('/api/catalog/roots', function(roots) {
+        var sel = document.getElementById(pfx+'chainRoot');
+        if (!sel) return;
+        sel.innerHTML = '<option value="">Все включённые</option>';
+        for (var i=0;i<roots.length;i++) {
+            var r = roots[i];
+            if (r.enabled) sel.innerHTML += '<option value="'+r.root_id+'">'+A.esc(r.alias)+'</option>';
+        }
+    });
+}
 function renderTasksInto(cid) {
     var el = document.getElementById(cid);
     if (!el || !st) return;
@@ -228,7 +298,7 @@ function renderTasksInto(cid) {
         var cnt = stepCount(t.id);
         var descHtml = t.desc;
         if (cnt.total>0) descHtml += ' · <b class="c-info">'+cnt.done+'/'+cnt.total+' ('+A.fmtPct(stepPct(t.id))+')</b>';
-        h += '<div class="task"><div class="task-head"><div class="task-icon">'+t.icon+'</div>';
+        h += '<div class="task"><div class="task-head mini"><div class="task-icon">'+t.icon+'</div>';
         h += '<div class="task-info"><div class="tn">'+t.name+'</div><div class="td">'+descHtml+'</div></div>';
         h += '<div class="task-badge '+badgeCls+'">'+badgeText+'</div></div></div>';
     }
@@ -312,7 +382,7 @@ function renderCyclo() {
 
         h += '<div class="cy-step '+cls+'">';
         h += '<div class="cy-icon">'+s.icon+'</div>';
-        h += '<div class="cy-name" style="color:'+(isActive||isDone?s.color:'')+'">'+s.name+'</div>';
+        h += '<div class="cy-name'+(isActive||isDone?' '+s.cls:'')+'">'+s.name+'</div>';
         h += '<div class="cy-pct">'+pctStr+'</div>';
         h += '<div class="cy-count">'+countStr+'</div>';
         h += '<div class="cy-bar-bg"><div class="cy-bar" style="width:'+barW+'%"></div></div>';

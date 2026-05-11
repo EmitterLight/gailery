@@ -1,4 +1,4 @@
-// Ollama module — extended with model checking
+// Ollama module — URL from /api/settings, auto-check on load
 (function(A) {
 
 var _ollamaOk = false;
@@ -23,40 +23,49 @@ A.renderBlock_ollama = function(containerId) {
     if (!el) return;
     var pfx = 'ol_'+containerId+'_';
     el.innerHTML =
-        '<div class="mdl-token-box">'+
-        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">'+
-        '<input id="'+pfx+'url" class="mdl-input" style="min-width:280px" placeholder="http://ollama.localnet:11434">'+
-        '<button class="btn btn-go" id="'+pfx+'checkBtn" style="white-space:nowrap">Проверить</button>'+
-        '<span id="'+pfx+'status" style="font-size:11px"></span></div>'+
-        '<div id="'+pfx+'serverInfo" style="font-size:12px;margin-bottom:8px"></div>'+
-        '<div id="'+pfx+'modelsSec" style="display:none"><div id="'+pfx+'modelChecks"></div></div>'+
-        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;margin-top:8px">'+
-        '<label class="c-muted" style="font-size:11px">Embed модель:</label>'+
+        '<div class="maint-sec"><h3>🤖 Сервер Ollama</h3>'+
+        '<div class="maint-row">'+
+        '<label style="width:100px;font-size:12px;line-height:28px">URL сервера</label>'+
+        '<input id="'+pfx+'url" class="mdl-input" style="flex:1;max-width:350px" placeholder="http://ollama.localnet:11434">'+
+        '<button class="btn btn-go" id="'+pfx+'checkBtn">🔍 Проверить</button>'+
+        '<button class="btn btn-go" id="'+pfx+'saveBtn" style="display:none">💾 Сохранить</button>'+
+        '<span id="'+pfx+'saveStatus" class="c-dim" style="font-size:12px"></span></div>'+
+        '<div id="'+pfx+'serverInfo" class="c-dim" style="margin-top:8px;font-size:12px"></div></div>'+
+        '<div class="maint-sec" id="'+pfx+'modelsSec" style="display:none"><h3>📖 Проверка моделей</h3>'+
+        '<div id="'+pfx+'modelChecks" style="font-size:12px"></div></div>'+
+        '<div class="maint-sec" style="margin-top:12px"><h3>⚙️ Настройки моделей</h3>'+
+        '<div class="maint-row" style="margin-top:8px">'+
+        '<label class="c-muted" style="font-size:12px;width:120px">Embed модель:</label>'+
         '<input id="'+pfx+'embedModel" class="mdl-input" style="min-width:180px" value="qwen3-embedding:0.6b"></div>'+
-        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">'+
-        '<label class="c-muted" style="font-size:11px">Describe модель:</label>'+
+        '<div class="maint-row" style="margin-top:6px">'+
+        '<label class="c-muted" style="font-size:12px;width:120px">Describe модель:</label>'+
         '<input id="'+pfx+'descModel" class="mdl-input" style="min-width:180px" value="qwen3.5:4b"></div>'+
-        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">'+
-        '<label class="c-muted" style="font-size:11px">Chunk size:</label>'+
+        '<div class="maint-row" style="margin-top:6px">'+
+        '<label class="c-muted" style="font-size:12px;width:120px">Chunk size:</label>'+
         '<input id="'+pfx+'chunk" class="mdl-input" style="min-width:80px" value="128" type="number"></div>'+
-        '<button class="btn btn-go" id="'+pfx+'saveBtn" style="display:none">Сохранить</button>'+
-        '<span id="'+pfx+'saveStatus" style="font-size:11px;margin-left:8px"></span>'+
-        '<div id="'+pfx+'modelsList" style="margin-top:12px"></div></div>';
+        '<button class="btn btn-go" id="'+pfx+'saveModelsBtn" style="margin-top:8px">Сохранить настройки моделей</button>'+
+        '<span id="'+pfx+'modelSaveStatus" style="font-size:12px;margin-left:8px"></span></div>';
 
     document.getElementById(pfx+'checkBtn').addEventListener('click', function() { ollamaCheck(containerId); });
-    document.getElementById(pfx+'saveBtn').addEventListener('click', function() { ollamaSave(containerId); });
+    document.getElementById(pfx+'saveBtn').addEventListener('click', function() { ollamaSaveUrl(containerId); });
+    document.getElementById(pfx+'saveModelsBtn').addEventListener('click', function() { ollamaSaveModels(containerId); });
 
-    A.ajax('/api/config', function(cfg) {
-        var g = (cfg.groups||[]).find(function(x) { return x.name==='Ollama'; });
-        var items = g ? g.items||[] : [];
-        var u = items.find(function(x) { return x.key==='ollama_base_url'; });
-        var e = items.find(function(x) { return x.key==='ollama_embed_model'; });
-        var d = items.find(function(x) { return x.key==='ollama_describe_model'; });
-        var c = items.find(function(x) { return x.key==='ollama_embed_chunk'; });
-        if (u) { var inp = document.getElementById(pfx+'url'); if (inp) inp.value = u.value; }
-        if (e) { var inp = document.getElementById(pfx+'embedModel'); if (inp) inp.value = e.value; }
-        if (d) { var inp = document.getElementById(pfx+'descModel'); if (inp) inp.value = d.value; }
-        if (c) { var inp = document.getElementById(pfx+'chunk'); if (inp) inp.value = c.value; }
+    A.ajax('/api/settings/ollama_base_url', function(v) {
+        var url = (v && v.value) || '';
+        var inp = document.getElementById(pfx+'url');
+        if (inp && url) {
+            inp.value = url;
+            ollamaCheck(containerId);
+        }
+    });
+    A.ajax('/api/settings/ollama_embed_model', function(v) {
+        if (v && v.value) { var inp = document.getElementById(pfx+'embedModel'); if (inp) inp.value = v.value; }
+    });
+    A.ajax('/api/settings/ollama_describe_model', function(v) {
+        if (v && v.value) { var inp = document.getElementById(pfx+'descModel'); if (inp) inp.value = v.value; }
+    });
+    A.ajax('/api/settings/ollama_embed_chunk', function(v) {
+        if (v && v.value) { var inp = document.getElementById(pfx+'chunk'); if (inp) inp.value = v.value; }
     });
 };
 
@@ -93,10 +102,11 @@ function ollamaCheck(cid) {
             REQUIRED_MODELS.forEach(function(req) {
                 var found = names[req.name];
                 if (found) {
-                    h += '<td>'+A.esc(req.name)+'</td><td class="c-muted">'+req.purpose+'</td><td><span class="c-ok">✓ '+fmtBytesStr(found.size)+'</span></td>';
+                    h += '<tr><td>'+A.esc(req.name)+'</td><td class="c-muted">'+req.purpose+'</td><td style="text-align:center"><span class="c-ok">✓ '+fmtBytesStr(found.size)+'</span></td></tr>';
                 } else {
                     allOk = false;
-                    h += '<td>'+A.esc(req.name)+'</td><td class="c-muted">'+req.purpose+'</td><td><span class="c-err">✗ Нет</span></td>';
+                    h += '<tr><td>'+A.esc(req.name)+'</td><td class="c-muted">'+req.purpose+'</td><td style="text-align:center"><span class="c-err">✗ Нет</span></td></tr>';
+                    h += '<tr><td colspan="3" style="padding:0 8px 8px"><span class="c-warn" style="font-size:11px">Администратору сервера Ollama:<br><code>ollama pull '+A.esc(req.name)+'</code></span></td></tr>';
                 }
             });
             h += '</table>';
@@ -118,12 +128,24 @@ function ollamaCheck(cid) {
     });
 }
 
-function ollamaSave(cid) {
+function ollamaSaveUrl(cid) {
     var pfx = 'ol_'+cid+'_';
+    var url = (document.getElementById(pfx+'url')||{}).value||'';
     var el = document.getElementById(pfx+'saveStatus');
     if (el) { el.textContent = 'Сохраняю...'; el.className = 'c-info'; }
+    A.put('/api/settings/ollama_base_url', {value:url}, function() {
+        if (el) { el.textContent = '✓ Сохранено'; el.className = 'c-ok'; }
+        setTimeout(function() { if (el) el.textContent = ''; }, 3000);
+    }, function() {
+        if (el) { el.textContent = 'Ошибка'; el.className = 'c-err'; }
+    });
+}
+
+function ollamaSaveModels(cid) {
+    var pfx = 'ol_'+cid+'_';
+    var el = document.getElementById(pfx+'modelSaveStatus');
+    if (el) { el.textContent = 'Сохраняю...'; el.className = 'c-info'; }
     var vals = [
-        ['ollama_base_url', (document.getElementById(pfx+'url')||{}).value||''],
         ['ollama_embed_model', (document.getElementById(pfx+'embedModel')||{}).value||''],
         ['ollama_describe_model', (document.getElementById(pfx+'descModel')||{}).value||''],
         ['ollama_embed_chunk', parseInt((document.getElementById(pfx+'chunk')||{}).value||'128')]
