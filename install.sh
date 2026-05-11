@@ -1,5 +1,11 @@
 #!/bin/bash
-set -euo pipefail
+set -uo pipefail
+
+on_error() {
+    echo -e "\033[0;31m[ERROR] Скрипт упал на строке $1 (код $2)\033[0m" >&2
+    exit $2
+}
+trap 'on_error $LINENO $?' ERR
 
 # =============================================================================
 # Gailery — скрипт автоустановки
