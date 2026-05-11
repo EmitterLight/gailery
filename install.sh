@@ -94,7 +94,7 @@ if ! command -v nvidia-smi &>/dev/null; then
 fi
 
 DRIVER_VERSION=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
-CUDA_VERSION=$(nvidia-smi --query-gpu=cuda_version --format=csv,noheader | head -1)
+CUDA_VERSION=$(nvidia-smi 2>&1 | grep -oP 'CUDA Version:\s*\K[\d.]+' || echo "unknown")
 GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -1)
 VRAM_TOTAL=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader | head -1)
 COMPUTE_CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1)
@@ -132,7 +132,7 @@ DEBIAN_FRONTEND=noninteractive apt-get update -qq
 
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     build-essential cmake python3-venv python3-dev \
-    libvips-dev mosquitto mosquitto-clients \
+    libvips-dev mosquitto mosquitto-clients ffmpeg \
     libgl1-mesa-dev libglib2.0-0 xxhash wget git unzip \
     g++-12 gcc-12
 
@@ -198,14 +198,15 @@ pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124
 
 log_info "Установка requirements.txt (с numpy<2 для onnxruntime-gpu)..."
 pip install "numpy<2.0"
-pip install -r "$INSTALL_DIR/requirements.txt" --no-deps
 
-# НЮАНС #1: pip install -r requirements.txt без --no-deps пытается обновить
-# torch до >=2.10.0 (CUDA 13). Устанавливаем deps только для уже установленных
-# пакетов, исключая torch из требований:
-grep -v '^torch' "$INSTALL_DIR/requirements.txt" > /tmp/gailery-req-notorch.txt
-pip install -r /tmp/gailery-req-notorch.txt || true
-rm -f /tmp/gailery-req-notorch.txt
+# НЮАНС #1: pip install -r requirements.txt пытается обновить torch до >=2.10.0
+# (CUDA 13) и numpy до >=2. Решение: constraint-файл фиксирует версии torch и numpy.
+cat > /tmp/gailery-constraints.txt << CONEOF
+torch==2.6.0
+numpy<2.0
+CONEOF
+pip install -r "$INSTALL_DIR/requirements.txt" -c /tmp/gailery-constraints.txt
+rm -f /tmp/gailery-constraints.txt
 
 # НЮАНС #6: paho-mqtt, psutil, xxhash отсутствуют в requirements.txt
 log_info "Установка недостающих зависимостей (нюанс: не в requirements.txt)..."
@@ -306,7 +307,9 @@ log_step "7. Скачивание GGUF моделей"
 mkdir -p "$GGUF_DIR"
 
 # Qwen3.5-4B Q4_K_M (нюанс: репо unsloth, не Qwen — Qwen/ даёт 401)
-if [ ! -f "$GGUF_DIR/Qwen3.5-4B-Q4_K_M.gguf" ]; then
+VLM_SIZE=2740937888
+if [ ! -f "$GGUF_DIR/Qwen3.5-4B-Q4_K_M.gguf" ] || [ "$(stat -c%s "$GGUF_DIR/Qwen3.5-4B-Q4_K_M.gguf" 2>/dev/null)" != "$VLM_SIZE" ]; then
+    rm -f "$GGUF_DIR/Qwen3.5-4B-Q4_K_M.gguf"
     log_info "Скачивание Qwen3.5-4B-Q4_K_M (~2.7GB)..."
     wget -q --show-progress \
         "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf" \
@@ -316,7 +319,9 @@ else
 fi
 
 # mmproj-BF16 (из того же репо unsloth)
-if [ ! -f "$GGUF_DIR/mmproj-BF16.gguf" ]; then
+MMPROJ_SIZE=675569344
+if [ ! -f "$GGUF_DIR/mmproj-BF16.gguf" ] || [ "$(stat -c%s "$GGUF_DIR/mmproj-BF16.gguf" 2>/dev/null)" != "$MMPROJ_SIZE" ]; then
+    rm -f "$GGUF_DIR/mmproj-BF16.gguf"
     log_info "Скачивание mmproj-BF16 (~675MB)..."
     wget -q --show-progress \
         "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/mmproj-BF16.gguf" \
@@ -326,7 +331,9 @@ else
 fi
 
 # Qwen3-Embedding-0.6B F16 (нюанс: HF файл lowercase f16, локальный uppercase F16)
-if [ ! -f "$GGUF_DIR/Qwen3-Embedding-0.6B-F16.gguf" ]; then
+EMBED_SIZE=1197629632
+if [ ! -f "$GGUF_DIR/Qwen3-Embedding-0.6B-F16.gguf" ] || [ "$(stat -c%s "$GGUF_DIR/Qwen3-Embedding-0.6B-F16.gguf" 2>/dev/null)" != "$EMBED_SIZE" ]; then
+    rm -f "$GGUF_DIR/Qwen3-Embedding-0.6B-F16.gguf"
     log_info "Скачивание Qwen3-Embedding-0.6B-F16 (~1.2GB)..."
     wget -q --show-progress \
         "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF/resolve/main/Qwen3-Embedding-0.6B-f16.gguf" \
