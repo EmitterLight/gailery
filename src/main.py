@@ -619,7 +619,7 @@ async def mqtt_workers():
         lock_raw = states.get("__gpu_lock__")
     except Exception:
         pass
-    return {"workers": result, "current_step": mq.get_current_step()}
+    return {"workers": result, "current_step": mq.get_current_step(), "db_writing": mq.is_db_writing()}
 
 
 @app.get("/api/watchdog/crashes")

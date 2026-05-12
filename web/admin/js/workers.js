@@ -14,7 +14,7 @@ A.renderBlock_workers = function(containerId) {
         '<div class="workers-grid" id="wkGrid_'+containerId+'"></div>'+
         '</div>';
     A.ajax('/api/mqtt/workers', function(d) {
-        A.renderWorkerCards('wkGrid_'+containerId, d.workers || {});
+        A.renderWorkerCards('wkGrid_'+containerId, d.workers || {}, d.db_writing);
     });
 };
 
@@ -40,7 +40,7 @@ function buildUI() {
 function loadWorkers() {
     A.ajax('/api/mqtt/workers', function(d) {
         var w = d.workers || {};
-        A.renderWorkerCards('workersGrid', w);
+        A.renderWorkerCards('workersGrid', w, d.db_writing);
         window._lastWorkers = w;
         var anyAlive = false, anyDead = false;
         for (var i=0;i<A.WORKER_NAMES.length;i++) {

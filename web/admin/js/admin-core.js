@@ -196,7 +196,7 @@ function getBlock(id) {
     return null;
 }
 
-function renderWorkerCards(containerId, workers) {
+function renderWorkerCards(containerId, workers, dbWriting) {
     var el = byId(containerId);
     if (!el) return;
     var h = '';
@@ -213,13 +213,11 @@ function renderWorkerCards(containerId, workers) {
         if (s.gpu_held) h += '<div class="wcard-row wcard-gpu">GPU</div>';
         h += '</div>';
     }
-    var p = workers.pipeline || {};
-    var dbAlive = p.alive || false;
-    var dbDotCls = dbAlive ? 'alive' : 'idle';
-    h += '<div class="wcard">';
-    h += '<div class="wcard-name"><span>🗄 Запись в БД</span><span class="wcard-dot '+dbDotCls+'"></span></div>';
-    h += '<div class="wcard-row">Подписка: <b class="'+(dbAlive?'c-ok':'c-warn')+'">gailray/db/cmd</b></div>';
-    h += '<div class="wcard-row">'+(dbAlive?'<b class="c-ok">Подписан</b> (pipeline PID '+p.pid+')':'<b class="c-warn">Нет подписчика</b>')+'</div>';
+    var wCls = dbWriting ? 'db-write-active' : '';
+    var dotCls = dbWriting ? 'alive' : 'idle';
+    h += '<div class="wcard '+wCls+'" id="dbWriteCard">';
+    h += '<div class="wcard-name"><span>🗄 Запись в БД</span><span class="wcard-dot '+dotCls+'"></span></div>';
+    h += '<div class="wcard-row">'+(dbWriting?'<b class="c-ok">⚡ пишет</b>':'<span class="c-dim">ожидание</span>')+'</div>';
     h += '</div>';
     el.innerHTML = h;
 }

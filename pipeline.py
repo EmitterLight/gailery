@@ -412,10 +412,14 @@ def _process_db_cmds():
         cmd = data.get("cmd", "")
         params = data.get("params", {})
         request_id = data.get("request_id", "")
+        if _mq:
+            from mqtt_client import DB_WRITING_TOPIC
+            _mq.publish(DB_WRITING_TOPIC, True, retain=False)
         result = _execute_db_cmd(cmd, params)
-        if request_id and _mq:
-            from mqtt_client import db_result_topic
+        if _mq:
+            from mqtt_client import db_result_topic, DB_WRITING_TOPIC
             _mq.publish(db_result_topic(request_id), result, retain=False)
+            _mq.publish(DB_WRITING_TOPIC, False, retain=False)
 
 
 def _collect_metrics():

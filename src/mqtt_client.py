@@ -347,6 +347,7 @@ class ApiMQTT(GailrayMQTT):
                 self.subscribe(worker_gpu_held_topic(name), self._make_handler(name, "gpu_held"))
             self.subscribe(gpu_lock_topic(), self._gpu_lock_handler)
             self.subscribe(watchdog_mode_topic(), self._watchdog_mode_handler)
+            self.subscribe(DB_WRITING_TOPIC, self._db_writing_handler)
         return result
 
     def _make_handler(self, name, field):
@@ -372,6 +373,12 @@ class ApiMQTT(GailrayMQTT):
 
     def _watchdog_mode_handler(self, payload, msg):
         self._watchdog_mode = payload
+
+    def _db_writing_handler(self, payload, msg):
+        self._db_writing = payload.lower() == "true"
+
+    def is_db_writing(self):
+        return getattr(self, '_db_writing', False)
 
     def get_watchdog_mode(self):
         return self._watchdog_mode
@@ -514,6 +521,7 @@ PIPELINE_GPU_PROCS = [
 
 DB_CMD_TOPIC = _topic("db", "cmd")
 DB_RESULT_PREFIX = _topic("db", "result")
+DB_WRITING_TOPIC = _topic("db", "writing")
 
 
 def db_result_topic(request_id):
