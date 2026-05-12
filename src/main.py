@@ -792,7 +792,6 @@ async def control_reset(body: dict):
         ],
         "faces": [
             ("DELETE FROM faces", None),
-            ("UPDATE photos SET faces_present=0 WHERE deleted=0", None),
             ("UPDATE catalog_files SET faces_done=0 WHERE is_canonical=1 AND deleted=0", None),
             ("DELETE FROM personas", None),
         ],
