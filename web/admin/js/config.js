@@ -28,21 +28,93 @@ A.renderBlock_config = function(containerId) {
             for (var j=0;j<g.params.length;j++) {
                 var p = g.params[j];
                 var isPrompt = p.k.indexOf('SYSTEM_PROMPT')!==-1||p.k.indexOf('tool:')!==-1;
-                var pathBadge = '';
+                var pathCol = '<div class="cfg-path"></div>';
                 if (p.path) {
-                    pathBadge = p.exists ? ' <span class="c-ok" title="Директория существует">✓</span>' : ' <span class="c-err" title="Директория НЕ найдена!">✗</span>';
+                    var cls = p.exists ? 'c-ok' : 'c-err';
+                    var sym = p.exists ? '✓' : '✗';
+                    var ttl = p.exists ? 'Путь существует' : 'Путь НЕ найден!';
+                    pathCol = '<div class="cfg-path '+cls+'" title="'+ttl+'">'+sym+'</div>';
                 }
-                h += '<div class="cfg-row"><div class="cfg-key">'+A.esc(p.k)+pathBadge+'</div>';
-                if (isPrompt) h += '<div class="cfg-val cfg-prompt"><pre>'+A.esc(p.v)+'</pre></div>';
-                else h += '<div class="cfg-val">'+A.esc(p.v)+'</div>';
-                h += '<div class="cfg-desc">'+A.esc(p.d)+'</div></div>';
+                h += '<div class="cfg-row';
+                if (p.editable) h += ' cfg-editable';
+                h += '" data-env="'+A.esc(p.env_key||'')+'">';
+                h += '<div class="cfg-key">'+A.esc(p.k)+'</div>';
+                if (isPrompt) {
+                    h += '<div class="cfg-val cfg-prompt"><pre>'+A.esc(p.v)+'</pre></div>';
+                } else if (p.editable) {
+                    h += '<div class="cfg-val cfg-edit-val" data-original="'+A.esc(p.v)+'" data-env="'+A.esc(p.env_key||'')+'">'+A.esc(p.v)+'</div>';
+                } else {
+                    h += '<div class="cfg-val">'+A.esc(p.v)+'</div>';
+                }
+                h += '<div class="cfg-desc">'+A.esc(p.d)+'</div>'+pathCol+'</div>';
             }
             h += '</div>';
         }
         var content = document.getElementById('cfgContent_'+containerId);
         if (content) content.innerHTML = h;
+        var editVals = content.querySelectorAll('.cfg-edit-val');
+        for (var k=0;k<editVals.length;k++) {
+            editVals[k].addEventListener('click', function(e) { startCfgEdit(this); });
+        }
     });
 };
+
+function startCfgEdit(valEl) {
+    if (valEl.classList.contains('cfg-editing')) return;
+    var original = valEl.getAttribute('data-original');
+    var envKey = valEl.getAttribute('data-env');
+    valEl.classList.add('cfg-editing');
+    valEl.innerHTML = '<input class="cfg-input" value="'+A.esc(original)+'" />'+
+        '<button class="btn btn-go btn-sm cfg-save" title="Сохранить">✓</button>'+
+        '<button class="btn btn-sec btn-sm cfg-cancel" title="Отмена">✗</button>'+
+        '<span class="cfg-save-st"></span>';
+    var inp = valEl.querySelector('.cfg-input');
+    var saveBtn = valEl.querySelector('.cfg-save');
+    var cancelBtn = valEl.querySelector('.cfg-cancel');
+    inp.focus();
+    inp.select();
+    inp.addEventListener('keydown', function(e) {
+        if (e.key==='Enter') saveCfgEdit(valEl, envKey);
+        if (e.key==='Escape') cancelCfgEdit(valEl, original);
+    });
+    saveBtn.addEventListener('click', function(e) { e.stopPropagation(); saveCfgEdit(valEl, envKey); });
+    cancelBtn.addEventListener('click', function(e) { e.stopPropagation(); cancelCfgEdit(valEl, original); });
+    inp.addEventListener('click', function(e) { e.stopPropagation(); });
+}
+
+function saveCfgEdit(valEl, envKey) {
+    var inp = valEl.querySelector('.cfg-input');
+    var st = valEl.querySelector('.cfg-save-st');
+    var newVal = inp ? inp.value.trim() : '';
+    var original = valEl.getAttribute('data-original');
+    if (!envKey) { cancelCfgEdit(valEl, original); return; }
+    if (st) { st.textContent = '⏳'; st.className = 'cfg-save-st c-info'; }
+    A.post('/api/config/update', {env_key: envKey, value: newVal}, function(d) {
+        if (d.ok) {
+            valEl.setAttribute('data-original', newVal);
+            finishCfgEdit(valEl, newVal, '✓ Сохранено', 'c-ok');
+        } else {
+            finishCfgEdit(valEl, original, '✗ '+(d.error||''), 'c-err');
+        }
+    }, function(e) {
+        finishCfgEdit(valEl, original, '✗ Ошибка сети', 'c-err');
+    });
+}
+
+function finishCfgEdit(valEl, value, msg, msgCls) {
+    valEl.classList.remove('cfg-editing');
+    valEl.innerHTML = '<span>'+A.esc(value)+'</span> <span class="cfg-save-st '+msgCls+'">'+msg+'</span>';
+    setTimeout(function() {
+        valEl.textContent = value;
+        valEl.addEventListener('click', function(e) { startCfgEdit(this); });
+    }, 2000);
+}
+
+function cancelCfgEdit(valEl, original) {
+    valEl.classList.remove('cfg-editing');
+    valEl.textContent = original;
+    valEl.addEventListener('click', function(e) { startCfgEdit(this); });
+}
 
 // ═══════ MODELS ═══════
 function buildModels() {

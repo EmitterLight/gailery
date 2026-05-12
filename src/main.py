@@ -1183,8 +1183,8 @@ async def get_config():
             "name": "Сервис",
             "icon": "\U0001f3e0",
             "params": [
-                {"k": "GALLERY_SERVICE_NAME", "v": SERVICE_NAME, "d": "Имя сервиса (systemd, MQTT prefix по умолчанию)"},
-                {"k": "GALLERY_MQTT_PREFIX", "v": MQTT_PREFIX, "d": "MQTT префикс (топики: {prefix}/worker/...)"},
+                {"k": "GALLERY_SERVICE_NAME", "v": SERVICE_NAME, "d": "Имя сервиса (systemd, MQTT prefix по умолчанию)", "env_key": "GALLERY_SERVICE_NAME", "editable": True},
+                {"k": "GALLERY_MQTT_PREFIX", "v": MQTT_PREFIX, "d": "MQTT префикс (топики: {prefix}/worker/...)", "env_key": "GALLERY_MQTT_PREFIX", "editable": True},
             ]
         },
         {
@@ -1192,11 +1192,11 @@ async def get_config():
             "icon": "\U0001f4c1",
             "params": [
                 {"k": "Корни фото (catalog_roots)", "v": ", ".join(r["root_path"] for r in get_db().get_catalog_roots()), "d": "Динамические корни из каталога", "path": True},
-                {"k": "PHOTO_SHARE_PATH", "v": str(PHOTO_SHARE_PATH), "d": "Корневая папка фото", "path": True},
-                {"k": "DATA_DIR", "v": str(DATA_DIR), "d": "Директория данных (БД, LanceDB, флаги)", "path": True},
-                {"k": "THUMBNAILS_DIR", "v": str(THUMBNAILS_DIR), "d": "Директория превью", "path": True},
-                {"k": "LOGS_DIR", "v": str(LOGS_DIR), "d": "Директория логов", "path": True},
-                {"k": "LLAMA_CPP_DIR", "v": str(LLAMA_CPP_DIR), "d": "Путь к llama.cpp", "path": True},
+                {"k": "PHOTO_SHARE_PATH", "v": str(PHOTO_SHARE_PATH), "d": "Корневая папка фото", "path": True, "env_key": "PHOTO_SHARE_PATH", "editable": True},
+                {"k": "DATA_DIR", "v": str(DATA_DIR), "d": "Директория данных (БД, LanceDB, флаги)", "path": True, "env_key": "GALLERY_DATA_DIR", "editable": True},
+                {"k": "THUMBNAILS_DIR", "v": str(THUMBNAILS_DIR), "d": "Директория превью", "path": True, "env_key": "GALLERY_THUMBNAILS_DIR", "editable": True},
+                {"k": "LOGS_DIR", "v": str(LOGS_DIR), "d": "Директория логов", "path": True, "env_key": "GALLERY_LOGS_DIR", "editable": True},
+                {"k": "LLAMA_CPP_DIR", "v": str(LLAMA_CPP_DIR), "d": "Путь к llama.cpp", "path": True, "env_key": "LLAMA_CPP_DIR", "editable": True},
                 {"k": "LANCEDB_PATH", "v": str(LANCEDB_PATH), "d": "Путь к LanceDB", "path": True},
                 {"k": "LOG_FILE", "v": str(LOG_FILE), "d": "Файл лога пайплайна"},
                 {"k": "FLAG_DIR", "v": str(FLAG_DIR), "d": "Директория флагов воркеров", "path": True},
@@ -1206,24 +1206,24 @@ async def get_config():
             "name": "MQTT",
             "icon": "\U0001f4e1",
             "params": [
-                {"k": "MQTT_HOST", "v": MQTT_HOST, "d": "Адрес MQTT брокера"},
-                {"k": "MQTT_PORT", "v": str(MQTT_PORT), "d": "TCP порт MQTT"},
-                {"k": "MQTT_WS_PORT", "v": str(MQTT_WS_PORT), "d": "WebSocket порт MQTT"},
-                {"k": "GPU_LOCK_TIMEOUT", "v": str(GPU_LOCK_TIMEOUT), "d": "Таймаут захвата GPU (сек)"},
+                {"k": "MQTT_HOST", "v": MQTT_HOST, "d": "Адрес MQTT брокера", "env_key": "GALLERY_MQTT_HOST", "editable": True},
+                {"k": "MQTT_PORT", "v": str(MQTT_PORT), "d": "TCP порт MQTT", "env_key": "GALLERY_MQTT_PORT", "editable": True},
+                {"k": "MQTT_WS_PORT", "v": str(MQTT_WS_PORT), "d": "WebSocket порт MQTT", "env_key": "GALLERY_MQTT_WS_PORT", "editable": True},
+                {"k": "GPU_LOCK_TIMEOUT", "v": str(GPU_LOCK_TIMEOUT), "d": "Таймаут захвата GPU (сек)", "env_key": "GALLERY_GPU_LOCK_TIMEOUT", "editable": True},
             ]
         },
         {
             "name": "Маршрутизация AI",
             "icon": "\U0001f500",
             "params": [
-                {"k": "OLLAMA_MODE", "v": OLLAMA_MODE, "d": "Режим: local | ollama (глобальный override)"},
-                {"k": "OLLAMA_BASE_URL", "v": OLLAMA_BASE_URL, "d": "URL Ollama сервера", "url": True},
-                {"k": "OLLAMA_EMBED_MODEL", "v": OLLAMA_EMBED_MODEL, "d": "Модель Ollama для эмбеддингов"},
-                {"k": "OLLAMA_EMBED_CHUNK", "v": str(OLLAMA_EMBED_CHUNK), "d": "Размер чанка Ollama эмбеддингов"},
-                {"k": "OLLAMA_DESCRIBE_MODEL", "v": OLLAMA_DESCRIBE_MODEL, "d": "Модель Ollama для описания фото"},
-                {"k": "embed_backend", "v": embed_backend or "(из OLLAMA_MODE)", "d": "Бэкенд эмбеддингов: local | ollama"},
-                {"k": "search_backend", "v": search_backend or "(из OLLAMA_MODE)", "d": "Бэкенд поиска: local | ollama"},
-                {"k": "describe_backend", "v": describe_backend or "(из OLLAMA_MODE)", "d": "Бэкенд описания: local | ollama"},
+                {"k": "OLLAMA_MODE", "v": OLLAMA_MODE, "d": "Режим: local | ollama (глобальный override)", "env_key": "OLLAMA_MODE", "editable": True},
+                {"k": "OLLAMA_BASE_URL", "v": OLLAMA_BASE_URL, "d": "URL Ollama сервера", "url": True, "env_key": "OLLAMA_BASE_URL", "editable": True},
+                {"k": "OLLAMA_EMBED_MODEL", "v": OLLAMA_EMBED_MODEL, "d": "Модель Ollama для эмбеддингов", "env_key": "OLLAMA_EMBED_MODEL", "editable": True},
+                {"k": "OLLAMA_EMBED_CHUNK", "v": str(OLLAMA_EMBED_CHUNK), "d": "Размер чанка Ollama эмбеддингов", "env_key": "OLLAMA_EMBED_CHUNK", "editable": True},
+                {"k": "OLLAMA_DESCRIBE_MODEL", "v": OLLAMA_DESCRIBE_MODEL, "d": "Модель Ollama для описания фото", "env_key": "OLLAMA_DESCRIBE_MODEL", "editable": True},
+                {"k": "embed_backend", "v": embed_backend or "(из OLLAMA_MODE)", "d": "Бэкенд эмбеддингов: local | ollama", "env_key": "embed_backend", "editable": True},
+                {"k": "search_backend", "v": search_backend or "(из OLLAMA_MODE)", "d": "Бэкенд поиска: local | ollama", "env_key": "search_backend", "editable": True},
+                {"k": "describe_backend", "v": describe_backend or "(из OLLAMA_MODE)", "d": "Бэкенд описания: local | ollama", "env_key": "describe_backend", "editable": True},
             ]
         },
         {
@@ -1309,6 +1309,41 @@ async def get_config():
     _config_cache["data"] = result
     _config_cache["ts"] = _time.time()
     return result
+
+
+@app.post("/api/config/update")
+async def config_update(request: Request):
+    body = await request.json()
+    env_key = body.get("env_key", "")
+    value = body.get("value", "")
+    if not env_key:
+        return {"ok": False, "error": "env_key is required"}
+    env_path = PROJECT_ROOT / ".env"
+    lines = []
+    found = False
+    if env_path.exists():
+        with open(env_path) as f:
+            for line in f:
+                s = line.strip()
+                if s.startswith(env_key + "="):
+                    lines.append(f"{env_key}={value}\n")
+                    found = True
+                else:
+                    lines.append(line)
+    if not found:
+        lines.append(f"{env_key}={value}\n")
+    with open(env_path, "w") as f:
+        f.writelines(lines)
+    os.environ[env_key] = str(value)
+    _config_cache["data"] = None
+    _config_cache["ts"] = 0
+    import importlib
+    try:
+        import config as _cfg_mod
+        importlib.reload(_cfg_mod)
+    except Exception:
+        pass
+    return {"ok": True, "env_key": env_key, "value": value}
 
 
 @app.get("/{path:path}")
