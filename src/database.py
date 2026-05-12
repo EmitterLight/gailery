@@ -59,16 +59,30 @@ class DatabaseManager:
         self.sqlite.row_factory = sqlite3.Row
         self.sqlite.execute("PRAGMA journal_mode=WAL")
         self.sqlite.execute("PRAGMA foreign_keys=ON")
-        self.sqlite.execute("PRAGMA busy_timeout=5000")
+        self.sqlite.execute("PRAGMA busy_timeout=30000")
+        self.sqlite.execute("PRAGMA wal_autocheckpoint=1000")
 
         self.lancedb_path = LANCEDB_PATH
         self.lancedb_path.mkdir(parents=True, exist_ok=True)
         self.vectordb = lancedb.connect(str(self.lancedb_path))
 
-        self._create_tables()
+        self._create_tables_or_wait()
         self._open_vector_tables()
 
         logger.info(f"Database initialized: SQLite={self.db_path}, LanceDB={self.lancedb_path}")
+
+    def _create_tables_or_wait(self):
+        import time as _time
+        for attempt in range(10):
+            try:
+                self._create_tables()
+                return
+            except sqlite3.OperationalError as e:
+                if "locked" in str(e) and attempt < 9:
+                    logger.warning(f"database locked on _create_tables, retry {attempt+1}/10 in {3*(attempt+1)}s")
+                    _time.sleep(3 * (attempt + 1))
+                else:
+                    raise
 
     def _create_tables(self):
         cur = self.sqlite.cursor()
