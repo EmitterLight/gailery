@@ -277,6 +277,48 @@ def test_api_status_returns_data():
         pytest.fail(f"/api/status не отвечает: {e}")
 
 
+def test_gallery_search_works():
+    """Галерея: /api/photos/search возвращает валидный JSON с фото."""
+    import urllib.request
+    try:
+        resp = urllib.request.urlopen("http://localhost:8000/api/photos/search?limit=3", timeout=15)
+        data = json.loads(resp.read())
+        photos = data if isinstance(data, list) else data.get("photos", data.get("results", []))
+        assert isinstance(photos, list), f"/api/photos/search вернул не список: {type(photos)}"
+    except Exception as e:
+        pytest.fail(
+            f"/api/photos/search не работает: {e}\n"
+            "Галерея недоступна! Проверь логи API."
+        )
+
+
+def test_gallery_photos_api_works():
+    """Галерея: ключевые API фото возвращают 200 + JSON."""
+    import urllib.request
+    endpoints = [
+        "/api/photos/dates",
+        "/api/persons/",
+    ]
+    for ep in endpoints:
+        try:
+            resp = urllib.request.urlopen(f"http://localhost:8000{ep}", timeout=10)
+            body = resp.read()
+            json.loads(body)
+        except Exception as e:
+            pytest.fail(f"{ep} не работает: {e}")
+
+
+def test_gallery_page_renders():
+    """Галерея: /gallery отдаёт HTML (не 500)."""
+    import urllib.request
+    try:
+        resp = urllib.request.urlopen("http://localhost:8000/gallery", timeout=10)
+        html = resp.read().decode()
+        assert "Gailery" in html or "gallery" in html.lower(), "/gallery не содержит контент галереи"
+    except Exception as e:
+        pytest.fail(f"/gallery не отдаётся: {e}")
+
+
 def test_watchdog_mode_consistent_with_flags():
     """mode из API согласован с реальным состоянием: sleeping/waiting/active."""
     import urllib.request

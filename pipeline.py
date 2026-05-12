@@ -437,6 +437,7 @@ def _collect_metrics():
 
 
 def main():
+    global _wake_flag
     parser = argparse.ArgumentParser(description="Gailery batch worker loop")
     parser.add_argument("--batch", type=int, default=60, help="Photos per iteration (ingest/describe)")
     parser.add_argument("--ingest", type=int, default=0, help="Override ingest batch size (0=use --batch)")

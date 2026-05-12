@@ -12,6 +12,7 @@ import subprocess
 import time
 import threading
 from config import PHOTO_SHARE_PATH, THUMBNAILS_DIR, LLAMA_CPP_DIR, PROJECT_ROOT, LOG_FILE
+import config
 
 logger = logging.getLogger(__name__)
 
