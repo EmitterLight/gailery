@@ -347,6 +347,20 @@ async def get_status():
     status["pipeline_started_at"] = pipeline_started_at
     status["server_time"] = datetime.now().isoformat()
 
+    try:
+        git_commit = subprocess.run(
+            ["git", "-C", str(PROJECT_ROOT), "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=5
+        ).stdout.strip()
+        git_date = subprocess.run(
+            ["git", "-C", str(PROJECT_ROOT), "log", "-1", "--format=%cs"],
+            capture_output=True, text=True, timeout=5
+        ).stdout.strip()
+        status["git_commit"] = git_commit
+        status["git_date"] = git_date
+    except Exception:
+        pass
+
     if mq:
         mqtt_progress = {}
         for name in ["ingest", "describe", "faces", "exif", "embed"]:

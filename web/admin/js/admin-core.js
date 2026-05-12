@@ -219,24 +219,30 @@ function renderWorkerCards(containerId, workers) {
 window.Admin = A;
 
 document.addEventListener('DOMContentLoaded', function() {
-    var btn = document.getElementById('btnTopUpdate');
-    if (btn) btn.addEventListener('click', function() {
-        btn.disabled = true;
-        btn.textContent = '⏳ Обновление...';
-        A.post('/api/control/update', null, function(d) {
-            if (d && d.ok) {
-                if (d.updated) {
-                    btn.textContent = '✅ Перезапуск...';
-                    setTimeout(function() { location.reload(); }, 3000);
-                } else {
-                    btn.textContent = '✅ Актуально';
-                    setTimeout(function() { btn.disabled = false; btn.textContent = '⬆ Обновить'; }, 2000);
-                }
-            } else {
-                btn.textContent = '❌ Ошибка';
-                setTimeout(function() { btn.disabled = false; btn.textContent = '⬆ Обновить'; }, 2000);
-            }
+    var vi = document.getElementById('versionInfo');
+    if (vi) {
+        A.ajax('/api/status', function(d) {
+            var commit = (d.git_commit || d.commit || '').substring(0,8);
+            var date = d.server_time ? d.server_time.substring(0,10) : '';
+            vi.innerHTML = 'Gailery '+commit+' · '+date+'<br><a href="#" style="color:var(--c-accent,#58a6ff)" id="checkUpdate">Проверить обновления</a>';
+            document.getElementById('checkUpdate').addEventListener('click', function(e) {
+                e.preventDefault();
+                this.textContent = 'Проверяем...';
+                var self = this;
+                A.post('/api/control/update', null, function(r) {
+                    if (r && r.ok) {
+                        if (r.updated) {
+                            self.textContent = 'Обновлено, перезапуск...';
+                            setTimeout(function() { location.reload(); }, 3000);
+                        } else {
+                            self.textContent = 'Актуально';
+                        }
+                    } else {
+                        self.textContent = 'Ошибка: '+(r.error||'');
+                    }
+                });
+            });
         });
-    });
+    }
 });
 })();
