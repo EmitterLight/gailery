@@ -73,12 +73,6 @@ class DatabaseManager:
 
     def _create_tables_or_wait(self):
         import time as _time
-        tables_exist = False
-        try:
-            self.sqlite.execute("SELECT 1 FROM photos LIMIT 1")
-            tables_exist = True
-        except sqlite3.OperationalError:
-            pass
         for attempt in range(10):
             try:
                 self._create_tables()
