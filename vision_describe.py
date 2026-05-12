@@ -375,8 +375,8 @@ def save_description(db, photo_path, parsed):
                 issue_type=parsed.get("issue_type"),
                 photo_type=parsed.get("photo_type", "photo"),
             )
-            db.safe_execute("UPDATE photos SET embedded = 0 WHERE photo_id = ?", (photo["photo_id"],))
-            db.safe_commit()
+            db.sqlite.execute("UPDATE photos SET embedded = 0 WHERE photo_id = ?", (photo["photo_id"],))
+            db.sqlite.commit()
             db.update_catalog_file_by_path(path_str, described=1, faces_done=int(parsed["has_faces"]))
         else:
             print(f"[WARN] Photo not in DB, skipping: {path_str}", flush=True)

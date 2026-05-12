@@ -129,13 +129,13 @@ def run_detection(photos):
             try:
                 ext = os.path.splitext(path)[1].lower()
                 if ext in {".mp4", ".mov", ".avi", ".mkv", ".webm", ".3gp", ".wmv", ".mpg", ".mpeg", ".m4v", ".flv", ".vob", ".ts"}:
-                    db.safe_execute("UPDATE photos SET media_type = 'video', faces_present = 0, description = '[видео]' WHERE path = ? AND deleted = 0", (path,))
-                    db.safe_commit()
+                    db.sqlite.execute("UPDATE photos SET media_type = 'video', faces_present = 0, description = NULL WHERE path = ? AND deleted = 0", (path,))
+                    db.sqlite.commit()
                     log(f"  set media_type=video (not an image)")
                 else:
-                    db.safe_execute("UPDATE photos SET faces_present = 0, deleted = 1 WHERE path = ? AND deleted = 0", (path,))
-                    db.safe_execute("UPDATE catalog_files SET deleted = 1, deleted_type = 'auto_corrupted' WHERE abs_path = ? AND deleted = 0", (path,))
-                    db.safe_commit()
+                    db.sqlite.execute("UPDATE photos SET faces_present = 0, deleted = 1 WHERE path = ? AND deleted = 0", (path,))
+                    db.sqlite.execute("UPDATE catalog_files SET deleted = 1, deleted_type = 'auto_corrupted' WHERE abs_path = ? AND deleted = 0", (path,))
+                    db.sqlite.commit()
                     log(f"  marked as deleted (corrupted file)")
             except Exception:
                 pass
@@ -182,8 +182,8 @@ def run_detection(photos):
                 photo = db.get_photo_by_path(path)
                 if photo:
                     t_upd = time.time()
-                    db.safe_execute("UPDATE photos SET embedded = 0 WHERE photo_id = ?", (photo["photo_id"],))
-                    db.safe_commit()
+                    db.sqlite.execute("UPDATE photos SET embedded = 0 WHERE photo_id = ?", (photo["photo_id"],))
+                    db.sqlite.commit()
                     dt_sql_upd = time.time() - t_upd
             except Exception:
                 pass
