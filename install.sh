@@ -83,6 +83,9 @@ VENV_DIR="$INSTALL_DIR/venv"
 LLAMA_CPP_DIR="/opt/llama.cpp"
 GGUF_DIR="$INSTALL_DIR/models/gguf"
 CUDA_ARCH="61"
+SVC_NAME="gailery"
+SVC_PIPELINE="${SVC_NAME}-pipeline"
+SVC_WATCHDOG="${SVC_NAME}-watchdog"
 CODE_UPDATED=0
 
 # =============================================================================
@@ -482,11 +485,11 @@ StandardError=append:/opt/gailery/logs/gailery-error.log
 [Install]
 WantedBy=multi-user.target"
 
-if [ ! -f /etc/systemd/system/gailery.service ] || ! echo "$GAILERY_SERVICE" | diff -q - /etc/systemd/system/gailery.service >/dev/null 2>&1; then
-    echo "$GAILERY_SERVICE" > /etc/systemd/system/gailery.service
-    log_info "gailery.service обновлён"
+if [ ! -f "/etc/systemd/system/${SVC_NAME}.service" ] || ! echo "$GAILERY_SERVICE" | diff -q - "/etc/systemd/system/${SVC_NAME}.service" >/dev/null 2>&1; then
+    echo "$GAILERY_SERVICE" > "/etc/systemd/system/${SVC_NAME}.service"
+    log_info "${SVC_NAME}.service обновлён"
 else
-    log_info "gailery.service актуален"
+    log_info "${SVC_NAME}.service актуален"
 fi
 
 PIPELINE_SERVICE="[Unit]
@@ -510,11 +513,11 @@ StandardError=append:/opt/gailery/logs/pipeline-error.log
 [Install]
 WantedBy=multi-user.target"
 
-if [ ! -f /etc/systemd/system/gailery-pipeline.service ] || ! echo "$PIPELINE_SERVICE" | diff -q - /etc/systemd/system/gailery-pipeline.service >/dev/null 2>&1; then
-    echo "$PIPELINE_SERVICE" > /etc/systemd/system/gailery-pipeline.service
-    log_info "gailery-pipeline.service обновлён"
+if [ ! -f "/etc/systemd/system/${SVC_PIPELINE}.service" ] || ! echo "$PIPELINE_SERVICE" | diff -q - "/etc/systemd/system/${SVC_PIPELINE}.service" >/dev/null 2>&1; then
+    echo "$PIPELINE_SERVICE" > "/etc/systemd/system/${SVC_PIPELINE}.service"
+    log_info "${SVC_PIPELINE}.service обновлён"
 else
-    log_info "gailery-pipeline.service актуален"
+    log_info "${SVC_PIPELINE}.service актуален"
 fi
 
 WATCHDOG_SERVICE="[Unit]
@@ -538,16 +541,16 @@ StandardError=append:/opt/gailery/logs/watchdog-error.log
 [Install]
 WantedBy=multi-user.target"
 
-if [ ! -f /etc/systemd/system/gailery-watchdog.service ] || ! echo "$WATCHDOG_SERVICE" | diff -q - /etc/systemd/system/gailery-watchdog.service >/dev/null 2>&1; then
-    echo "$WATCHDOG_SERVICE" > /etc/systemd/system/gailery-watchdog.service
-    log_info "gailery-watchdog.service обновлён"
+if [ ! -f "/etc/systemd/system/${SVC_WATCHDOG}.service" ] || ! echo "$WATCHDOG_SERVICE" | diff -q - "/etc/systemd/system/${SVC_WATCHDOG}.service" >/dev/null 2>&1; then
+    echo "$WATCHDOG_SERVICE" > "/etc/systemd/system/${SVC_WATCHDOG}.service"
+    log_info "${SVC_WATCHDOG}.service обновлён"
 else
-    log_info "gailery-watchdog.service актуален"
+    log_info "${SVC_WATCHDOG}.service актуален"
 fi
 
 systemctl daemon-reload
-systemctl enable gailery gailery-pipeline gailery-watchdog
-log_info "Systemd сервисы созданы и включены (gailery, gailery-pipeline, gailery-watchdog)"
+systemctl enable "$SVC_NAME" "$SVC_PIPELINE" "$SVC_WATCHDOG"
+log_info "Systemd сервисы созданы и включены ($SVC_NAME, $SVC_PIPELINE, $SVC_WATCHDOG)"
 
 # =============================================================================
 # 11. Проверка database.py (нюанс #14 — уже в репо)
@@ -563,7 +566,7 @@ fi
 # =============================================================================
 # 12. Запуск веб-сервера
 # =============================================================================
-log_step "12. Запуск gailery (пропуск — запуск на шаге 14)"
+log_step "12. Запуск $SVC_NAME (пропуск — запуск на шаге 14)"
 
 true
 
@@ -574,13 +577,13 @@ log_step "14. Перезапуск сервисов"
 
 if [ "$CODE_UPDATED" -eq 1 ]; then
     log_info "Код обновлён — перезапускаем сервисы..."
-    systemctl restart gailery || true
-    systemctl restart gailery-pipeline 2>/dev/null || true
-    systemctl restart gailery-watchdog 2>/dev/null || true
+    systemctl restart "$SVC_NAME" || true
+    systemctl restart "$SVC_PIPELINE" 2>/dev/null || true
+    systemctl restart "$SVC_WATCHDOG" 2>/dev/null || true
     log_info "Сервисы перезапущены"
 else
     log_info "Код не обновлялся — перезапуск не нужен"
-    systemctl start gailery || true
+    systemctl start "$SVC_NAME" || true
 fi
 
 sleep 3
@@ -631,8 +634,8 @@ curl -s http://localhost:8000/health 2>/dev/null || echo "Gailery ещё не о
 
 echo ""
 echo "--- Systemd сервисы ---"
-systemctl is-enabled gailery 2>/dev/null || true
-systemctl is-active gailery 2>/dev/null || true
+systemctl is-enabled "$SVC_NAME" 2>/dev/null || true
+systemctl is-active "$SVC_NAME" 2>/dev/null || true
 
 # =============================================================================
 # Итог
@@ -654,10 +657,10 @@ echo "     python scan_catalog.py --add /mnt/photos"
 echo "  3. Запустите первый проход:"
 echo "     python pipeline.py"
 echo "  4. Или включите автопайплайн:"
-echo "     systemctl enable --now gailery-pipeline"
-echo "     systemctl enable --now gailery-watchdog"
+echo "     systemctl enable --now $SVC_PIPELINE"
+echo "     systemctl enable --now $SVC_WATCHDOG"
 echo ""
 echo "Остановка/перезапуск:"
-echo "  systemctl restart gailery"
-echo "  systemctl stop gailery"
+echo "  systemctl restart $SVC_NAME"
+echo "  systemctl stop $SVC_NAME"
 echo ""
