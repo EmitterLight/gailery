@@ -60,6 +60,7 @@ class DatabaseManager:
         self.sqlite.execute("PRAGMA journal_mode=WAL")
         self.sqlite.execute("PRAGMA foreign_keys=ON")
         self.sqlite.execute("PRAGMA busy_timeout=30000")
+        self.sqlite.execute("PRAGMA wal_autocheckpoint=1000")
 
         self.lancedb_path = LANCEDB_PATH
         self.lancedb_path.mkdir(parents=True, exist_ok=True)
@@ -86,6 +87,28 @@ class DatabaseManager:
                 if "locked" in str(e) and attempt < 9:
                     logger.warning(f"database locked on _create_tables, retry {attempt+1}/10 in {3*(attempt+1)}s")
                     _time.sleep(3 * (attempt + 1))
+                else:
+                    raise
+
+    def safe_execute(self, sql, params=()):
+        import time as _time
+        for attempt in range(5):
+            try:
+                return self.sqlite.execute(sql, params)
+            except sqlite3.OperationalError as e:
+                if "locked" in str(e) and attempt < 4:
+                    _time.sleep(1 * (attempt + 1))
+                else:
+                    raise
+
+    def safe_commit(self):
+        import time as _time
+        for attempt in range(5):
+            try:
+                return self.sqlite.commit()
+            except sqlite3.OperationalError as e:
+                if "locked" in str(e) and attempt < 4:
+                    _time.sleep(1 * (attempt + 1))
                 else:
                     raise
 

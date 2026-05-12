@@ -225,10 +225,10 @@ def main():
             if progress["describe"][2] < 100:
                 from database import DatabaseManager as _DB
                 _db = _DB()
-                _cur = _db.sqlite.execute("UPDATE photos SET description='[видео]' WHERE media_type='video' AND (description IS NULL OR description='') AND deleted=0")
+                _cur = _db.safe_execute("UPDATE photos SET description='[видео]' WHERE media_type='video' AND (description IS NULL OR description='') AND deleted=0")
                 if _cur.rowcount > 0:
-                    _db.sqlite.execute("UPDATE catalog_files SET described=1 WHERE abs_path IN (SELECT path FROM photos WHERE media_type='video' AND description='[видео]') AND is_canonical=1")
-                    _db.sqlite.commit()
+                    _db.safe_execute("UPDATE catalog_files SET described=1 WHERE abs_path IN (SELECT path FROM photos WHERE media_type='video' AND description='[видео]') AND is_canonical=1")
+                    _db.safe_commit()
                     log(f"MIGRATE: set description='[видео]' for {_cur.rowcount} videos")
                 kill_orphan_llama_servers()
                 remaining = progress["describe"][1] - progress["describe"][0]
