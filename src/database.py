@@ -59,7 +59,7 @@ class DatabaseManager:
         self.sqlite.row_factory = sqlite3.Row
         self.sqlite.execute("PRAGMA journal_mode=WAL")
         self.sqlite.execute("PRAGMA foreign_keys=ON")
-        self.sqlite.execute("PRAGMA busy_timeout=5000")
+        self.sqlite.execute("PRAGMA busy_timeout=30000")
 
         self.lancedb_path = LANCEDB_PATH
         self.lancedb_path.mkdir(parents=True, exist_ok=True)
