@@ -105,7 +105,7 @@ class DatabaseManager:
         import time as _time
         for attempt in range(5):
             try:
-                return self.sqlite.commit()
+                return self.safe_commit()
             except sqlite3.OperationalError as e:
                 if "locked" in str(e) and attempt < 4:
                     _time.sleep(1 * (attempt + 1))
@@ -186,23 +186,23 @@ class DatabaseManager:
              CREATE INDEX IF NOT EXISTS idx_catalog_ingested ON catalog_files(ingested);
              CREATE INDEX IF NOT EXISTS idx_catalog_root ON catalog_files(root_id);
          """)
-        self.sqlite.commit()
+        self.safe_commit()
 
         cur.execute("PRAGMA table_info(catalog_files)")
         cf_columns = [row[1] for row in cur.fetchall()]
         if 'content_hash' not in cf_columns:
             cur.execute("ALTER TABLE catalog_files ADD COLUMN content_hash TEXT")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_catalog_hash ON catalog_files(content_hash)")
-            self.sqlite.commit()
+            self.safe_commit()
         if 'is_canonical' not in cf_columns:
             cur.execute("ALTER TABLE catalog_files ADD COLUMN is_canonical INTEGER DEFAULT 1")
-            self.sqlite.commit()
+            self.safe_commit()
         if 'deleted' not in cf_columns:
             cur.execute("ALTER TABLE catalog_files ADD COLUMN deleted INTEGER DEFAULT 0")
-            self.sqlite.commit()
+            self.safe_commit()
         if 'deleted_type' not in cf_columns:
             cur.execute("ALTER TABLE catalog_files ADD COLUMN deleted_type TEXT")
-            self.sqlite.commit()
+            self.safe_commit()
 
         cur.execute("PRAGMA table_info(photos)")
         columns = [row[1] for row in cur.fetchall()]
@@ -237,25 +237,25 @@ class DatabaseManager:
             cur.execute("CREATE INDEX IF NOT EXISTS idx_photos_media_type ON photos(media_type)")
         if 'duration_seconds' not in columns:
             cur.execute("ALTER TABLE photos ADD COLUMN duration_seconds REAL DEFAULT 0")
-        self.sqlite.commit()
+        self.safe_commit()
 
         cur.execute("PRAGMA table_info(catalog_roots)")
         cr_columns = [row[1] for row in cur.fetchall()]
         if 'enabled' not in cr_columns:
             cur.execute("ALTER TABLE catalog_roots ADD COLUMN enabled INTEGER DEFAULT 1")
-            self.sqlite.commit()
+            self.safe_commit()
 
         p_columns = [row[1] for row in cur.execute("PRAGMA table_info(photos)").fetchall()]
         if 'root_id' not in p_columns:
             cur.execute("ALTER TABLE photos ADD COLUMN root_id TEXT")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_photos_root_id ON photos(root_id)")
-            self.sqlite.commit()
+            self.safe_commit()
 
         faces_columns = [row[1] for row in cur.execute("PRAGMA table_info(faces)").fetchall()]
         if 'content_hash' not in faces_columns:
             cur.execute("ALTER TABLE faces ADD COLUMN content_hash TEXT")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_faces_content_hash ON faces(content_hash)")
-            self.sqlite.commit()
+            self.safe_commit()
             cur.execute("""
                 UPDATE faces SET content_hash = (
                     SELECT cf.content_hash FROM catalog_files cf
@@ -268,7 +268,7 @@ class DatabaseManager:
                     WHERE cf.rel_path = faces.photo_id OR cf.abs_path = faces.photo_id
                 )
             """)
-            self.sqlite.commit()
+            self.safe_commit()
 
         cur.execute("""
             UPDATE photos SET deleted = 1
@@ -278,7 +278,7 @@ class DatabaseManager:
                 WHERE cf.abs_path = photos.path AND cf.is_canonical = 1 AND cf.deleted = 0
             )
         """)
-        self.sqlite.commit()
+        self.safe_commit()
 
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='changes'")
         if not cur.fetchone():
@@ -291,7 +291,7 @@ class DatabaseManager:
                     changed_at TEXT
                 )
             """)
-            self.sqlite.commit()
+            self.safe_commit()
 
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='photo_edits'")
         if not cur.fetchone():
@@ -307,12 +307,12 @@ class DatabaseManager:
                 )
             """)
             cur.execute("CREATE INDEX IF NOT EXISTS idx_edits_hash ON photo_edits(content_hash)")
-            self.sqlite.commit()
+            self.safe_commit()
 
         cur.execute("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_photos_effective_date'")
         if not cur.fetchone():
             cur.execute("CREATE INDEX IF NOT EXISTS idx_photos_effective_date ON photos(COALESCE(manual_date, date))")
-            self.sqlite.commit()
+            self.safe_commit()
 
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='settings'")
         if not cur.fetchone():
@@ -322,7 +322,7 @@ class DatabaseManager:
                     value TEXT
                 )
             """)
-            self.sqlite.commit()
+            self.safe_commit()
 
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='system_metrics'")
         if not cur.fetchone():
@@ -349,7 +349,7 @@ class DatabaseManager:
                 )
             """)
             cur.execute("CREATE INDEX IF NOT EXISTS idx_metrics_ts ON system_metrics(timestamp)")
-            self.sqlite.commit()
+            self.safe_commit()
 
     def _open_vector_tables(self):
         if "photo_embeddings" not in self.vectordb.list_tables().tables:
@@ -377,7 +377,7 @@ class DatabaseManager:
     def add_photo(self, path, thumbnail_path="", date=None, gps=None, camera=None,
                   description=None, faces_present=False, exif_checked=False):
         photo_id = str(uuid.uuid4())
-        self.sqlite.execute(
+        self.safe_execute(
             "INSERT OR IGNORE INTO photos (photo_id,path,thumbnail_path,date,gps_lat,gps_lon,"
             "camera_make,camera_model,description,faces_present,exif_checked,created_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -389,7 +389,7 @@ class DatabaseManager:
              description, int(faces_present), int(exif_checked),
              datetime.now().isoformat())
         )
-        self.sqlite.commit()
+        self.safe_commit()
         return photo_id
 
     def add_photos_batch(self, records):
@@ -412,7 +412,7 @@ class DatabaseManager:
                  r.get("media_type", "photo"),
                  r.get("duration_seconds", 0))
             )
-        self.sqlite.commit()
+        self.safe_commit()
 
     def get_photo(self, photo_id):
         row = self.sqlite.execute(
@@ -445,11 +445,11 @@ class DatabaseManager:
         sets = ", ".join(f"{k} = ?" for k in kwargs)
         vals = list(kwargs.values()) + [photo_id]
         cur.execute(f"UPDATE photos SET {sets} WHERE photo_id = ?", vals)
-        self.sqlite.commit()
+        self.safe_commit()
 
     def delete_photo(self, photo_id):
-        self.sqlite.execute("DELETE FROM photos WHERE photo_id = ?", (photo_id,))
-        self.sqlite.commit()
+        self.safe_execute("DELETE FROM photos WHERE photo_id = ?", (photo_id,))
+        self.safe_commit()
 
     def count_photos(self, where=None):
         sql = "SELECT COUNT(*) FROM photos"
@@ -687,7 +687,7 @@ deleted=None, deleted_only=None,
              bbox[0], bbox[1], bbox[2], bbox[3], confidence,
              datetime.now().isoformat())
         )
-        self.sqlite.commit()
+        self.safe_commit()
 
         self.face_vectors.add([{
             "face_id": face_id,
@@ -721,7 +721,7 @@ deleted=None, deleted_only=None,
              bbox[0], bbox[1], bbox[2], bbox[3], confidence,
              datetime.now().isoformat())
         )
-        self.sqlite.commit()
+        self.safe_commit()
         return face_id, True
 
     def add_face_vectors_batch(self, records):
@@ -751,7 +751,7 @@ deleted=None, deleted_only=None,
             "UPDATE faces SET persona_id = ? WHERE face_id = ?",
             (persona_id, face_id)
         )
-        self.sqlite.commit()
+        self.safe_commit()
 
     def get_face_embedding(self, face_id):
         results = self.face_vectors.search().where(
@@ -797,7 +797,7 @@ deleted=None, deleted_only=None,
             "VALUES (?,?,?,?,?)",
             (persona_id, name, display_name, comment, datetime.now().isoformat())
         )
-        self.sqlite.commit()
+        self.safe_commit()
         return True
 
     def get_persona(self, persona_id):
@@ -832,12 +832,12 @@ deleted=None, deleted_only=None,
                 "UPDATE personas SET comment = ? WHERE persona_id = ?",
                 (comment, persona_id)
             )
-        self.sqlite.commit()
+        self.safe_commit()
         return self.get_persona(persona_id)
 
     def delete_persona(self, persona_id):
-        self.sqlite.execute("DELETE FROM personas WHERE persona_id = ?", (persona_id,))
-        self.sqlite.commit()
+        self.safe_execute("DELETE FROM personas WHERE persona_id = ?", (persona_id,))
+        self.safe_commit()
 
     def merge_personas(self, source_persona_id, target_persona_id):
         source = self.get_persona(source_persona_id)
@@ -853,7 +853,7 @@ deleted=None, deleted_only=None,
         self.sqlite.execute(
             "DELETE FROM personas WHERE persona_id = ?", (source_persona_id,)
         )
-        self.sqlite.commit()
+        self.safe_commit()
         return True
 
     def face_count_map(self):
@@ -914,15 +914,15 @@ deleted=None, deleted_only=None,
             "file_count,total_size) VALUES (?,?,?,?,?,?)",
             (root_id, root_path, alias, datetime.now().isoformat(), file_count, total_size)
         )
-        self.sqlite.commit()
+        self.safe_commit()
 
     def update_catalog_root(self, root_id, **kwargs):
         if not kwargs:
             return
         sets = ", ".join(f"{k} = ?" for k in kwargs)
         vals = list(kwargs.values()) + [root_id]
-        self.sqlite.execute(f"UPDATE catalog_roots SET {sets} WHERE root_id = ?", vals)
-        self.sqlite.commit()
+        self.safe_execute(f"UPDATE catalog_roots SET {sets} WHERE root_id = ?", vals)
+        self.safe_commit()
 
     def get_catalog_roots(self):
         rows = self.sqlite.execute("SELECT * FROM catalog_roots").fetchall()
@@ -935,9 +935,9 @@ deleted=None, deleted_only=None,
         return _row_to_dict(row)
 
     def delete_catalog_root(self, root_id):
-        self.sqlite.execute("DELETE FROM catalog_files WHERE root_id = ?", (root_id,))
-        self.sqlite.execute("DELETE FROM catalog_roots WHERE root_id = ?", (root_id,))
-        self.sqlite.commit()
+        self.safe_execute("DELETE FROM catalog_files WHERE root_id = ?", (root_id,))
+        self.safe_execute("DELETE FROM catalog_roots WHERE root_id = ?", (root_id,))
+        self.safe_commit()
 
     def add_catalog_files_batch(self, records):
         cur = self.sqlite.cursor()
@@ -959,7 +959,7 @@ deleted=None, deleted_only=None,
                  int(r.get("faces_done", False)),
                  int(r.get("embedded", False)))
             )
-        self.sqlite.commit()
+        self.safe_commit()
 
     def get_catalog_files(self, root_id=None, where=None):
         sql = "SELECT * FROM catalog_files"
@@ -985,24 +985,24 @@ deleted=None, deleted_only=None,
             return
         sets = ", ".join(f"{k} = ?" for k in kwargs)
         vals = list(kwargs.values()) + [file_id]
-        self.sqlite.execute(f"UPDATE catalog_files SET {sets} WHERE file_id = ?", vals)
-        self.sqlite.commit()
+        self.safe_execute(f"UPDATE catalog_files SET {sets} WHERE file_id = ?", vals)
+        self.safe_commit()
 
     def update_catalog_file_by_path(self, abs_path, **kwargs):
         if not kwargs:
             return
         sets = ", ".join(f"{k} = ?" for k in kwargs)
         vals = list(kwargs.values()) + [abs_path]
-        self.sqlite.execute(f"UPDATE catalog_files SET {sets} WHERE abs_path = ?", vals)
-        self.sqlite.commit()
+        self.safe_execute(f"UPDATE catalog_files SET {sets} WHERE abs_path = ?", vals)
+        self.safe_commit()
 
     def delete_catalog_file(self, file_id):
-        self.sqlite.execute("DELETE FROM catalog_files WHERE file_id = ?", (file_id,))
-        self.sqlite.commit()
+        self.safe_execute("DELETE FROM catalog_files WHERE file_id = ?", (file_id,))
+        self.safe_commit()
 
     def delete_catalog_files_by_root(self, root_id):
-        self.sqlite.execute("DELETE FROM catalog_files WHERE root_id = ?", (root_id,))
-        self.sqlite.commit()
+        self.safe_execute("DELETE FROM catalog_files WHERE root_id = ?", (root_id,))
+        self.safe_commit()
 
     def get_catalog_file_by_path(self, abs_path):
         row = self.sqlite.execute(
@@ -1294,7 +1294,7 @@ deleted=None, deleted_only=None,
                     copy_ids
                 )
                 total_copies += len(copy_ids)
-        self.sqlite.commit()
+        self.safe_commit()
         return (total_groups, total_copies)
 
     def get_duplicate_paths(self, content_hash, exclude_path=None):
@@ -1361,13 +1361,13 @@ deleted=None, deleted_only=None,
             "INSERT INTO photo_edits (content_hash, action, params, action_order, enabled, created_at) VALUES (?,?,?, ?,1,?)",
             (content_hash, action, json.dumps(params), action_order, datetime.now().isoformat())
         )
-        self.sqlite.commit()
+        self.safe_commit()
         return cur.lastrowid
 
     def remove_edit(self, edit_id):
         cur = self.sqlite.cursor()
         cur.execute("DELETE FROM photo_edits WHERE edit_id = ?", (edit_id,))
-        self.sqlite.commit()
+        self.safe_commit()
 
     def clear_edits(self, content_hash, action=None):
         cur = self.sqlite.cursor()
@@ -1375,15 +1375,15 @@ deleted=None, deleted_only=None,
             cur.execute("DELETE FROM photo_edits WHERE content_hash = ? AND action = ?", (content_hash, action))
         else:
             cur.execute("DELETE FROM photo_edits WHERE content_hash = ?", (content_hash,))
-        self.sqlite.commit()
+        self.safe_commit()
 
     def get_setting(self, key, default=None):
         row = self.sqlite.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
         return row[0] if row else default
 
     def set_setting(self, key, value):
-        self.sqlite.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
-        self.sqlite.commit()
+        self.safe_execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
+        self.safe_commit()
 
     def insert_system_metric(self, data):
         self.sqlite.execute("""
@@ -1403,7 +1403,7 @@ deleted=None, deleted_only=None,
         self.sqlite.execute(
             "DELETE FROM system_metrics WHERE timestamp < datetime('now', '-25 hours')"
         )
-        self.sqlite.commit()
+        self.safe_commit()
 
     def get_system_metrics(self, limit=120):
         rows = self.sqlite.execute(
