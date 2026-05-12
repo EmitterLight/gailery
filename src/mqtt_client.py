@@ -474,6 +474,36 @@ class ApiMQTT(GailrayMQTT):
         self.clear_topic(gpu_lock_topic())
         self.send_resume()
 
+    def db_write(self, cmd, params=None, timeout=30):
+        request_id = f"{os.getpid()}_{int(time.time()*1000)}"
+        result_topic = db_result_topic(request_id)
+        result_box = {"data": None}
+        done_event = threading.Event()
+
+        def _on_result(payload, msg):
+            try:
+                result_box["data"] = json.loads(payload)
+            except Exception:
+                result_box["data"] = {"ok": False, "error": f"bad json: {payload[:200]}"}
+            done_event.set()
+
+        self.subscribe(result_topic, _on_result)
+        self.publish(DB_CMD_TOPIC, {
+            "cmd": cmd,
+            "params": params or {},
+            "request_id": request_id,
+        }, retain=False)
+
+        got = done_event.wait(timeout=timeout)
+        try:
+            self.client.unsubscribe(result_topic)
+        except Exception:
+            pass
+
+        if not got:
+            return {"ok": False, "error": f"db_write timeout ({timeout}s) for cmd={cmd}"}
+        return result_box["data"]
+
 
 PIPELINE_GPU_PROCS = [
     "face_pipeline", "faces.py", "faces",
@@ -481,6 +511,13 @@ PIPELINE_GPU_PROCS = [
     "embed.py", "embed",
     "enrich_description.py", "enrich_description",
 ]
+
+DB_CMD_TOPIC = _topic("db", "cmd")
+DB_RESULT_PREFIX = _topic("db", "result")
+
+
+def db_result_topic(request_id):
+    return f"{DB_RESULT_PREFIX}/{request_id}"
 
 
 def create_worker_mqtt(name, host=None, port=None):

@@ -29,19 +29,7 @@ async def lifespan(app: FastAPI):
     db_manager = get_db()
     logger.info("Database connected")
 
-    import asyncio
-    from system_monitor import collect_metrics
-    async def _collector_loop():
-        await asyncio.sleep(10)
-        while True:
-            try:
-                data = collect_metrics()
-                db_manager.insert_system_metric(data)
-            except Exception as e:
-                logger.warning(f"system_monitor: {e}")
-            await asyncio.sleep(60)
-
-    _monitor_task = asyncio.create_task(_collector_loop())
+    pass
     yield
     logger.info("Shutting down application...")
     if _monitor_task:
@@ -603,7 +591,6 @@ async def get_system_report():
         except Exception:
             pass
 
-        db.sqlite.commit()
         return report
 
     loop = asyncio.get_event_loop()
@@ -798,37 +785,52 @@ async def control_stop():
 @app.post("/api/control/reset")
 async def control_reset(body: dict):
     step = body.get("step", "")
+    mq = _get_api_mqtt()
+    if mq and mq.is_worker_alive("pipeline"):
+        result = mq.db_write("control_reset", {"step": step}, timeout=10)
+        if result.get("ok") or "timeout" not in result.get("error", "").lower():
+            if result.get("ok"):
+                from datetime import datetime
+                with open(str(LOG_FILE), "a") as f:
+                    f.write(f"[{datetime.now().isoformat()}] [CONTROL] RESET {step}: {result.get('affected', 0)} rows affected\n")
+            return result
+    result = _control_reset_direct(step)
+    if result.get("ok"):
+        from datetime import datetime
+        with open(str(LOG_FILE), "a") as f:
+            f.write(f"[{datetime.now().isoformat()}] [CONTROL] RESET {step}: {result.get('affected', 0)} rows affected\n")
+    return result
+
+
+def _control_reset_direct(step):
     db = get_db()
     reset_map = {
         "describe": [
-            ("UPDATE photos SET description=NULL, faces_present=0, embedded=0, rich_description=NULL WHERE deleted=0", None),
-            ("UPDATE catalog_files SET described=0 WHERE is_canonical=1 AND deleted=0", None),
+            "UPDATE photos SET description=NULL, faces_present=0, embedded=0, rich_description=NULL WHERE deleted=0",
+            "UPDATE catalog_files SET described=0 WHERE is_canonical=1 AND deleted=0",
         ],
         "faces": [
-            ("DELETE FROM faces", None),
-            ("UPDATE catalog_files SET faces_done=0 WHERE is_canonical=1 AND deleted=0", None),
-            ("DELETE FROM personas", None),
+            "DELETE FROM faces",
+            "UPDATE catalog_files SET faces_done=0 WHERE is_canonical=1 AND deleted=0",
+            "DELETE FROM personas",
         ],
         "exif": [
-            ("UPDATE photos SET exif_checked=0 WHERE deleted=0", None),
-            ("UPDATE catalog_files SET exif_done=0 WHERE is_canonical=1 AND deleted=0", None),
+            "UPDATE photos SET exif_checked=0 WHERE deleted=0",
+            "UPDATE catalog_files SET exif_done=0 WHERE is_canonical=1 AND deleted=0",
         ],
         "embed": [
-            ("UPDATE photos SET embedded=0 WHERE deleted=0", None),
-            ("UPDATE catalog_files SET embedded=0 WHERE is_canonical=1 AND deleted=0", None),
+            "UPDATE photos SET embedded=0 WHERE deleted=0",
+            "UPDATE catalog_files SET embedded=0 WHERE is_canonical=1 AND deleted=0",
         ],
     }
     sqls = reset_map.get(step)
     if not sqls:
         return {"ok": False, "error": f"unknown step: {step}"}
     affected = 0
-    for sql, _ in sqls:
+    for sql in sqls:
         cur = db.sqlite.execute(sql)
         affected += cur.rowcount
     db.sqlite.commit()
-    from datetime import datetime
-    with open(str(LOG_FILE), "a") as f:
-        f.write(f"[{datetime.now().isoformat()}] [CONTROL] RESET {step}: {affected} rows affected\n")
     return {"ok": True, "step": step, "affected": affected}
 
 
@@ -905,9 +907,14 @@ async def get_setting(key: str):
 
 @app.put("/api/settings/{key}")
 async def set_setting(key: str, request: Request):
-    from database import DatabaseManager, get_db
     body = await request.json()
     value = body.get("value", "")
+    mq = _get_api_mqtt()
+    if mq:
+        result = mq.db_write("set_setting", {"key": key, "value": value}, timeout=10)
+        if result.get("ok"):
+            return {"key": key, "value": value}
+        return result
     db = get_db()
     db.set_setting(key, value)
     return {"key": key, "value": value}
@@ -1083,6 +1090,9 @@ async def maintenance_stats():
 
 @app.post("/api/maintenance/vacuum")
 async def maintenance_vacuum():
+    mq = _get_api_mqtt()
+    if mq:
+        return mq.db_write("vacuum", {}, timeout=60)
     import sqlite3
     try:
         db_path = str(DATA_DIR / "gallery.db")
@@ -1098,6 +1108,9 @@ async def maintenance_vacuum():
 
 @app.post("/api/maintenance/dedup_embeddings")
 async def maintenance_dedup_embeddings():
+    mq = _get_api_mqtt()
+    if mq:
+        return mq.db_write("dedup_embeddings", {}, timeout=60)
     try:
         from database import DatabaseManager, get_db
         db = get_db()

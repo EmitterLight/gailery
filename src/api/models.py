@@ -246,8 +246,13 @@ async def set_models_dir(request: Request):
         raise HTTPException(400, f"Directory does not exist: {p}")
     if not p.is_dir():
         raise HTTPException(400, f"Not a directory: {p}")
-        db = get_db()
-    db.set_setting("models_dir", str(p))
+    try:
+        from mqtt_client import create_api_mqtt
+        mq = create_api_mqtt()
+        if mq:
+            mq.db_write("set_setting", {"key": "models_dir", "value": str(p)}, timeout=10)
+    except Exception:
+        pass
     import config
     config.MODELS_DIR = p
     _models_cache["data"] = None

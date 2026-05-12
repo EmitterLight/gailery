@@ -15,6 +15,44 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/catalog", tags=["catalog"])
 
 
+def _db_write(cmd, params=None, timeout=5):
+    try:
+        from mqtt_client import create_api_mqtt
+        mq = create_api_mqtt()
+        if mq and mq.is_worker_alive("pipeline"):
+            result = mq.db_write(cmd, params, timeout=timeout)
+            if result.get("ok") or "timeout" not in result.get("error", "").lower():
+                return result
+    except Exception:
+        pass
+    return _db_write_direct(cmd, params)
+
+
+def _db_write_direct(cmd, params):
+    from database import get_db
+    db = get_db()
+    try:
+        if cmd == "add_catalog_root":
+            import uuid
+            root_id = str(uuid.uuid4())
+            db.add_catalog_root(
+                root_id=root_id,
+                root_path=params.get("root_path", ""),
+                alias=params.get("alias", ""),
+            )
+            return {"ok": True, "root_id": root_id}
+        elif cmd == "delete_catalog_root":
+            db.delete_catalog_root(params.get("root_id", ""))
+            return {"ok": True}
+        elif cmd == "update_catalog_root":
+            db.update_catalog_root(params.get("root_id", ""), enabled=params.get("enabled"))
+            return {"ok": True}
+        else:
+            return {"ok": False, "error": f"unknown db command: {cmd}"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 class AddRootRequest(BaseModel):
     path: str
     alias: str = ""
@@ -66,12 +104,13 @@ async def add_root(req: AddRootRequest):
 
         import uuid
         root_id = str(uuid.uuid4())
-        db.add_catalog_root(
-            root_id=root_id,
-            root_path=root_path,
-            alias=req.alias or Path(root_path).name,
-        )
-        return {"ok": True, "root_id": root_id}
+        result = _db_write("add_catalog_root", {
+            "root_path": root_path,
+            "alias": req.alias or Path(root_path).name,
+        })
+        if result.get("ok"):
+            return {"ok": True, "root_id": result.get("root_id", root_id)}
+        return {"ok": False, "error": result.get("error", "Failed to add root")}
     except Exception as e:
         logger.error(f"Failed to add root: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -293,13 +332,10 @@ async def sync_flags():
 
 @router.delete("/root/{root_id}")
 async def delete_root(root_id: str):
-    try:
-        db = get_db()
-        db.delete_catalog_root(root_id)
-        return {"ok": True}
-    except Exception as e:
-        logger.error(f"Failed to delete root: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    result = _db_write("delete_catalog_root", {"root_id": root_id})
+    if not result.get("ok"):
+        raise HTTPException(status_code=500, detail=result.get("error", "Failed to delete root"))
+    return {"ok": True}
 
 
 @router.post("/root/{root_id}/toggle")
@@ -310,7 +346,9 @@ async def toggle_root(root_id: str):
         if not root:
             raise HTTPException(status_code=404, detail="Root not found")
         new_val = 0 if root.get("enabled", 1) else 1
-        db.update_catalog_root(root_id, enabled=new_val)
+        result = _db_write("update_catalog_root", {"root_id": root_id, "enabled": new_val})
+        if not result.get("ok"):
+            raise HTTPException(status_code=500, detail=result.get("error", "Failed to toggle root"))
         return {"ok": True, "enabled": bool(new_val)}
     except HTTPException:
         raise

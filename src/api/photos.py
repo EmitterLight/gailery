@@ -17,6 +17,125 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/photos", tags=["photos"])
 
+
+def _get_mq():
+    try:
+        from mqtt_client import create_api_mqtt
+        return create_api_mqtt()
+    except Exception:
+        return None
+
+
+def _db_write(cmd, params=None, timeout=5):
+    try:
+        from mqtt_client import create_api_mqtt
+        mq = create_api_mqtt()
+        if mq and mq.is_worker_alive("pipeline"):
+            result = mq.db_write(cmd, params, timeout=timeout)
+            if result.get("ok") or "timeout" not in result.get("error", "").lower():
+                return result
+    except Exception:
+        pass
+    return _db_write_direct(cmd, params)
+
+
+def _db_write_direct(cmd, params):
+    from database import get_db
+    db = get_db()
+    try:
+        if cmd == "update_photo":
+            photo_id = params.get("photo_id", "")
+            updates = params.get("updates", {})
+            if not photo_id or not updates:
+                return {"ok": False, "error": "photo_id and updates required"}
+            photo = db.get_photo(photo_id)
+            if not photo:
+                photo = db.get_photo_by_path(photo_id)
+            if not photo:
+                return {"ok": False, "error": "Photo not found"}
+            db.update_photo(photo["photo_id"], **updates)
+            return {"ok": True}
+        elif cmd == "set_gps":
+            photo_id = params.get("photo_id")
+            lat = params.get("lat")
+            lon = params.get("lon")
+            if not photo_id or lat is None or lon is None:
+                return {"ok": False, "error": "photo_id, lat, lon required"}
+            row = db.sqlite.execute("SELECT photo_id FROM photos WHERE photo_id = ? OR path LIKE ?", (photo_id, '%' + photo_id)).fetchone()
+            if not row:
+                return {"ok": False, "error": "Photo not found"}
+            db.sqlite.execute("UPDATE photos SET gps_lat = ?, gps_lon = ?, manual_gps = 1 WHERE photo_id = ?", (float(lat), float(lon), row[0]))
+            db.sqlite.commit()
+            return {"ok": True}
+        elif cmd == "clear_gps":
+            photo_id = params.get("photo_id")
+            if not photo_id:
+                return {"ok": False, "error": "photo_id required"}
+            row = db.sqlite.execute("SELECT photo_id FROM photos WHERE photo_id = ? OR path LIKE ?", (photo_id, '%' + photo_id)).fetchone()
+            if not row:
+                return {"ok": False, "error": "Photo not found"}
+            db.sqlite.execute("UPDATE photos SET gps_lat = NULL, gps_lon = NULL, manual_gps = 0 WHERE photo_id = ?", (row[0],))
+            db.sqlite.commit()
+            return {"ok": True}
+        elif cmd == "set_date":
+            photo_id = params.get("photo_id")
+            manual_date = params.get("manual_date")
+            if not photo_id or not manual_date:
+                return {"ok": False, "error": "photo_id, manual_date required"}
+            if len(manual_date) == 10 and manual_date[4] == '-' and manual_date[7] == '-':
+                manual_date += " 00:00:00"
+            elif len(manual_date) == 16 and manual_date[10] == ' ':
+                manual_date += ":00"
+            row = db.sqlite.execute("SELECT photo_id FROM photos WHERE photo_id = ? OR path LIKE ?", (photo_id, '%' + photo_id)).fetchone()
+            if not row:
+                return {"ok": False, "error": "Photo not found"}
+            db.sqlite.execute("UPDATE photos SET manual_date = ? WHERE photo_id = ?", (manual_date, row[0]))
+            db.sqlite.commit()
+            return {"ok": True, "manual_date": manual_date}
+        elif cmd == "clear_date":
+            photo_id = params.get("photo_id")
+            if not photo_id:
+                return {"ok": False, "error": "photo_id required"}
+            row = db.sqlite.execute("SELECT photo_id FROM photos WHERE photo_id = ? OR path LIKE ?", (photo_id, '%' + photo_id)).fetchone()
+            if not row:
+                return {"ok": False, "error": "Photo not found"}
+            db.sqlite.execute("UPDATE photos SET manual_date = NULL WHERE photo_id = ?", (row[0],))
+            db.sqlite.commit()
+            return {"ok": True}
+        elif cmd == "mark_deleted":
+            photo_id = params.get("photo_id")
+            if not photo_id:
+                return {"ok": False, "error": "photo_id required"}
+            row = db.sqlite.execute("SELECT photo_id FROM photos WHERE photo_id = ? OR path LIKE ?", (photo_id, '%' + photo_id)).fetchone()
+            if not row:
+                return {"ok": False, "error": "Photo not found"}
+            db.sqlite.execute("UPDATE photos SET deleted = 1 WHERE photo_id = ?", (row[0],))
+            db.sqlite.commit()
+            return {"ok": True}
+        elif cmd == "undelete":
+            photo_id = params.get("photo_id")
+            if not photo_id:
+                return {"ok": False, "error": "photo_id required"}
+            row = db.sqlite.execute("SELECT photo_id FROM photos WHERE photo_id = ? OR path LIKE ?", (photo_id, '%' + photo_id)).fetchone()
+            if not row:
+                return {"ok": False, "error": "Photo not found"}
+            db.sqlite.execute("UPDATE photos SET deleted = 0 WHERE photo_id = ?", (row[0],))
+            db.sqlite.commit()
+            return {"ok": True}
+        elif cmd == "add_edit":
+            edit_id = db.add_edit(params.get("content_hash", ""), params.get("action", ""), params.get("params", {}))
+            return {"ok": True, "edit_id": edit_id}
+        elif cmd == "clear_edits":
+            db.clear_edits(params.get("content_hash", ""), params.get("action", ""))
+            return {"ok": True}
+        elif cmd == "remove_edit":
+            db.remove_edit(params.get("edit_id"))
+            return {"ok": True}
+        else:
+            return {"ok": False, "error": f"unknown db command: {cmd}"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
 STREAM_VIDEO_EXTS = {'.avi', '.3gp', '.wmv', '.mpg', '.mpeg', '.flv', '.m4v', '.mov', '.mkv'}
 
 FOTO_PREFIX = str(PHOTO_SHARE_PATH) + "/"
@@ -1186,22 +1305,17 @@ async def enrich_description(photo_id: str):
 
 @router.put("/{photo_id}/rich_description")
 async def save_rich_description(photo_id: str, request: Request):
-    from database import get_db
-
     body = await request.json()
     rich = body.get("rich_description")
 
     if rich is None:
         raise HTTPException(status_code=400, detail="rich_description is required")
 
-    db = get_db()
-    photo = db.get_photo(photo_id)
-    if not photo:
-        photo = db.get_photo_by_path(photo_id)
-    if not photo:
-        raise HTTPException(status_code=404, detail="Photo not found")
-
-    db.update_photo(photo["photo_id"], rich_description=rich)
+    result = _db_write("update_photo", {"photo_id": photo_id, "updates": {"rich_description": rich}}, timeout=10)
+    if not result.get("ok"):
+        if "not found" in result.get("error", "").lower():
+            raise HTTPException(status_code=404, detail="Photo not found")
+        raise HTTPException(status_code=500, detail=result.get("error", "DB write failed"))
     return {"ok": True, "rich_description": rich}
 
 
@@ -1363,8 +1477,6 @@ async def reverse_geocode(request: Request):
 
 @router.post("/set_gps")
 async def set_gps(request: Request):
-    from database import get_db
-
     body = await request.json()
     photo_id = body.get("photo_id")
     lat = body.get("lat")
@@ -1381,30 +1493,16 @@ async def set_gps(request: Request):
     except (ValueError, TypeError):
         raise HTTPException(status_code=400, detail="lat and lon must be valid numbers")
 
-    db = get_db()
-    cur = db.sqlite.cursor()
-
-    row = cur.execute(
-        "SELECT photo_id FROM photos WHERE photo_id = ? OR path LIKE ?",
-        (photo_id, '%' + photo_id)
-    ).fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Photo not found")
-
-    real_id = row[0]
-    cur.execute(
-        "UPDATE photos SET gps_lat = ?, gps_lon = ?, manual_gps = 1 WHERE photo_id = ?",
-        (lat, lon, real_id)
-    )
-    db.sqlite.commit()
-
+    result = _db_write("set_gps", {"photo_id": photo_id, "lat": lat, "lon": lon}, timeout=10)
+    if not result.get("ok"):
+        if "not found" in result.get("error", "").lower():
+            raise HTTPException(status_code=404, detail="Photo not found")
+        raise HTTPException(status_code=500, detail=result.get("error", "DB write failed"))
     return {"success": True}
 
 
 @router.post("/set_date")
 async def set_date(request: Request):
-    from database import get_db
-
     body = await request.json()
     photo_id = body.get("photo_id")
     manual_date = body.get("manual_date")
@@ -1414,140 +1512,75 @@ async def set_date(request: Request):
     if not manual_date:
         raise HTTPException(status_code=400, detail="manual_date is required")
 
-    if len(manual_date) == 10 and manual_date[4] == '-' and manual_date[7] == '-':
-        manual_date += " 00:00:00"
-    elif len(manual_date) == 16 and manual_date[10] == ' ':
-        manual_date += ":00"
-
-    db = get_db()
-    cur = db.sqlite.cursor()
-
-    row = cur.execute(
-        "SELECT photo_id FROM photos WHERE photo_id = ? OR path LIKE ?",
-        (photo_id, '%' + photo_id)
-    ).fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Photo not found")
-
-    real_id = row[0]
-    cur.execute(
-        "UPDATE photos SET manual_date = ? WHERE photo_id = ?",
-        (manual_date, real_id)
-    )
-    db.sqlite.commit()
-
-    return {"success": True, "manual_date": manual_date}
+    result = _db_write("set_date", {"photo_id": photo_id, "manual_date": manual_date}, timeout=10)
+    if not result.get("ok"):
+        if "not found" in result.get("error", "").lower():
+            raise HTTPException(status_code=404, detail="Photo not found")
+        raise HTTPException(status_code=500, detail=result.get("error", "DB write failed"))
+    return {"success": True, "manual_date": result.get("manual_date", manual_date)}
 
 
 @router.post("/clear_date")
 async def clear_date(request: Request):
-    from database import get_db
-
     body = await request.json()
     photo_id = body.get("photo_id")
 
     if not photo_id:
         raise HTTPException(status_code=400, detail="photo_id is required")
 
-    db = get_db()
-    cur = db.sqlite.cursor()
-
-    row = cur.execute(
-        "SELECT photo_id FROM photos WHERE photo_id = ? OR path LIKE ?",
-        (photo_id, '%' + photo_id)
-    ).fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Photo not found")
-
-    real_id = row[0]
-    cur.execute(
-        "UPDATE photos SET manual_date = NULL WHERE photo_id = ?",
-        (real_id,)
-    )
-    db.sqlite.commit()
-
+    result = _db_write("clear_date", {"photo_id": photo_id}, timeout=10)
+    if not result.get("ok"):
+        if "not found" in result.get("error", "").lower():
+            raise HTTPException(status_code=404, detail="Photo not found")
+        raise HTTPException(status_code=500, detail=result.get("error", "DB write failed"))
     return {"success": True}
 
 
 @router.post("/clear_gps")
 async def clear_gps(request: Request):
-    from database import get_db
-
     body = await request.json()
     photo_id = body.get("photo_id")
 
     if not photo_id:
         raise HTTPException(status_code=400, detail="photo_id is required")
 
-    db = get_db()
-    cur = db.sqlite.cursor()
-
-    row = cur.execute(
-        "SELECT photo_id FROM photos WHERE photo_id = ? OR path LIKE ?",
-        (photo_id, '%' + photo_id)
-    ).fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Photo not found")
-
-    real_id = row[0]
-    cur.execute(
-        "UPDATE photos SET gps_lat = NULL, gps_lon = NULL, manual_gps = 0 WHERE photo_id = ?",
-        (real_id,)
-    )
-    db.sqlite.commit()
-
+    result = _db_write("clear_gps", {"photo_id": photo_id}, timeout=10)
+    if not result.get("ok"):
+        if "not found" in result.get("error", "").lower():
+            raise HTTPException(status_code=404, detail="Photo not found")
+        raise HTTPException(status_code=500, detail=result.get("error", "DB write failed"))
     return {"success": True}
 
 
 @router.post("/mark_deleted")
 async def mark_deleted(request: Request):
-    from database import get_db
-
     body = await request.json()
     photo_id = body.get("photo_id")
 
     if not photo_id:
         raise HTTPException(status_code=400, detail="photo_id is required")
 
-    db = get_db()
-    cur = db.sqlite.cursor()
-
-    row = cur.execute(
-        "SELECT photo_id FROM photos WHERE photo_id = ? OR path LIKE ?",
-        (photo_id, '%' + photo_id)
-    ).fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Photo not found")
-
-    cur.execute("UPDATE photos SET deleted = 1 WHERE photo_id = ?", (row[0],))
-    db.sqlite.commit()
-
+    result = _db_write("mark_deleted", {"photo_id": photo_id}, timeout=10)
+    if not result.get("ok"):
+        if "not found" in result.get("error", "").lower():
+            raise HTTPException(status_code=404, detail="Photo not found")
+        raise HTTPException(status_code=500, detail=result.get("error", "DB write failed"))
     return {"success": True}
 
 
 @router.post("/undelete")
 async def undelete(request: Request):
-    from database import get_db
-
     body = await request.json()
     photo_id = body.get("photo_id")
 
     if not photo_id:
         raise HTTPException(status_code=400, detail="photo_id is required")
 
-    db = get_db()
-    cur = db.sqlite.cursor()
-
-    row = cur.execute(
-        "SELECT photo_id FROM photos WHERE photo_id = ? OR path LIKE ?",
-        (photo_id, '%' + photo_id)
-    ).fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Photo not found")
-
-    cur.execute("UPDATE photos SET deleted = 0 WHERE photo_id = ?", (row[0],))
-    db.sqlite.commit()
-
+    result = _db_write("undelete", {"photo_id": photo_id}, timeout=10)
+    if not result.get("ok"):
+        if "not found" in result.get("error", "").lower():
+            raise HTTPException(status_code=404, detail="Photo not found")
+        raise HTTPException(status_code=500, detail=result.get("error", "DB write failed"))
     return {"success": True}
 
 
@@ -1560,22 +1593,22 @@ async def get_edits(content_hash: str):
 
 @router.post("/edits/{content_hash}")
 async def save_edit(content_hash: str, request: Request):
-    from database import get_db
-    db = get_db()
     body = await request.json()
     action = body.get("action")
     params = body.get("params", {})
     if not action:
         raise HTTPException(status_code=400, detail="action required")
     if body.get("replace"):
-        db.clear_edits(content_hash, action)
-    edit_id = db.add_edit(content_hash, action, params)
-    return {"ok": True, "edit_id": edit_id}
+        _db_write("clear_edits", {"content_hash": content_hash, "action": action}, timeout=10)
+    result = _db_write("add_edit", {"content_hash": content_hash, "action": action, "params": params}, timeout=10)
+    if not result.get("ok"):
+        raise HTTPException(status_code=500, detail=result.get("error", "DB write failed"))
+    return {"ok": True, "edit_id": result.get("edit_id")}
 
 
 @router.delete("/edits/{edit_id}")
 async def delete_edit(edit_id: int):
-    from database import get_db
-    db = get_db()
-    db.remove_edit(edit_id)
+    result = _db_write("remove_edit", {"edit_id": edit_id}, timeout=10)
+    if not result.get("ok"):
+        raise HTTPException(status_code=500, detail=result.get("error", "DB write failed"))
     return {"ok": True}

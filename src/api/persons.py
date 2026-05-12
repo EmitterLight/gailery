@@ -12,6 +12,51 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/persons", tags=["persons"])
 
 
+def _db_write(cmd, params=None, timeout=5):
+    try:
+        from mqtt_client import create_api_mqtt
+        mq = create_api_mqtt()
+        if mq and mq.is_worker_alive("pipeline"):
+            result = mq.db_write(cmd, params, timeout=timeout)
+            if result.get("ok") or "timeout" not in result.get("error", "").lower():
+                return result
+    except Exception:
+        pass
+    return _db_write_direct(cmd, params)
+
+
+def _db_write_direct(cmd, params):
+    from database import get_db
+    db = get_db()
+    try:
+        if cmd == "update_persona":
+            persona = db.update_persona(
+                params.get("persona_id"),
+                display_name=params.get("display_name"),
+                comment=params.get("comment"),
+                clear_display_name=params.get("clear_display_name", False),
+                clear_comment=params.get("clear_comment", False),
+            )
+            if not persona:
+                return {"ok": False, "error": "Person not found"}
+            fc_map = db.face_count_map()
+            return {"ok": True, "persona": dict(persona), "face_count": fc_map.get(persona["persona_id"], 0)}
+        elif cmd == "merge_personas":
+            source = params.get("source_persona_id")
+            target = params.get("target_persona_id")
+            if not source or not target:
+                return {"ok": False, "error": "source_persona_id and target_persona_id required"}
+            success = db.merge_personas(source, target)
+            if success:
+                db.invalidate_embeddings_for_persona(target)
+                return {"ok": True}
+            return {"ok": False, "error": "Failed to merge"}
+        else:
+            return {"ok": False, "error": f"unknown db command: {cmd}"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 class FaceSearchRequest(BaseModel):
     embedding: List[float]
     limit: int = 10
@@ -155,24 +200,25 @@ async def get_person_faces(persona_id: str, limit: int = 100, dedupe_by_photo: b
 
 @router.put("/{persona_id}")
 async def update_person(persona_id: str, req: PersonaUpdateRequest):
-    try:
-        db = get_db()
-        persona = db.update_persona(
-            persona_id,
-            display_name=req.display_name,
-            comment=req.comment,
-            clear_display_name=req.clear_display_name,
-            clear_comment=req.clear_comment,
-        )
-        if not persona:
+    result = _db_write("update_persona", {
+        "persona_id": persona_id,
+        "display_name": req.display_name,
+        "comment": req.comment,
+        "clear_display_name": req.clear_display_name,
+        "clear_comment": req.clear_comment,
+    })
+    if not result.get("ok"):
+        if "not found" in result.get("error", "").lower():
             raise HTTPException(status_code=404, detail="Person not found")
-        fc_map = db.face_count_map()
-        return _persona_response(persona, fc_map)
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to update person {persona_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to update person")
+        raise HTTPException(status_code=500, detail=result.get("error", "Failed to update person"))
+    persona = result.get("persona", {})
+    return {
+        "persona_id": persona.get("persona_id", persona_id),
+        "name": persona.get("name", ""),
+        "display_name": persona.get("display_name"),
+        "comment": persona.get("comment"),
+        "face_count": result.get("face_count", 0),
+    }
 
 
 @router.put("/batch/by_name")
@@ -183,15 +229,22 @@ async def update_persons_by_name(old_name: str, req: PersonaUpdateRequest):
         fc_map = db.face_count_map()
         results = []
         for p in personas:
-            updated = db.update_persona(
-                p["persona_id"],
-                display_name=req.display_name,
-                comment=req.comment,
-                clear_display_name=req.clear_display_name,
-                clear_comment=req.clear_comment,
-            )
-            if updated:
-                results.append(_persona_response(updated, fc_map))
+            r = _db_write("update_persona", {
+                "persona_id": p["persona_id"],
+                "display_name": req.display_name,
+                "comment": req.comment,
+                "clear_display_name": req.clear_display_name,
+                "clear_comment": req.clear_comment,
+            })
+            if r.get("ok"):
+                persona = r.get("persona", {})
+                results.append({
+                    "persona_id": persona.get("persona_id", p["persona_id"]),
+                    "name": persona.get("name", ""),
+                    "display_name": persona.get("display_name"),
+                    "comment": persona.get("comment"),
+                    "face_count": r.get("face_count", 0),
+                })
         return {"updated": len(results), "personas": results}
     except Exception as e:
         logger.error(f"Failed to batch update: {e}")
@@ -200,19 +253,13 @@ async def update_persons_by_name(old_name: str, req: PersonaUpdateRequest):
 
 @router.post("/merge")
 async def merge_persons(source_persona_id: str, target_persona_id: str):
-    try:
-        db = get_db()
-        success = db.merge_personas(source_persona_id, target_persona_id)
-        if success:
-            db.invalidate_embeddings_for_persona(target_persona_id)
-            return {"success": True, "message": f"Merged {source_persona_id} into {target_persona_id}"}
-        else:
-            raise HTTPException(status_code=400, detail="Failed to merge persons")
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to merge persons: {e}")
-        raise HTTPException(status_code=500, detail="Failed to merge persons")
+    result = _db_write("merge_personas", {
+        "source_persona_id": source_persona_id,
+        "target_persona_id": target_persona_id,
+    })
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Failed to merge persons"))
+    return {"success": True, "message": f"Merged {source_persona_id} into {target_persona_id}"}
 
 
 @router.post("/search")

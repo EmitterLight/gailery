@@ -59,7 +59,7 @@ class DatabaseManager:
         self.sqlite.row_factory = sqlite3.Row
         self.sqlite.execute("PRAGMA journal_mode=WAL")
         self.sqlite.execute("PRAGMA foreign_keys=ON")
-        self.sqlite.execute("PRAGMA busy_timeout=5000")
+        self.sqlite.execute("PRAGMA busy_timeout=30000")
 
         self.lancedb_path = LANCEDB_PATH
         self.lancedb_path.mkdir(parents=True, exist_ok=True)
@@ -1344,30 +1344,24 @@ deleted=None, deleted_only=None,
         self.sqlite.commit()
 
     def insert_system_metric(self, data):
-        try:
-            self.sqlite.execute("""
-                INSERT INTO system_metrics (timestamp, cpu_percent, cpu_temp_max, mem_percent, mem_avail_gb,
-                    gpu_load, gpu_vram_mb, gpu_temp, gpu_power_w, gpu_fan,
-                    disk_root, disk_share, load1, load5, load15, net_rx_gb, net_tx_gb)
-                VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?,?)
-            """, (
-                data["timestamp"], data["cpu_percent"], data["cpu_temp_max"],
-                data["mem_percent"], data["mem_avail_gb"],
-                data["gpu_load"], data["gpu_vram_mb"], data["gpu_temp"],
-                data["gpu_power_w"], data["gpu_fan"],
-                data["disk_root"], data["disk_share"],
-                data["load1"], data["load5"], data["load15"],
-                data["net_rx_gb"], data["net_tx_gb"],
-            ))
-            self.sqlite.execute(
-                "DELETE FROM system_metrics WHERE timestamp < datetime('now', '-25 hours')"
-            )
-            self.sqlite.commit()
-        except sqlite3.OperationalError:
-            try:
-                self.sqlite.rollback()
-            except Exception:
-                pass
+        self.sqlite.execute("""
+            INSERT INTO system_metrics (timestamp, cpu_percent, cpu_temp_max, mem_percent, mem_avail_gb,
+                gpu_load, gpu_vram_mb, gpu_temp, gpu_power_w, gpu_fan,
+                disk_root, disk_share, load1, load5, load15, net_rx_gb, net_tx_gb)
+            VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?,?)
+        """, (
+            data["timestamp"], data["cpu_percent"], data["cpu_temp_max"],
+            data["mem_percent"], data["mem_avail_gb"],
+            data["gpu_load"], data["gpu_vram_mb"], data["gpu_temp"],
+            data["gpu_power_w"], data["gpu_fan"],
+            data["disk_root"], data["disk_share"],
+            data["load1"], data["load5"], data["load15"],
+            data["net_rx_gb"], data["net_tx_gb"],
+        ))
+        self.sqlite.execute(
+            "DELETE FROM system_metrics WHERE timestamp < datetime('now', '-25 hours')"
+        )
+        self.sqlite.commit()
 
     def get_system_metrics(self, limit=120):
         rows = self.sqlite.execute(
