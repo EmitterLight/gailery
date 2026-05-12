@@ -469,8 +469,8 @@ def _main(db, args, mq=None):
                 if not search_text.strip():
                     skipped += 1
                     cur = db.sqlite.cursor()
-                    cur.execute("UPDATE photos SET embedded = 1 WHERE photo_id = ?", (p["photo_id"],))
-                    db.sqlite.commit()
+                    db.safe_execute("UPDATE photos SET embedded = 1 WHERE photo_id = ?", (p["photo_id"],))
+                    db.safe_commit()
                     processed += 1
                     continue
 
@@ -590,10 +590,9 @@ def _main(db, args, mq=None):
 
 
 def _mark_embedded_batch(db, photo_ids):
-    cur = db.sqlite.cursor()
     ph = ",".join("?" * len(photo_ids))
-    cur.execute(f"UPDATE photos SET embedded = 1 WHERE photo_id IN ({ph})", photo_ids)
-    db.sqlite.commit()
+    db.safe_execute(f"UPDATE photos SET embedded = 1 WHERE photo_id IN ({ph})", photo_ids)
+    db.safe_commit()
 
 
 if __name__ == "__main__":
