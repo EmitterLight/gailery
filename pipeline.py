@@ -393,6 +393,7 @@ def _execute_db_cmd(cmd, params):
 
 _db_cmd_queue = []
 _db_cmd_lock = threading.Lock()
+_wake_flag = False
 
 
 def _on_db_cmd(payload, msg):
@@ -405,6 +406,7 @@ def _on_db_cmd(payload, msg):
 
 
 def _process_db_cmds():
+    global _wake_flag
     with _db_cmd_lock:
         cmds = list(_db_cmd_queue)
         _db_cmd_queue.clear()
@@ -420,6 +422,8 @@ def _process_db_cmds():
             from mqtt_client import db_result_topic, DB_WRITING_TOPIC
             _mq.publish(db_result_topic(request_id), result, retain=False)
             _mq.publish(DB_WRITING_TOPIC, False, retain=False)
+        if cmd == "control_reset":
+            _wake_flag = True
 
 
 def _collect_metrics():
@@ -497,10 +501,14 @@ def main():
                 _idle_flag = Path(FLAG_FILE).parent / "pipeline_idle"
                 _idle_flag.parent.mkdir(parents=True, exist_ok=True)
                 _idle_flag.touch()
-                log("Все шаги 100% — засыпаю 5 минут, жду новых фото...")
-                sleep_until = time.time() + 300
+                log("Все шаги 100% — засыпаю 30с, жду новых фото...")
+                sleep_until = time.time() + 30
                 while time.time() < sleep_until and not stopped():
                     _process_db_cmds()
+                    if _wake_flag:
+                        _wake_flag = False
+                        log("WAKE: control_reset — просыпаюсь")
+                        break
                     if time.time() - last_metrics >= 60:
                         _collect_metrics()
                         last_metrics = time.time()
@@ -566,6 +574,10 @@ def main():
                 sleep_until = time.time() + 30
                 while time.time() < sleep_until and not stopped():
                     _process_db_cmds()
+                    if _wake_flag:
+                        _wake_flag = False
+                        log("WAKE: control_reset — просыпаюсь")
+                        break
                     if time.time() - last_metrics >= 60:
                         _collect_metrics()
                         last_metrics = time.time()

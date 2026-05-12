@@ -21,7 +21,7 @@ A.renderBlock_workers = function(containerId) {
 A.refreshBlock_workers = function(containerId, d) {
     if (!d) return;
     var gridEl = document.getElementById('wkGrid_'+containerId);
-    if (gridEl && d.workers) A.renderWorkerCards('wkGrid_'+containerId, d.workers);
+    if (gridEl && d.workers) A.renderWorkerCards('wkGrid_'+containerId, d.workers, d.db_writing);
 };
 
 function buildUI() {
