@@ -133,17 +133,17 @@ fi
 # =============================================================================
 # 1. Системные пакеты
 # =============================================================================
-log_step "1. Установка системных пакетов"
+log_step "1. Системные пакеты"
 
-DEBIAN_FRONTEND=noninteractive apt-get update -qq
+DEBIAN_FRONTEND=noninteractive apt-get update -qq 2>/dev/null || true
 
-DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-upgrade \
     build-essential cmake python3-venv python3-dev \
     libvips-dev mosquitto mosquitto-clients ffmpeg \
     libgl1-mesa-dev libglib2.0-0 xxhash wget git unzip \
     g++-12 gcc-12
 
-log_info "Системные пакеты установлены"
+log_info "Системные пакеты проверены"
 
 # =============================================================================
 # 2. Клонирование / обновление репозитория
@@ -207,34 +207,35 @@ if [ ! -d "$VENV_DIR" ]; then
 fi
 
 source "$VENV_DIR/bin/activate"
-pip install --upgrade pip wheel setuptools
 
-# НЮАНС #1: torch из PyPI — CUDA 13.0, несовместимо с драйвером 560
-# НЮАНС #2: onnxruntime-gpu 1.18.0 несовместим с numpy>=2
-# Решение: сначала ставим torch с cu124, потом requirements с numpy<2
+if python3 -c "import torch, fastapi, lancedb, insightface, onnxruntime, llama_cpp, paho.mqtt, psutil, xxhash, pandas" 2>/dev/null; then
+    log_info "Все Python-зависимости установлены"
+else
+    log_info "Установка недостающих Python-зависимостей..."
+    pip install --upgrade pip wheel setuptools
 
-log_info "Установка PyTorch с CUDA 12.4 (нюанс: PyPI-версия использует CUDA 13)..."
-pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+    log_info "Установка PyTorch с CUDA 12.4..."
+    pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124
 
-log_info "Установка requirements.txt (с numpy<2 для onnxruntime-gpu)..."
-pip install "numpy<2.0"
+    log_info "Установка requirements.txt (с numpy<2 для onnxruntime-gpu)..."
+    pip install "numpy<2.0"
 
-# НЮАНС #1: pip install -r requirements.txt пытается обновить torch до >=2.10.0
-# (CUDA 13) и numpy до >=2. Решение: исключаем torch из requirements (уже стоит с cu124),
-# фиксируем numpy<2 через constraint-файл.
-grep -vi '^torch' "$INSTALL_DIR/requirements.txt" > /tmp/gailery-req-notorch.txt
-cat > /tmp/gailery-constraints.txt << CONEOF
+    grep -vi '^torch' "$INSTALL_DIR/requirements.txt" > /tmp/gailery-req-notorch.txt
+    cat > /tmp/gailery-constraints.txt << CONEOF
 numpy<2.0
 CONEOF
-pip install -r /tmp/gailery-req-notorch.txt -c /tmp/gailery-constraints.txt
-rm -f /tmp/gailery-req-notorch.txt /tmp/gailery-constraints.txt
+    pip install -r /tmp/gailery-req-notorch.txt -c /tmp/gailery-constraints.txt
+    rm -f /tmp/gailery-req-notorch.txt /tmp/gailery-constraints.txt
 
-# НЮАНС #6: paho-mqtt, psutil, xxhash отсутствуют в requirements.txt
-log_info "Установка недостающих зависимостей (нюанс: не в requirements.txt)..."
-pip install paho-mqtt psutil xxhash pandas
+    pip install paho-mqtt psutil xxhash pandas
+    pip install python-multipart
 
-log_info "Установка python-multipart (нюанс #11: нужен для backup upload)..."
-pip install python-multipart
+    if ! python3 -c "import llama_cpp" 2>/dev/null; then
+        log_info "Сборка llama-cpp-python с CUDA..."
+        CMAKE_ARGS="-DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=$CUDA_ARCH -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.6/bin/nvcc -DCMAKE_PREFIX_PATH=/usr/local/cuda-12.6" \
+            pip install llama-cpp-python --no-cache-dir
+    fi
+fi
 
 log_info "Проверка CUDA в PyTorch..."
 python3 -c "import torch; print(f'torch {torch.__version__} CUDA: {torch.cuda.is_available()}')" || true
@@ -321,22 +322,10 @@ else
 fi
 
 # =============================================================================
-# 6b. llama-cpp-python (нюанс #12)
+# 6b. llama-cpp-python — установлен в шаге 4
 # =============================================================================
-log_step "6b. llama-cpp-python для embed.py"
 
-source "$VENV_DIR/bin/activate"
-
-if python3 -c "import llama_cpp" 2>/dev/null; then
-    log_info "llama-cpp-python уже установлен"
-else
-    log_info "Сборка llama-cpp-python с CUDA (нюанс #12: не в requirements.txt)..."
-    CMAKE_ARGS="-DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=$CUDA_ARCH -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.6/bin/nvcc -DCMAKE_PREFIX_PATH=/usr/local/cuda-12.6" \
-        pip install llama-cpp-python --no-cache-dir
-    log_info "llama-cpp-python установлен"
-fi
-
-deactivate
+# (интегрировано в шаг 4 для ускорения update-режима)
 
 # =============================================================================
 # 7. Скачивание GGUF моделей
@@ -415,38 +404,40 @@ log_step "8. cuDNN: 9 для torch + 8 для onnxruntime (Pascal)"
 # на Pascal SM 6.1 работает ТОЛЬКО с libcudnn.so.8. Решение: pip ставит cuDNN 9
 # (для torch), а cuDNN 8 .so-файлы кладём в /usr/local/cudnn8 и ldconfig.
 
-source "$VENV_DIR/bin/activate"
+if [ -f /etc/ld.so.conf.d/gailery-cudnn.conf ]; then
+    log_info "ldconfig пути cuDNN уже настроены"
+else
+    source "$VENV_DIR/bin/activate"
 
-# ldconfig: сначала пути от pip (cuDNN 9 + cublas)
-CUDNN9_LIB="$VENV_DIR/lib/python3.12/site-packages/nvidia/cudnn/lib"
-CUBLAS_LIB="$VENV_DIR/lib/python3.12/site-packages/nvidia/cublas/lib"
-cat > /etc/ld.so.conf.d/gailery-cudnn.conf << LDEOF
+    CUDNN9_LIB="$VENV_DIR/lib/python3.12/site-packages/nvidia/cudnn/lib"
+    CUBLAS_LIB="$VENV_DIR/lib/python3.12/site-packages/nvidia/cublas/lib"
+    cat > /etc/ld.so.conf.d/gailery-cudnn.conf << LDEOF
 $CUDNN9_LIB
 $CUBLAS_LIB
 LDEOF
 
-if [ "$IS_PASCAL" -eq 1 ]; then
-    if [ -f /usr/local/cudnn8/libcudnn.so.8 ]; then
-        log_info "cuDNN 8 .so-файлы уже в /usr/local/cudnn8"
+    if [ "$IS_PASCAL" -eq 1 ]; then
+        if [ -f /usr/local/cudnn8/libcudnn.so.8 ]; then
+            log_info "cuDNN 8 .so-файлы уже в /usr/local/cudnn8"
+        else
+            log_info "Установка cuDNN 8 .so для onnxruntime (Pascal)..."
+            mkdir -p /tmp/cudnn8dl /usr/local/cudnn8
+            pip download nvidia-cudnn-cu12==8.9.7.29 -d /tmp/cudnn8dl --no-deps
+            cd /tmp/cudnn8dl
+            unzip -o nvidia_cudnn_cu12-8.9.7.29-py3-none-manylinux1_x86_64.whl \
+                -d /tmp/cudnn8dl/extracted "nvidia/cudnn/lib/*"
+            cp -a /tmp/cudnn8dl/extracted/nvidia/cudnn/lib/. /usr/local/cudnn8/
+            rm -rf /tmp/cudnn8dl
+            echo "/usr/local/cudnn8" >> /etc/ld.so.conf.d/gailery-cudnn.conf
+            log_info "cuDNN 8 .so-файлы установлены в /usr/local/cudnn8"
+        fi
     else
-        log_info "Установка cuDNN 8 .so для onnxruntime (Pascal)..."
-        mkdir -p /tmp/cudnn8dl /usr/local/cudnn8
-        pip download nvidia-cudnn-cu12==8.9.7.29 -d /tmp/cudnn8dl --no-deps
-        cd /tmp/cudnn8dl
-        unzip -o nvidia_cudnn_cu12-8.9.7.29-py3-none-manylinux1_x86_64.whl \
-            -d /tmp/cudnn8dl/extracted "nvidia/cudnn/lib/*"
-        cp -a /tmp/cudnn8dl/extracted/nvidia/cudnn/lib/. /usr/local/cudnn8/
-        rm -rf /tmp/cudnn8dl
-        # Добавляем путь cuDNN 8 в ldconfig
-        echo "/usr/local/cudnn8" >> /etc/ld.so.conf.d/gailery-cudnn.conf
-        log_info "cuDNN 8 .so-файлы установлены в /usr/local/cudnn8"
+        log_info "Не Pascal — cuDNN 8 не нужен (cuDNN 9 из pip работает)"
     fi
-else
-    log_info "Не Pascal — cuDNN 8 не нужен (cuDNN 9 из pip работает)"
-fi
 
-ldconfig
-deactivate
+    ldconfig
+    deactivate
+fi
 
 # =============================================================================
 # 9. Mosquitto (MQTT брокер для GPU арбитража)
@@ -467,10 +458,9 @@ fi
 log_step "10. Systemd сервисы"
 
 # НЮАНС #5: contrib/*.service используют /opt/gailray, а не /opt/gailery
-# Создаём сервисы с правильными путями
+# Создаём сервисы с правильными путями (только если не существуют или изменились)
 
-cat > /etc/systemd/system/gailery.service << 'SVCEOF'
-[Unit]
+GAILERY_SERVICE="[Unit]
 Description=Gailery Photo Gallery API
 After=network.target mosquitto.service
 Wants=mosquitto.service
@@ -480,8 +470,8 @@ EnvironmentFile=/opt/gailery/.env
 Type=simple
 User=root
 WorkingDirectory=/opt/gailery/src
-Environment="PATH=/opt/gailery/venv/bin:/usr/bin:/bin"
-Environment="PYTHONPATH=/opt/gailery/src"
+Environment=\"PATH=/opt/gailery/venv/bin:/usr/bin:/bin\"
+Environment=\"PYTHONPATH=/opt/gailery/src\"
 ExecStart=/opt/gailery/venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
 Restart=always
 RestartSec=10
@@ -489,11 +479,16 @@ StandardOutput=append:/opt/gailery/logs/gailery.log
 StandardError=append:/opt/gailery/logs/gailery-error.log
 
 [Install]
-WantedBy=multi-user.target
-SVCEOF
+WantedBy=multi-user.target"
 
-cat > /etc/systemd/system/gailery-pipeline.service << 'SVCEOF'
-[Unit]
+if [ ! -f /etc/systemd/system/gailery.service ] || ! echo "$GAILERY_SERVICE" | diff -q - /etc/systemd/system/gailery.service >/dev/null 2>&1; then
+    echo "$GAILERY_SERVICE" > /etc/systemd/system/gailery.service
+    log_info "gailery.service обновлён"
+else
+    log_info "gailery.service актуален"
+fi
+
+PIPELINE_SERVICE="[Unit]
 Description=Gailery Pipeline Worker
 After=network.target mosquitto.service
 Wants=mosquitto.service
@@ -503,8 +498,8 @@ EnvironmentFile=/opt/gailery/.env
 Type=simple
 User=root
 WorkingDirectory=/opt/gailery
-Environment="PATH=/opt/gailery/venv/bin:/usr/bin:/bin"
-Environment="PYTHONPATH=/opt/gailery/src"
+Environment=\"PATH=/opt/gailery/venv/bin:/usr/bin:/bin\"
+Environment=\"PYTHONPATH=/opt/gailery/src\"
 ExecStart=/opt/gailery/venv/bin/python3 /opt/gailery/pipeline.py
 Restart=on-failure
 RestartSec=30
@@ -512,11 +507,16 @@ StandardOutput=append:/opt/gailery/logs/pipeline-stdout.log
 StandardError=append:/opt/gailery/logs/pipeline-error.log
 
 [Install]
-WantedBy=multi-user.target
-SVCEOF
+WantedBy=multi-user.target"
 
-cat > /etc/systemd/system/gailery-watchdog.service << 'SVCEOF'
-[Unit]
+if [ ! -f /etc/systemd/system/gailery-pipeline.service ] || ! echo "$PIPELINE_SERVICE" | diff -q - /etc/systemd/system/gailery-pipeline.service >/dev/null 2>&1; then
+    echo "$PIPELINE_SERVICE" > /etc/systemd/system/gailery-pipeline.service
+    log_info "gailery-pipeline.service обновлён"
+else
+    log_info "gailery-pipeline.service актуален"
+fi
+
+WATCHDOG_SERVICE="[Unit]
 Description=Gailery Pipeline Watchdog
 After=network.target mosquitto.service
 Wants=mosquitto.service
@@ -526,8 +526,8 @@ EnvironmentFile=/opt/gailery/.env
 Type=simple
 User=root
 WorkingDirectory=/opt/gailery
-Environment="PATH=/opt/gailery/venv/bin:/usr/bin:/bin"
-Environment="PYTHONPATH=/opt/gailery/src"
+Environment=\"PATH=/opt/gailery/venv/bin:/usr/bin:/bin\"
+Environment=\"PYTHONPATH=/opt/gailery/src\"
 ExecStart=/opt/gailery/venv/bin/python3 /opt/gailery/watchdog.py
 Restart=on-failure
 RestartSec=30
@@ -535,33 +535,28 @@ StandardOutput=append:/opt/gailery/logs/watchdog.log
 StandardError=append:/opt/gailery/logs/watchdog-error.log
 
 [Install]
-WantedBy=multi-user.target
-SVCEOF
+WantedBy=multi-user.target"
+
+if [ ! -f /etc/systemd/system/gailery-watchdog.service ] || ! echo "$WATCHDOG_SERVICE" | diff -q - /etc/systemd/system/gailery-watchdog.service >/dev/null 2>&1; then
+    echo "$WATCHDOG_SERVICE" > /etc/systemd/system/gailery-watchdog.service
+    log_info "gailery-watchdog.service обновлён"
+else
+    log_info "gailery-watchdog.service актуален"
+fi
 
 systemctl daemon-reload
 systemctl enable gailery
 log_info "Systemd сервисы созданы и включены (gailery, gailery-pipeline, gailery-watchdog)"
 
 # =============================================================================
-# 11. Патч database.py (нюанс #14)
+# 11. Проверка database.py (нюанс #14 — уже в репо)
 # =============================================================================
-log_step "11. Патч database.py: SUM() → NULL при пустой таблице"
+log_step "11. Проверка database.py"
 
-# НЮАНС #14: SUM() в SQLite возвращает NULL при пустой таблице, ломает max(None, int)
-DB_FILE="$INSTALL_DIR/src/database.py"
-if grep -q 'photos_total = photos_row\[1\]' "$DB_FILE" 2>/dev/null; then
-    sed -i 's/photos_total = photos_row\[1\]/photos_total = photos_row[1] or 0/' "$DB_FILE"
-    sed -i 's/photos_only = photos_row\[2\]/photos_only = photos_row[2] or 0/' "$DB_FILE"
-    sed -i 's/videos_ingested = photos_row\[3\]/videos_ingested = photos_row[3] or 0/' "$DB_FILE"
-    sed -i 's/described = photos_row\[4\]/described = photos_row[4] or 0/' "$DB_FILE"
-    sed -i 's/faces_flagged = photos_row\[5\]/faces_flagged = photos_row[5] or 0/' "$DB_FILE"
-    sed -i 's/exif_done = photos_row\[6\]/exif_done = photos_row[6] or 0/' "$DB_FILE"
-    sed -i 's/embedded = photos_row\[7\]/embedded = photos_row[7] or 0/' "$DB_FILE"
-    sed -i 's/videos_exif = photos_row\[8\]/videos_exif = photos_row[8] or 0/' "$DB_FILE"
-    sed -i 's/photos_deleted = photos_row\[9\]/photos_deleted = photos_row[9] or 0/' "$DB_FILE"
-    log_info "database.py пропатчен (or 0 для SUM() NULL)"
+if grep -q 'or 0' "$INSTALL_DIR/src/database.py" 2>/dev/null; then
+    log_info "database.py: патч SUM() NULL уже присутствует"
 else
-    log_info "database.py уже пропатчен или не нужен"
+    log_warn "database.py: патч SUM() NULL отсутствует — нужен апгрейд репо"
 fi
 
 # =============================================================================
