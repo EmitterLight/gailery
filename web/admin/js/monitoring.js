@@ -410,7 +410,7 @@ Mon.renderReport = function(cid, r) {
     if (!el || !r) return;
     var fmtU = function(s){var d=Math.floor(s/86400),h=Math.floor((s%86400)/3600),m=Math.floor((s%3600)/60);return d+'d '+h+'h '+m+'m';};
     var fmtG = function(v){return v.toFixed(1)+' GiB';};
-    var h = r.host, m = r.memory, g = r.gpu, d = r.disks, n = r.network, gr = r.gailray, t = r.top_processes;
+    var h = r.host, m = r.memory, g = r.gpu, d = r.disks, n = r.network, gr = r.app, t = r.top_processes;
 
     var hostHtml = '<div class="mon-panel">'+
         '<h4>🖥 Host</h4>'+

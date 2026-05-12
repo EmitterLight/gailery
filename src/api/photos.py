@@ -156,7 +156,7 @@ def _enrich_photo(p, photo_faces, persona_map, include_created=False, include_th
         if not faces:
             abs_path = p.get("path", "")
             if abs_path:
-                for prefix in ["/mnt/share/Foto/", "/opt/gailray/photos/"]:
+                for prefix in ["/mnt/share/Foto/", str(config.PHOTO_SHARE_PATH) + "/"]:
                     if abs_path.startswith(prefix):
                         rel2 = abs_path[len(prefix):]
                         faces = photo_faces.get(rel2, [])

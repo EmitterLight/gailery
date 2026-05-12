@@ -7,9 +7,21 @@ P104-100 (Pascal SM 6.1) constraints:
 """
 
 import json
+import os
 import pytest
 import pkg_resources
 from pathlib import Path
+
+_dotenv = Path(__file__).parent.parent / ".env"
+if _dotenv.exists():
+    with open(_dotenv) as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _v = _line.split("=", 1)
+                os.environ.setdefault(_k.strip(), _v.strip())
+
+_svc_name = os.environ.get("GALLERY_SERVICE_NAME", "gailery")
 
 
 REQUIRED_VERSIONS = {
@@ -124,8 +136,8 @@ def test_all_dependencies_list():
 
 
 REQUIRED_SERVICES = [
-    "gailray.service",
-    "gailray-watchdog.service",
+    f"{_svc_name}.service",
+    f"{_svc_name}-watchdog.service",
     "mosquitto.service",
 ]
 
@@ -139,28 +151,20 @@ def _systemctl_is_active(unit):
     return r.stdout.strip() == "active"
 
 
-def test_gailray_service_active():
-    """gailray.service (FastAPI) должен быть active — иначе API не отвечает.
-
-    Если тест падает — проверь: systemctl status gailray.
-    Частая причина: сервис не перезапущен после обновления кода
-    или зависимостей — работает старый код со старыми версиями пакетов.
-    """
-    assert _systemctl_is_active("gailray.service"), (
-        "gailray.service не active!\n"
-        "Проверь: systemctl status gailray\n"
-        "Возможно нужно: systemctl restart gailray"
+def test_api_service_active():
+    assert _systemctl_is_active(f"{_svc_name}.service"), (
+        f"{_svc_name}.service не active!\n"
+        f"Проверь: systemctl status {_svc_name}\n"
+        f"Возможно нужно: systemctl restart {_svc_name}"
     )
 
 
 def test_watchdog_service_active():
-    """gailray-watchdog.service должен быть active — иначе pipeline не следит.
-
-    Без watchdog pipeline не перезапускается при падении.
+    """watchdog.service должен быть active — иначе pipeline не следит.
     """
-    assert _systemctl_is_active("gailray-watchdog.service"), (
-        "gailray-watchdog.service не active!\n"
-        "Проверь: systemctl status gailray-watchdog"
+    assert _systemctl_is_active(f"{_svc_name}-watchdog.service"), (
+        f"{_svc_name}-watchdog.service не active!\n"
+        f"Проверь: systemctl status {_svc_name}-watchdog"
     )
 
 
@@ -200,8 +204,8 @@ def test_api_health_responds():
     except Exception as e:
         pytest.fail(
             f"API не отвечает на :8000/health: {e}\n"
-            "Проверь: systemctl status gailray\n"
-            "systemctl restart gailray"
+            f"Проверь: systemctl status {_svc_name}\n"
+            f"systemctl restart {_svc_name}"
         )
 
 
@@ -254,7 +258,7 @@ def test_watchdog_process_exists():
     pids = _pgrep("watchdog.py")
     assert len(pids) >= 1, (
         "watchdog.py не запущен!\n"
-        "Проверь: systemctl status gailray-watchdog"
+        f"Проверь: systemctl status {_svc_name}-watchdog"
     )
 
 
@@ -313,7 +317,7 @@ def test_persons_api_includes_unnamed():
 def test_admin_js_valid():
     """Все JS модули админки не содержат синтаксических ошибок — проверяется через Node.js."""
     import subprocess, glob
-    js_files = sorted(glob.glob('/opt/gailray/web/admin/js/*.js'))
+    js_files = sorted(glob.glob(str(Path(__file__).parent.parent / 'web' / 'admin' / 'js' / '*.js')))
     for f in js_files:
         r = subprocess.run(["node", "--check", f], capture_output=True, text=True, timeout=10)
         if r.returncode != 0:

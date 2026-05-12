@@ -120,7 +120,7 @@ def app_client(tmp_data):
 # Фикстура миникопии реальной БД для write-тестов
 # ═══════════════════════════════════════════════════════════════════════
 
-REAL_DB = Path("/opt/gailray/data/gallery.db")
+REAL_DB = Path(__file__).parent.parent / "data" / "gallery.db"
 
 
 @pytest.fixture

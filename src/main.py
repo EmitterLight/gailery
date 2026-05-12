@@ -574,7 +574,7 @@ async def get_system_report():
                 "write_mbps": live.get("disk_write_mbps", 0),
             },
             "top_processes": top_procs,
-            "gailray": {
+            "app": {
                 "photos": db.count_photos("deleted = 0"),
                 "persons": db.sqlite.execute("SELECT COUNT(*) FROM personas").fetchone()[0],
                 "faces": db.sqlite.execute("SELECT COUNT(*) FROM faces").fetchone()[0],
@@ -587,7 +587,7 @@ async def get_system_report():
             total = int(subprocess.run(["du", "-s",
                 str(DATA_DIR / "lancedb")], capture_output=True, text=True,
                 timeout=10).stdout.split()[0])
-            report["gailray"]["lancedb_size_mb"] = round(total / 1024, 1)
+            report["app"]["lancedb_size_mb"] = round(total / 1024, 1)
         except Exception:
             pass
 

@@ -22,7 +22,7 @@ def _skip_if_no_server():
     try:
         urllib.request.urlopen(f"{BASE}/health", timeout=3)
     except Exception:
-        pytest.skip("uvicorn not running — start: systemctl start gailray")
+        pytest.skip("uvicorn not running — start: systemctl start gailery")
 
 
 def _get(path, timeout=15):

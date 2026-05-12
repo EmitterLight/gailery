@@ -2,15 +2,15 @@
 mqtt_client.py - Shared MQTT client for Gailray pipeline workers and API.
 
 Topics:
-  gailray/worker/{name}/status     - retained: idle|running|paused|done|failed|dead
-  gailray/worker/{name}/progress   - retained: {"done":N,"total":M,"pct":P}
-  gailray/worker/{name}/pid        - retained: <pid>
-  gailray/worker/{name}/gpu_held   - retained: true|false
-  gailray/gpu/lock                 - retained: {"holder":"<name>","since":"<iso>","pid":N} or empty
-  gailray/control/start            - command: {"step":"<name>","params":{...}}
-  gailray/control/stop             - command: {"step":"<name>"} or {"step":"all"}
-  gailray/control/pause            - command: {"reason":"gpu_yield"}
-  gailray/control/resume           - command: {}
+  {PREFIX}/worker/{name}/status     - retained: idle|running|paused|done|failed|dead
+  {PREFIX}/worker/{name}/progress   - retained: {"done":N,"total":M,"pct":P}
+  {PREFIX}/worker/{name}/pid        - retained: <pid>
+  {PREFIX}/worker/{name}/gpu_held   - retained: true|false
+  {PREFIX}/gpu/lock                 - retained: {"holder":"<name>","since":"<iso>","pid":N} or empty
+  {PREFIX}/control/start            - command: {"step":"<name>","params":{...}}
+  {PREFIX}/control/stop             - command: {"step":"<name>"} or {"step":"all"}
+  {PREFIX}/control/pause            - command: {"reason":"gpu_yield"}
+  {PREFIX}/control/resume           - command: {}
 """
 
 import json
@@ -29,7 +29,7 @@ _MQTT_HOST = os.environ.get("GALLERY_MQTT_HOST", "127.0.0.1")
 _MQTT_PORT = int(os.environ.get("GALLERY_MQTT_PORT", "1883"))
 _MQTT_WS_PORT = int(os.environ.get("GALLERY_MQTT_WS_PORT", "9001"))
 
-PREFIX = "gailray"
+PREFIX = os.environ.get("GALLERY_MQTT_PREFIX", "gailery")
 
 WORKER_NAMES = [
     "ingest", "describe", "faces", "exif", "embed",
@@ -87,7 +87,7 @@ class GailrayMQTT:
     def __init__(self, client_id=None, host=None, port=None):
         self.host = host or _MQTT_HOST
         self.port = port or _MQTT_PORT
-        cid = client_id or f"gailray-{os.getpid()}"
+        cid = client_id or f"{PREFIX}-{os.getpid()}"
         self.client = mqtt.Client(
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
             client_id=cid,
@@ -158,7 +158,7 @@ class WorkerMQTT(GailrayMQTT):
     def __init__(self, worker_name, host=None, port=None):
         self.worker_name = worker_name
         super().__init__(
-            client_id=f"gailray-{worker_name}-{os.getpid()}",
+            client_id=f"{PREFIX}-{worker_name}-{os.getpid()}",
             host=host,
             port=port,
         )
@@ -323,7 +323,7 @@ class WorkerMQTT(GailrayMQTT):
 class ApiMQTT(GailrayMQTT):
     def __init__(self, host=None, port=None):
         super().__init__(
-            client_id=f"gailray-api-{os.getpid()}",
+            client_id=f"{PREFIX}-api-{os.getpid()}",
             host=host,
             port=port,
         )

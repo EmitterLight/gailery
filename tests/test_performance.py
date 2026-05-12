@@ -173,7 +173,7 @@ class TestAPIPerformance:
         try:
             urllib.request.urlopen(f"{self.BASE}/health", timeout=3)
         except Exception:
-            pytest.skip("uvicorn not running on :8000 — start with: systemctl start gailray")
+            pytest.skip("uvicorn not running on :8000 — start with: systemctl start gailery")
 
     def _get(self, path, budget_key):
         import urllib.request

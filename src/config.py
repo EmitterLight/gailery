@@ -36,6 +36,7 @@ WATCHDOG_SERVICE = f"{SERVICE_NAME}-watchdog"
 MQTT_HOST = os.environ.get("GALLERY_MQTT_HOST", "127.0.0.1")
 MQTT_PORT = int(os.environ.get("GALLERY_MQTT_PORT", "1883"))
 MQTT_WS_PORT = int(os.environ.get("GALLERY_MQTT_WS_PORT", "9001"))
+MQTT_PREFIX = os.environ.get("GALLERY_MQTT_PREFIX", SERVICE_NAME)
 GPU_LOCK_TIMEOUT = int(os.environ.get("GALLERY_GPU_LOCK_TIMEOUT", "120"))
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)

@@ -11,7 +11,7 @@ class TestMQTTWorkerLifecycle:
     def test_worker_publishes_running_on_start(self):
         """Воркер публикует статус running + PID при старте, API их видит."""
         import sys
-        sys.path.insert(0, "/opt/gailray/src")
+        sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
         from mqtt_client import create_worker_mqtt, create_api_mqtt
 
         api = create_api_mqtt()
@@ -34,7 +34,7 @@ class TestMQTTWorkerLifecycle:
     def test_worker_publishes_progress(self):
         """Воркер публикует прогресс done/total с процентом."""
         import sys
-        sys.path.insert(0, "/opt/gailray/src")
+        sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
         from mqtt_client import create_worker_mqtt, create_api_mqtt
 
         api = create_api_mqtt()
@@ -56,7 +56,7 @@ class TestMQTTWorkerLifecycle:
     def test_mqtt_stop_sets_stopped_flag(self):
         """API-команда stop доходит до воркера, worker.stopped() = True."""
         import sys
-        sys.path.insert(0, "/opt/gailray/src")
+        sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
         from mqtt_client import create_worker_mqtt, create_api_mqtt
 
         api = create_api_mqtt()
@@ -80,7 +80,7 @@ class TestMQTTApiStatus:
     def test_api_detects_mqtt_worker_alive(self):
         """API видит живого воркера, get_current_step возвращает не idle."""
         import sys
-        sys.path.insert(0, "/opt/gailray/src")
+        sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
         from mqtt_client import create_worker_mqtt, create_api_mqtt
 
         api = create_api_mqtt()
@@ -105,7 +105,7 @@ class TestMQTTApiStatus:
     def test_api_sees_dead_worker_as_idle(self):
         """После done+disconnect воркер считается мёртвым с точки зрения API."""
         import sys
-        sys.path.insert(0, "/opt/gailray/src")
+        sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
         from mqtt_client import create_worker_mqtt, create_api_mqtt
 
         api = create_api_mqtt()
@@ -131,7 +131,7 @@ class TestMQTTGPUArbitration:
     def test_pause_resume_cycle(self):
         """API может приостановить и возобновить воркер через pause/resume."""
         import sys
-        sys.path.insert(0, "/opt/gailray/src")
+        sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
         from mqtt_client import create_worker_mqtt, create_api_mqtt
 
         api = create_api_mqtt()
@@ -171,7 +171,7 @@ class TestMQTTFlagFallback:
     def test_mqtt_overrides_stale_flag(self, app_client, tmp_data):
         """MQTT-статус приоритетнее файлов-флагов."""
         import sys
-        sys.path.insert(0, "/opt/gailray/src")
+        sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
         flag_dir = tmp_data["flags"]
         (flag_dir / "describe").touch()
         resp = app_client.get("/api/status")

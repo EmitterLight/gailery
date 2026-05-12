@@ -59,7 +59,7 @@ A.renderBlock_models = function(containerId) {
         '<div style="margin-bottom:12px"><div style="font-weight:600;font-size:13px;margin-bottom:4px">📁 Папка моделей</div>'+
         '<div class="c-muted" style="font-size:11px;margin-bottom:6px">Все модели должны быть внутри этой директории</div>'+
         '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+
-        '<input id="'+pfx+'dir" class="mdl-input" style="min-width:280px" placeholder="/opt/gailray/models/gguf">'+
+        '<input id="'+pfx+'dir" class="mdl-input" style="min-width:280px" placeholder="/opt/gailery/models/gguf">'+
         '<button class="btn btn-go btn-sm" id="'+pfx+'saveDir">Сохранить</button>'+
         '<span id="'+pfx+'dirSt" style="font-size:11px"></span></div></div>'+
         '<div style="margin-bottom:12px"><div style="font-weight:600;font-size:13px;margin-bottom:4px">🔑 HuggingFace API Token</div>'+
