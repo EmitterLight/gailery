@@ -280,9 +280,12 @@ fi
 log_step "6. Сборка llama.cpp с CUDA"
 
 if [ -x "$LLAMA_CPP_DIR/build/bin/llama-server" ]; then
-    if [ "$CODE_UPDATED" -eq 1 ]; then
-        log_info "llama-server собран, но код обновлён — пересборка..."
-        git -C "$LLAMA_CPP_DIR" pull --ff-only 2>/dev/null || true
+    LLAMA_BEFORE=$(git -C "$LLAMA_CPP_DIR" rev-parse HEAD 2>/dev/null || echo "")
+    git -C "$LLAMA_CPP_DIR" fetch origin 2>/dev/null || true
+    LLAMA_REMOTE=$(git -C "$LLAMA_CPP_DIR" rev-parse origin/main 2>/dev/null || echo "")
+    if [ -n "$LLAMA_BEFORE" ] && [ -n "$LLAMA_REMOTE" ] && [ "$LLAMA_BEFORE" != "$LLAMA_REMOTE" ]; then
+        log_info "llama.cpp обновился ($LLAMA_BEFORE → $LLAMA_REMOTE) — пересборка..."
+        git -C "$LLAMA_CPP_DIR" reset --hard origin/main
         cmake -B "$LLAMA_CPP_DIR/build" -S "$LLAMA_CPP_DIR" \
             -DGGML_CUDA=ON \
             -DCMAKE_CUDA_ARCHITECTURES="$CUDA_ARCH" \
@@ -293,7 +296,7 @@ if [ -x "$LLAMA_CPP_DIR/build/bin/llama-server" ]; then
         cmake --build "$LLAMA_CPP_DIR/build" --config Release -j"$(nproc)"
         log_info "llama-server пересобран"
     else
-        log_info "llama-server уже собран и код не обновлялся"
+        log_info "llama-server уже собран и не обновлялся"
     fi
 else
     if [ ! -d "$LLAMA_CPP_DIR/.git" ]; then
