@@ -71,7 +71,29 @@ class DatabaseManager:
 
         logger.info(f"Database initialized: SQLite={self.db_path}, LanceDB={self.lancedb_path}")
 
+    def _schema_is_current(self):
+        try:
+            self.sqlite.execute("SELECT 1 FROM photos LIMIT 1")
+            cols = {r[1] for r in self.sqlite.execute("PRAGMA table_info(photos)").fetchall()}
+            required = {"photo_id","path","description","faces_present","exif_checked","embedded","has_issues","issue_type","photo_type","media_type","deleted","rich_description","manual_date","manual_gps","root_id"}
+            if not required.issubset(cols):
+                return False
+            cols = {r[1] for r in self.sqlite.execute("PRAGMA table_info(catalog_files)").fetchall()}
+            required_cf = {"content_hash","is_canonical","deleted","deleted_type"}
+            if not required_cf.issubset(cols):
+                return False
+            cols = {r[1] for r in self.sqlite.execute("PRAGMA table_info(faces)").fetchall()}
+            if "content_hash" not in cols:
+                return False
+            for t in ("personas","catalog_roots","changes","settings"):
+                self.sqlite.execute(f"SELECT 1 FROM {t} LIMIT 1")
+            return True
+        except sqlite3.OperationalError:
+            return False
+
     def _create_tables_or_wait(self):
+        if self._schema_is_current():
+            return
         import time as _time
         for attempt in range(10):
             try:
