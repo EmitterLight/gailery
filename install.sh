@@ -280,12 +280,13 @@ fi
 log_step "6. Сборка llama.cpp с CUDA"
 
 if [ -x "$LLAMA_CPP_DIR/build/bin/llama-server" ]; then
+    LLAMA_BRANCH=$(git -C "$LLAMA_CPP_DIR" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "master")
     LLAMA_BEFORE=$(git -C "$LLAMA_CPP_DIR" rev-parse HEAD 2>/dev/null || echo "")
     git -C "$LLAMA_CPP_DIR" fetch origin 2>/dev/null || true
-    LLAMA_REMOTE=$(git -C "$LLAMA_CPP_DIR" rev-parse origin/main 2>/dev/null || echo "")
+    LLAMA_REMOTE=$(git -C "$LLAMA_CPP_DIR" rev-parse "origin/$LLAMA_BRANCH" 2>/dev/null || echo "")
     if [ -n "$LLAMA_BEFORE" ] && [ -n "$LLAMA_REMOTE" ] && [ "$LLAMA_BEFORE" != "$LLAMA_REMOTE" ]; then
         log_info "llama.cpp обновился ($LLAMA_BEFORE → $LLAMA_REMOTE) — пересборка..."
-        git -C "$LLAMA_CPP_DIR" reset --hard origin/main
+        git -C "$LLAMA_CPP_DIR" reset --hard "origin/$LLAMA_BRANCH"
         cmake -B "$LLAMA_CPP_DIR/build" -S "$LLAMA_CPP_DIR" \
             -DGGML_CUDA=ON \
             -DCMAKE_CUDA_ARCHITECTURES="$CUDA_ARCH" \
