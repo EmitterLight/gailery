@@ -29,6 +29,10 @@ LOG_FILE = LOGS_DIR / "pipeline.log"
 WATCHDOG_LOG_FILE = LOGS_DIR / "watchdog.log"
 FLAG_DIR = DATA_DIR / "pipeline_flags"
 
+SERVICE_NAME = os.environ.get("GALLERY_SERVICE_NAME", "gailery")
+PIPELINE_SERVICE = f"{SERVICE_NAME}-pipeline"
+WATCHDOG_SERVICE = f"{SERVICE_NAME}-watchdog"
+
 MQTT_HOST = os.environ.get("GALLERY_MQTT_HOST", "127.0.0.1")
 MQTT_PORT = int(os.environ.get("GALLERY_MQTT_PORT", "1883"))
 MQTT_WS_PORT = int(os.environ.get("GALLERY_MQTT_WS_PORT", "9001"))

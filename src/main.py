@@ -731,7 +731,7 @@ async def control_start(body: dict):
         bs = body.get("batch_size", 6)
         root = f"--root {body['root_id']}" if body.get("root_id") else ""
         subprocess.run(["pkill", "-f", "pipeline.py"], capture_output=True, timeout=5)
-        subprocess.run(["systemctl", "stop", "gailray-pipeline"], capture_output=True, timeout=5)
+        subprocess.run(["systemctl", "stop", config.PIPELINE_SERVICE], capture_output=True, timeout=5)
         cmd = f"/usr/bin/nohup {VENV_PYTHON} {_pr}/pipeline.py --ingest {n} --describe {dl} --batch-size {bs} {root} >> {_lf} 2>&1 &"
 
     if cmd:
@@ -741,7 +741,7 @@ async def control_start(body: dict):
                 (FLAG_DIR / "no_restart").unlink()
             except FileNotFoundError:
                 pass
-            os.system("systemctl enable gailray-pipeline 2>/dev/null")
+            os.system(f"systemctl enable {config.PIPELINE_SERVICE} 2>/dev/null")
         gpu_steps = {"describe", "faces", "embed", "chain"}
         if step in gpu_steps:
             os.system("pkill -9 -f 'llama-server' 2>/dev/null")
@@ -760,8 +760,8 @@ async def control_stop():
     mq = _get_api_mqtt()
     if mq:
         mq.send_stop("all")
-    os.system("systemctl stop gailray-pipeline 2>/dev/null")
-    os.system("systemctl disable gailray-pipeline 2>/dev/null")
+    os.system(f"systemctl stop {config.PIPELINE_SERVICE} 2>/dev/null")
+    os.system(f"systemctl disable {config.PIPELINE_SERVICE} 2>/dev/null")
     for pattern in ["llama-server", "vision_describe", "face_pipeline", "faces.py", "faces", "ingest.py", "ingest", "exif.py", "exif", "embed.py", "embed", "pipeline.py", "describe.py", "describe", "enrich_description.py", "enrich"]:
         try:
             os.system(f"pkill -f '{pattern}' 2>/dev/null")
@@ -853,9 +853,9 @@ async def control_update():
             capture_output=True, text=True, timeout=10
         ).stdout.strip()
         if before != after:
-            subprocess.run(["systemctl", "restart", "gailery"], capture_output=True, text=True, timeout=15)
-            subprocess.run(["systemctl", "restart", "gailery-pipeline"], capture_output=True, text=True, timeout=15)
-            subprocess.run(["systemctl", "restart", "gailery-watchdog"], capture_output=True, text=True, timeout=15)
+            subprocess.run(["systemctl", "restart", config.SERVICE_NAME], capture_output=True, text=True, timeout=15)
+            subprocess.run(["systemctl", "restart", config.PIPELINE_SERVICE], capture_output=True, text=True, timeout=15)
+            subprocess.run(["systemctl", "restart", config.WATCHDOG_SERVICE], capture_output=True, text=True, timeout=15)
             with open(_lf, "a") as f:
                 f.write(f"[{datetime.now().isoformat()}] [CONTROL] UPDATE: {before} → {after}, services restarted\n")
             return {"ok": True, "updated": True, "before": before[:8], "after": after[:8]}

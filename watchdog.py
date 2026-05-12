@@ -11,7 +11,7 @@ watchdog.py - Сторожевой пёс пайплайна Gailray.
 
 Запуск:
     python watchdog.py
-    systemctl start gailray-watchdog
+    systemctl start <watchdog-service>
 """
 
 import os
@@ -29,7 +29,7 @@ if os.path.exists(VENV_PYTHON) and sys.executable != VENV_PYTHON:
 
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
-from config import FLAG_DIR, LOG_FILE, WATCHDOG_LOG_FILE
+from config import FLAG_DIR, LOG_FILE, WATCHDOG_LOG_FILE, PIPELINE_SERVICE
 
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] [WATCHDOG] %(message)s', datefmt='%Y-%m-%dT%H:%M:%S')
 logger = logging.getLogger(__name__)
@@ -37,7 +37,6 @@ logger = logging.getLogger(__name__)
 CHECK_INTERVAL = 10
 NO_RESTART_FLAG = FLAG_DIR / "no_restart"
 PIPELINE_IDLE_FLAG = FLAG_DIR / "pipeline_idle"
-PIPELINE_SERVICE = "gailery-pipeline"
 
 MEMORY_WARN_PCT = 85
 MEMORY_CRIT_PCT = 93
