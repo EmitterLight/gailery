@@ -72,6 +72,12 @@ class DatabaseManager:
 
     def _create_tables(self):
         cur = self.sqlite.cursor()
+        required_tables = {"photos", "faces", "personas", "catalog_roots", "catalog_files"}
+        existing = {row[0] for row in cur.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        if required_tables.issubset(existing):
+            self._apply_migrations(cur)
+            return
+
         cur.executescript("""
             CREATE TABLE IF NOT EXISTS photos (
                 photo_id TEXT PRIMARY KEY,
@@ -142,11 +148,12 @@ class DatabaseManager:
             );
             CREATE INDEX IF NOT EXISTS idx_catalog_abs ON catalog_files(abs_path);
              CREATE INDEX IF NOT EXISTS idx_catalog_ingested ON catalog_files(ingested);
-             CREATE INDEX IF NOT EXISTS idx_catalog_root ON catalog_files(root_id);
-         """)
+              CREATE INDEX IF NOT EXISTS idx_catalog_root ON catalog_files(root_id);
+          """)
         self.sqlite.commit()
+        self._apply_migrations(cur)
 
-        cur.execute("PRAGMA table_info(catalog_files)")
+    def _apply_migrations(self, cur):
         cf_columns = [row[1] for row in cur.fetchall()]
         if 'content_hash' not in cf_columns:
             cur.execute("ALTER TABLE catalog_files ADD COLUMN content_hash TEXT")
