@@ -105,7 +105,7 @@ class DatabaseManager:
         import time as _time
         for attempt in range(5):
             try:
-                return self.safe_commit()
+                return self.sqlite.commit()
             except sqlite3.OperationalError as e:
                 if "locked" in str(e) and attempt < 4:
                     _time.sleep(1 * (attempt + 1))
