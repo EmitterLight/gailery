@@ -31,9 +31,7 @@ trap 'on_error $LINENO $?' ERR
 #    ставить CUDA 12.6 из репо NVIDIA (поддерживает GCC 13).
 #    Альтернатива: gcc-12/g++-12 + -DCMAKE_CUDA_HOST_COMPILER=g++-12
 #
-# 5. naming inconsistency: репо "gailery", но contrib/*.service используют пути
-#    /opt/gailray (с 'r'). Нужно унифицировать пути в .env и systemd-сервисах.
-#    Этот скрипт использует /opt/gailery (как в README).
+# 5. naming: install.sh creates services with correct paths from $INSTALL_DIR.
 #
 # 6. requirements.txt не включает paho-mqtt, psutil, xxhash — нужны отдельно.
 #
@@ -464,7 +462,6 @@ fi
 # =============================================================================
 log_step "10. Systemd сервисы"
 
-# НЮАНС #5: contrib/*.service используют /opt/gailray, а не /opt/gailery
 # Создаём сервисы с правильными путями (только если не существуют или изменились)
 
 GAILERY_SERVICE="[Unit]

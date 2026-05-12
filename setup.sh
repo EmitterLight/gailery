@@ -72,7 +72,7 @@ PYTHON_VERSION=$(python3 --version | cut -d' ' -f2 | cut -d'.' -f1,2)
 log_info "Python: $PYTHON_VERSION"
 
 # Создание виртуального окружения
-VENV_DIR="$HOME/gailray/venv_vllm"
+VENV_DIR="$HOME/gailery/venv_vllm"
 
 if [ -d "$VENV_DIR" ]; then
     log_warn "venv уже существует: $VENV_DIR"
@@ -144,11 +144,11 @@ python3 -m pip install pillow transformers huggingface_hub --quiet
 log_info "Настройка переменных окружения для Pascal..."
 
 # Создаем файл окружения
-ENV_FILE="$HOME/gailray/vllm_env.sh"
+ENV_FILE="$HOME/gailery/vllm_env.sh"
 
 cat > "$ENV_FILE" << 'EOF'
 # Оптимизации для NVIDIA P104-100 (Pascal, CC 6.1, 8GB VRAM)
-# Добавьте в ~/.bashrc: source $HOME/gailray/vllm_env.sh
+# Добавьте в ~/.bashrc: source $HOME/gailery/vllm_env.sh
 
 # Основные CUDA настройки
 export CUDA_VISIBLE_DEVICES=0
@@ -209,10 +209,10 @@ echo -e "${GREEN}Настройка завершена!${NC}"
 echo "========================================"
 echo ""
 echo "Активировать окружение:"
-echo "  source $HOME/gailray/venv_vllm/bin/activate"
+echo "  source $HOME/gailery/venv_vllm/bin/activate"
 echo ""
 echo "Загрузить переменные:"
-echo "  source $HOME/gailray/vllm_env.sh"
+echo "  source $HOME/gailery/vllm_env.sh"
 echo ""
 echo "Далее запустите:"
 echo "  python check_gpu.py"

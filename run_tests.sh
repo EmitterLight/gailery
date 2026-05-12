@@ -3,7 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-VENV=/opt/gailray/venv/bin/python3
+VENV="$(dirname "$0")/venv/bin/python3"
 FLAGS="-v -x --tb=short -q"
 
 usage() {
