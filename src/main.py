@@ -651,6 +651,27 @@ async def watchdog_crashes():
     return {"crashes": crashes[:50], "no_restart": no_restart, "mode": mode}
 
 
+@app.post("/api/watchdog/sleep")
+async def watchdog_sleep():
+    no_restart_path = FLAG_DIR / "no_restart"
+    no_restart_path.parent.mkdir(parents=True, exist_ok=True)
+    from datetime import datetime
+    no_restart_path.write_text(f"manual sleep {datetime.now().isoformat()}")
+    return {"ok": True, "mode": "sleeping"}
+
+
+@app.post("/api/watchdog/wake")
+async def watchdog_wake():
+    from config import PIPELINE_SERVICE, WATCHDOG_SERVICE
+    try:
+        (FLAG_DIR / "no_restart").unlink()
+    except FileNotFoundError:
+        pass
+    await asyncio.create_subprocess_exec("systemctl", "enable", PIPELINE_SERVICE, stderr=asyncio.subprocess.DEVNULL)
+    await asyncio.create_subprocess_exec("systemctl", "start", WATCHDOG_SERVICE, stderr=asyncio.subprocess.DEVNULL)
+    return {"ok": True, "mode": "active"}
+
+
 _SVC_LIST = None
 
 

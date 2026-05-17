@@ -29,6 +29,11 @@ A.renderBlock_watchdog = function(containerId) {
         '<div id="wdModeDesc_'+pfx+'" class="c-muted" style="font-size:11px;margin-top:4px">Следит за пайплайном, перезапускает при падениях</div>'+
         '</div>'+
         '<div id="wdStats_'+pfx+'" style="display:flex;gap:8px;flex-wrap:wrap"></div>'+
+        '</div>'+
+        '<div style="margin-top:12px;display:flex;gap:8px">'+
+        '<button class="btn btn-warn btn-sm" id="wdBtnSleep_'+pfx+'">😴 Усыпить</button>'+
+        '<button class="btn btn-go btn-sm" id="wdBtnWake_'+pfx+'" disabled>⚡ Разбудить</button>'+
+        '<span id="wdBtnStatus_'+pfx+'" style="font-size:11px"></span>'+
         '</div></div>'+
         '<div class="workers-panel">'+
         '<h3>Журнал срабатываний <span id="wdCrashCount_'+pfx+'" class="c-orange" style="font-weight:normal;font-size:11px"></span></h3>'+
@@ -38,6 +43,10 @@ A.renderBlock_watchdog = function(containerId) {
 
     var btn = document.getElementById('wdBtnCrashLog_'+pfx);
     if (btn) btn.addEventListener('click', function() { toggleCrashLog(containerId); });
+    var sleepBtn = document.getElementById('wdBtnSleep_'+pfx);
+    var wakeBtn = document.getElementById('wdBtnWake_'+pfx);
+    if (sleepBtn) sleepBtn.addEventListener('click', function() { doWatchdogCmd(containerId, 'sleep'); });
+    if (wakeBtn) wakeBtn.addEventListener('click', function() { doWatchdogCmd(containerId, 'wake'); });
     loadWatchdog(containerId);
 };
 
@@ -60,7 +69,7 @@ function loadWatchdog(containerId) {
         if (mode === 'sleeping') {
             if (icon) icon.textContent = '😴';
             if (label) { label.textContent = 'Дремлет'; label.className = 'c-warn'; }
-            if (desc) desc.textContent = 'Пёс спит — не следит и не перезапускает. Разбудить: кнопка «Цепочка» в Управлении.';
+            if (desc) desc.textContent = 'Пёс спит — не следит и не перезапускает. Нажмите «Разбудить».';
             if (card) card.className = 'bg-deep bd-warn';
         } else {
             if (icon) icon.textContent = '🐶';
@@ -71,8 +80,18 @@ function loadWatchdog(containerId) {
 
         var statusText = document.getElementById('wdStatusText_'+pfx);
         if (statusText) {
-            if (mode === 'sleeping') statusText.innerHTML = ' — <span class="c-warn">дремлет</span>';
-            else statusText.innerHTML = ' — <span class="c-ok">активен</span>';
+        if (mode === 'sleeping') statusText.innerHTML = ' — <span class="c-warn">дремлет</span>';
+        else statusText.innerHTML = ' — <span class="c-ok">активен</span>';
+        }
+
+        var sleepBtn = document.getElementById('wdBtnSleep_'+pfx);
+        var wakeBtn = document.getElementById('wdBtnWake_'+pfx);
+        if (mode === 'sleeping') {
+            if (sleepBtn) sleepBtn.disabled = true;
+            if (wakeBtn) wakeBtn.disabled = false;
+        } else {
+            if (sleepBtn) sleepBtn.disabled = false;
+            if (wakeBtn) wakeBtn.disabled = true;
         }
 
         var stats = document.getElementById('wdStats_'+pfx);
@@ -94,6 +113,22 @@ function loadWatchdog(containerId) {
             else info.textContent = '🐶 активен';
         }
     });
+}
+
+function doWatchdogCmd(containerId, cmd) {
+    var pfx = containerId;
+    var stEl = document.getElementById('wdBtnStatus_'+pfx);
+    A.post('/api/watchdog/'+cmd, null, function(d) {
+        if (d.ok) {
+            if (stEl) { stEl.textContent = cmd==='sleep'?'✓ Усыплён':'✓ Разбужен'; stEl.className = 'c-ok'; }
+            loadWatchdog(containerId);
+        } else {
+            if (stEl) { stEl.textContent = '✗ Ошибка'; stEl.className = 'c-err'; }
+        }
+    }, function() {
+        if (stEl) { stEl.textContent = '✗ Ошибка сети'; stEl.className = 'c-err'; }
+    });
+    setTimeout(function() { var s = document.getElementById('wdBtnStatus_'+pfx); if (s) s.textContent = ''; }, 3000);
 }
 
 function toggleCrashLog(containerId) {
