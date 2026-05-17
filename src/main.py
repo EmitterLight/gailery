@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from urllib.parse import unquote, urlparse
+import asyncio
 import logging
 import importlib
 import sys
@@ -853,11 +854,17 @@ async def control_update():
             capture_output=True, text=True, timeout=10
         ).stdout.strip()
         if before != after:
-            subprocess.run(["systemctl", "restart", config.SERVICE_NAME], capture_output=True, text=True, timeout=15)
-            subprocess.run(["systemctl", "restart", config.PIPELINE_SERVICE], capture_output=True, text=True, timeout=15)
-            subprocess.run(["systemctl", "restart", config.WATCHDOG_SERVICE], capture_output=True, text=True, timeout=15)
             with open(_lf, "a") as f:
-                f.write(f"[{datetime.now().isoformat()}] [CONTROL] UPDATE: {before} → {after}, services restarted\n")
+                f.write(f"[{datetime.now().isoformat()}] [CONTROL] UPDATE: {before} → {after}, scheduling restart\n")
+
+            async def _delayed_restart():
+                import asyncio
+                await asyncio.sleep(1)
+                await asyncio.create_subprocess_exec("systemctl", "restart", config.PIPELINE_SERVICE, stderr=asyncio.subprocess.DEVNULL)
+                await asyncio.create_subprocess_exec("systemctl", "restart", config.WATCHDOG_SERVICE, stderr=asyncio.subprocess.DEVNULL)
+                await asyncio.create_subprocess_exec("systemctl", "restart", config.SERVICE_NAME, stderr=asyncio.subprocess.DEVNULL)
+
+            asyncio.ensure_future(_delayed_restart())
             return {"ok": True, "updated": True, "before": before[:8], "after": after[:8]}
         else:
             with open(_lf, "a") as f:
