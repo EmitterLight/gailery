@@ -430,6 +430,8 @@ def _process_db_cmds():
             _mq.publish(DB_WRITING_TOPIC, False, retain=False)
         if cmd == "control_reset":
             _wake_flag = True
+        elif cmd in ("update_persona", "merge_personas"):
+            _wake_flag = True
 
 
 def _collect_metrics():
