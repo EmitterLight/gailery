@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Any
 import lancedb
 import pyarrow as pa
 
-from config import LANCEDB_PATH, EMBEDDINGS_TABLE, DATA_DIR, PHOTO_SHARE_PATH
+from config import LANCEDB_PATH, EMBEDDINGS_TABLE, DATA_DIR, PHOTO_SHARE_PATH, VIDEO_EXTS
 
 logger = logging.getLogger(__name__)
 
@@ -718,6 +718,8 @@ deleted=None, deleted_only=None,
             (persona_id, face_id)
         )
         self.sqlite.commit()
+        if persona_id:
+            self.invalidate_for_persona(persona_id)
 
     def get_face_embedding(self, face_id):
         results = self.face_vectors.search().where(
@@ -1084,6 +1086,9 @@ deleted=None, deleted_only=None,
             self.delete_photo_embedding(pid)
 
     def invalidate_embeddings_for_persona(self, persona_id):
+        self.invalidate_for_persona(persona_id)
+
+    def invalidate_for_persona(self, persona_id):
         hashes = self.sqlite.execute(
             "SELECT DISTINCT f.content_hash FROM faces f WHERE f.persona_id = ? AND f.content_hash IS NOT NULL",
             (persona_id,)
@@ -1099,6 +1104,16 @@ deleted=None, deleted_only=None,
                 pid = self.sqlite.execute("SELECT photo_id FROM photos WHERE path = ? AND deleted = 0", (absp,)).fetchone()
                 if pid:
                     self.delete_photo_embedding(pid[0])
+            self.sqlite.execute(
+                "UPDATE photos SET description = NULL, embedded = 0 WHERE path IN "
+                "(SELECT cf.abs_path FROM catalog_files cf WHERE cf.content_hash = ? AND cf.is_canonical = 1) AND deleted = 0",
+                (ch,)
+            )
+            self.sqlite.execute(
+                "UPDATE catalog_files SET described = 0, embedded = 0 WHERE content_hash = ? AND is_canonical = 1",
+                (ch,)
+            )
+        self.sqlite.commit()
 
     # ─── Status helpers ─────────────────────────────────
 
@@ -1116,7 +1131,7 @@ deleted=None, deleted_only=None,
                 f"SUM(CASE WHEN deleted=0 AND (media_type IS NULL OR media_type!='video') THEN 1 ELSE 0 END),"
                 f"SUM(CASE WHEN deleted=0 AND media_type='video' THEN 1 ELSE 0 END),"
                 f"SUM(CASE WHEN deleted=0 AND (media_type IS NULL OR media_type!='video') AND description IS NOT NULL AND description!='' THEN 1 ELSE 0 END),"
-                f"SUM(CASE WHEN deleted=0 AND (media_type IS NULL OR media_type!='video') AND faces_present=1 THEN 1 ELSE 0 END),"
+                f"SUM(CASE WHEN deleted=0 AND (media_type IS NULL OR media_type!='video') AND path IN (SELECT cf.abs_path FROM catalog_files cf WHERE cf.faces_done=1 AND cf.is_canonical=1) THEN 1 ELSE 0 END),"
                 f"SUM(CASE WHEN deleted=0 AND (media_type IS NULL OR media_type!='video') AND exif_checked=1 THEN 1 ELSE 0 END),"
                 f"SUM(CASE WHEN deleted=0 AND (media_type IS NULL OR media_type!='video') AND embedded=1 THEN 1 ELSE 0 END),"
                 f"SUM(CASE WHEN deleted=0 AND media_type='video' AND exif_checked=1 THEN 1 ELSE 0 END),"
@@ -1140,23 +1155,22 @@ deleted=None, deleted_only=None,
                 enabled_ids
             ).fetchone()[0]
 
-            faces_processed = self.sqlite.execute(
+            faces_done_count = self.sqlite.execute(
                 f"SELECT COUNT(DISTINCT cf.abs_path) FROM catalog_files cf "
-                f"JOIN faces f ON f.content_hash = cf.content_hash "
                 f"JOIN photos p ON p.path = cf.abs_path "
-                f"WHERE cf.is_canonical=1 AND cf.deleted=0 AND p.faces_present=1 AND p.deleted=0 "
+                f"WHERE cf.is_canonical=1 AND cf.deleted=0 AND cf.faces_done=1 AND p.deleted=0 "
                 f"AND (p.media_type IS NULL OR p.media_type!='video') AND p.root_id IN ({rid_ph})",
                 enabled_ids
             ).fetchone()[0]
 
             videos_catalog = self.sqlite.execute(
                 f"SELECT COUNT(*) FROM catalog_files WHERE is_canonical=1 AND deleted=0 "
-                f"AND ext IN ('.mp4','.mov','.avi','.mkv','.webm','.3gp','.wmv') AND root_id IN ({rid_ph})",
+                f"AND ext IN ({','.join("'"+e+"'" for e in VIDEO_EXTS)}) AND root_id IN ({rid_ph})",
                 enabled_ids
             ).fetchone()[0]
         else:
             catalog_total = photos_total = photos_only = videos_ingested = 0
-            described = faces_flagged = faces_processed = exif_done = embedded = 0
+            described = faces_flagged = faces_done_count = exif_done = embedded = 0
             videos_exif = videos_catalog = photos_deleted = 0
 
         personas_total = self.sqlite.execute("SELECT COUNT(*) FROM personas").fetchone()[0]
@@ -1209,19 +1223,19 @@ deleted=None, deleted_only=None,
             "catalog_not_described": max(photos_only - described, 0),
             "catalog_exif_done": exif_done,
             "catalog_exif_not": max(photos_only - exif_done, 0),
-            "catalog_faces_done": faces_processed,
-            "catalog_faces_not": max(faces_flagged - faces_processed, 0),
+            "catalog_faces_done": faces_done_count,
+            "catalog_faces_not": max(photos_only - faces_done_count, 0),
             "photos_embedded": embedded,
             "photos_not_embedded": max(photos_only - embedded, 0),
             "pct_ingested": round(min(photos_total, catalog_total) / max(catalog_total, 1) * 100, 2),
             "pct_described": round(described / max(photos_only, 1) * 100, 2),
             "pct_exif": round(exif_done / max(photos_only, 1) * 100, 2),
-            "pct_faces": round(faces_processed / max(faces_flagged, 1) * 100, 2),
+            "pct_faces": round(faces_done_count / max(photos_only, 1) * 100, 2),
             "pct_embedded": round(embedded / max(photos_only, 1) * 100, 2),
             "faces_flagged_in_db": faces_flagged,
             "ingested_undescribed": max(photos_only - described, 0),
             "ingested_no_exif": max(photos_only - exif_done, 0),
-            "faces_not_done": max(faces_flagged - faces_processed, 0),
+            "faces_not_done": max(photos_only - faces_done_count, 0),
             "per_root": per_root,
             "videos": {
                 "catalog": videos_catalog,

@@ -70,6 +70,7 @@ def count_undescribed():
 def _prepare_ollama_image(img_path):
     from PIL import Image
     img = Image.open(img_path)
+    img_w, img_h = img.size
     max_dim = max(img.size)
     if max_dim > 1280:
         scale = 1280 / max_dim
@@ -80,16 +81,64 @@ def _prepare_ollama_image(img_path):
     import io
     buf = io.BytesIO()
     img.save(buf, format='JPEG', quality=85)
-    return base64.b64encode(buf.getvalue()).decode('utf-8')
+    return base64.b64encode(buf.getvalue()).decode('utf-8'), img_w
 
 
-def _describe_ollama_request(img_b64, ollama_url, ollama_model):
+def _bbox_to_position(bbox, img_width):
+    x_center = (bbox[0] + bbox[2]) / 2 / max(img_width, 1)
+    if x_center < 0.33:
+        return "слева"
+    elif x_center > 0.67:
+        return "справа"
+    return "в центре"
+
+
+def _get_face_context(content_hash, img_width, db):
+    if not content_hash or not db:
+        return ""
+    try:
+        rows = db.sqlite.execute(
+            "SELECT f.bbox_x1, f.bbox_y1, f.bbox_x2, f.bbox_y2, p.display_name "
+            "FROM faces f LEFT JOIN personas p ON f.persona_id = p.persona_id "
+            "WHERE f.content_hash = ?",
+            (content_hash,)
+        ).fetchall()
+    except Exception:
+        return ""
+    if not rows:
+        return ""
+    parts = []
+    named_count = 0
+    unnamed_count = 0
+    for r in rows:
+        bbox = [r[0] or 0, r[1] or 0, r[2] or 0, r[3] or 0]
+        pos = _bbox_to_position(bbox, img_width)
+        name = r[4]
+        if name:
+            parts.append(f"{name} ({pos})")
+            named_count += 1
+        else:
+            unnamed_count += 1
+    lines = []
+    if named_count > 0:
+        lines.append(f"На фото обнаружены лица: {', '.join(parts)}.")
+    if unnamed_count > 0:
+        lines.append(f"Также {unnamed_count} лиц без имён.")
+    if lines:
+        lines.append("Используй имена в описании если они подходят к людям на фото.")
+    return " ".join(lines)
+
+
+def _describe_ollama_request(img_b64, ollama_url, ollama_model, face_context=""):
     import urllib.request
+    user_text = "Проанализируй эту фотографию."
+    if face_context:
+        user_text += " " + face_context
     body = json.dumps({
         "model": ollama_model,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": "Проанализируй эту фотографию.", "images": [img_b64]},
+            {"role": "user", "content": user_text, "images": [img_b64]},
         ],
         "stream": False,
         "think": False,
@@ -113,9 +162,19 @@ def _describe_ollama_request(img_b64, ollama_url, ollama_model):
 
 def _save_description(db, photo_id, path, description, has_faces):
     cur = db.sqlite.cursor()
+    faces_done_row = db.sqlite.execute(
+        "SELECT faces_done FROM catalog_files WHERE abs_path = ? AND is_canonical = 1 LIMIT 1",
+        (path,)
+    ).fetchone()
+    faces_done = faces_done_row[0] if faces_done_row else 0
+    if faces_done:
+        photo = db.get_photo_by_path(path)
+        faces_present_val = photo.get("faces_present", 0) if photo else 0
+    else:
+        faces_present_val = 1 if has_faces else 0
     cur.execute(
         "UPDATE photos SET description = ?, faces_present = ? WHERE photo_id = ? AND deleted = 0",
-        (description, 1 if has_faces else 0, photo_id),
+        (description, faces_present_val, photo_id),
     )
     db.sqlite.commit()
     log(f"  Saved: {Path(path).name} faces={has_faces} desc={description[:60]}...")
@@ -241,12 +300,22 @@ def _main_ollama(db, limit, dir_filter, mq, t0, batch_size=6):
             if fsize < 1024:
                 log(f"  SKIP (too small): {Path(p).name}")
                 continue
-            img_b64 = _prepare_ollama_image(p)
-            prepared.append((pid, p, img_b64))
+            img_b64, img_w = _prepare_ollama_image(p)
+            content_hash = None
+            ch_row = db.sqlite.execute(
+                "SELECT content_hash FROM catalog_files WHERE abs_path = ? AND content_hash IS NOT NULL LIMIT 1",
+                (p,)
+            ).fetchone()
+            if ch_row:
+                content_hash = ch_row[0]
+            fc = _get_face_context(content_hash, img_w, db)
+            prepared.append((pid, p, img_b64, fc))
         except Exception as e:
             log(f"  SKIP (image error): {Path(p).name}: {e}")
 
     total = len(prepared)
+    described = 0
+    failed = 0
 
     # Process in parallel batches — only HTTP requests in pool
     for batch_start in range(0, total, batch_size):
@@ -257,8 +326,8 @@ def _main_ollama(db, limit, dir_filter, mq, t0, batch_size=6):
         t_batch = time.time()
         with ThreadPoolExecutor(max_workers=len(batch)) as pool:
             futs = {}
-            for photo_id, path, img_b64 in batch:
-                futs[pool.submit(_describe_ollama_request, img_b64, url, model)] = (photo_id, path)
+            for photo_id, path, img_b64, fc in batch:
+                futs[pool.submit(_describe_ollama_request, img_b64, url, model, fc)] = (photo_id, path)
 
             for fut in as_completed(futs):
                 photo_id, path = futs[fut]

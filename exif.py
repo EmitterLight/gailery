@@ -25,6 +25,7 @@ if os.path.exists(VENV_PYTHON) and sys.executable != VENV_PYTHON:
     os.execv(VENV_PYTHON, [VENV_PYTHON, __file__] + sys.argv[1:])
 
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
+from config import VIDEO_EXTS
 LOG_FILE = str(Path(__file__).parent / "logs" / "pipeline.log")
 FLAG_FILE = str(Path(__file__).parent / "data" / "pipeline_flags" / "exif")
 
@@ -296,9 +297,11 @@ def _main(db, args, mq=None):
         need_exif = db.get_all_photos()
     else:
         rows = db.sqlite.execute(
-            "SELECT photo_id, path FROM photos WHERE exif_checked = 0 AND (media_type IS NULL OR media_type != 'video') ORDER BY path"
+            "SELECT p.photo_id, p.path FROM photos p "
+            "JOIN catalog_files cf ON cf.abs_path = p.path AND cf.is_canonical = 1 AND cf.deleted = 0 "
+            "WHERE p.exif_checked = 0 AND p.deleted = 0 ORDER BY p.path"
         ).fetchall()
-        need_exif = [{"photo_id": r[0], "path": r[1]} for r in rows if db.is_path_canonical(r[1])]
+        need_exif = [{"photo_id": r[0], "path": r[1]} for r in rows]
 
     log(f"Found {len(need_exif)} photos to check for EXIF (threads={EXIF_READ_THREADS})")
 
@@ -337,9 +340,7 @@ def _main(db, args, mq=None):
                 updates = {"exif_checked": 1}
 
                 # --- video metadata (if file is a video) ---
-                video_exts = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".3gp", ".wmv",
-                              ".MP4", ".MOV", ".AVI", ".MKV", ".WEBM", ".3GP", ".WMV"}
-                is_video = any(path.endswith(ext) for ext in video_exts)
+                is_video = any(path.endswith(ext) for ext in VIDEO_EXTS)
 
                 if is_video:
                     from video_metadata import extract_metadata, extract_video_date

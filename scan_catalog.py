@@ -23,10 +23,11 @@ if os.path.exists(VENV_PYTHON) and sys.executable != VENV_PYTHON:
     os.execv(VENV_PYTHON, [VENV_PYTHON, __file__] + sys.argv[1:])
 
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
+from config import VIDEO_EXTS
+
 LOG_FILE = str(Path(__file__).parent / "logs" / "pipeline.log")
 
-SUPPORTED_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".raw", ".cr2", ".nef", ".arw", ".dng", ".heic",
-                    ".mp4", ".mov", ".avi", ".mkv", ".webm", ".3gp", ".wmv", ".MP4", ".MOV", ".AVI", ".MKV", ".WEBM", ".3GP", ".WMV"}
+SUPPORTED_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".raw", ".cr2", ".nef", ".arw", ".dng", ".heic"} | VIDEO_EXTS
 
 
 def compute_file_hash(path, chunk_size=65536):
@@ -242,10 +243,9 @@ def scan_root(db, root_id):
     new_count = len(kept_rel - existing_rel)
     del_str = f"{deleted_count} deleted" if scan_complete else "NO delete (scan incomplete)"
     log(f"Scan done in {elapsed:.1f}s: {scanned} scanned, {skipped_dirs} dirs skipped, {new_count} new, {changed_count} changed, {del_str}, {restored_count} restored, {stale_count} stale")
-    video_exts_lower = {'.mp4','.mov','.avi','.mkv','.webm','.3gp','.wmv'}
     new_videos = db.sqlite.execute(
         "SELECT COUNT(*) FROM catalog_files WHERE root_id = ? AND ext IN ({}) AND is_canonical = 1".format(
-            ','.join("'"+e+"'" for e in video_exts_lower)),
+            ','.join("'"+e+"'" for e in VIDEO_EXTS)),
         (root_id,)).fetchone()[0]
     log(f"Video files in catalog: {new_videos}")
 
@@ -256,6 +256,12 @@ def _mark_stale(db, file_id, old_hash, new_hash, abs_path):
         db.sqlite.execute("DELETE FROM faces WHERE content_hash = ?", (old_hash,))
     db.sqlite.execute("UPDATE catalog_files SET embedded = 0, described = 0, exif_done = 0, faces_done = 0 WHERE file_id = ?", (file_id,))
     db.sqlite.commit()
+    photo = db.get_photo_by_path(abs_path)
+    if photo and photo.get("embedded"):
+        try:
+            db.delete_photo_embedding(photo["photo_id"])
+        except Exception:
+            pass
     log(f"  Stale: {abs_path} hash changed {old_hash[:12] if old_hash else '?'}..→{new_hash[:12] if new_hash else '?'}.., flags reset")
 
 

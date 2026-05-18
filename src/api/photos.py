@@ -11,7 +11,7 @@ import re
 import subprocess
 import time
 import threading
-from config import PHOTO_SHARE_PATH, THUMBNAILS_DIR, LLAMA_CPP_DIR, PROJECT_ROOT, LOG_FILE
+from config import PHOTO_SHARE_PATH, THUMBNAILS_DIR, LLAMA_CPP_DIR, PROJECT_ROOT, LOG_FILE, VIDEO_EXTS
 import config
 
 logger = logging.getLogger(__name__)
@@ -137,7 +137,7 @@ def _db_write_direct(cmd, params):
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
-STREAM_VIDEO_EXTS = {'.avi', '.3gp', '.wmv', '.mpg', '.mpeg', '.flv', '.m4v', '.mov', '.mkv'}
+STREAM_VIDEO_EXTS = VIDEO_EXTS
 
 FOTO_PREFIX = str(PHOTO_SHARE_PATH) + "/"
 

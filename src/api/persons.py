@@ -39,6 +39,7 @@ def _db_write_direct(cmd, params):
             )
             if not persona:
                 return {"ok": False, "error": "Person not found"}
+            db.invalidate_for_persona(params.get("persona_id"))
             fc_map = db.face_count_map()
             return {"ok": True, "persona": dict(persona), "face_count": fc_map.get(persona["persona_id"], 0)}
         elif cmd == "merge_personas":
@@ -48,7 +49,7 @@ def _db_write_direct(cmd, params):
                 return {"ok": False, "error": "source_persona_id and target_persona_id required"}
             success = db.merge_personas(source, target)
             if success:
-                db.invalidate_embeddings_for_persona(target)
+                db.invalidate_for_persona(target)
                 return {"ok": True}
             return {"ok": False, "error": "Failed to merge"}
         else:

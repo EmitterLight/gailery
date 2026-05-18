@@ -32,7 +32,7 @@ if os.path.exists(VENV_PYTHON) and sys.executable != VENV_PYTHON:
     os.execv(VENV_PYTHON, [VENV_PYTHON, __file__] + sys.argv[1:])
 
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
-from config import LLAMA_CPP_DIR, MODELS_DIR, PHOTO_SHARE_PATH
+from config import LLAMA_CPP_DIR, MODELS_DIR, PHOTO_SHARE_PATH, VIDEO_EXTS
 PROJECT_ROOT = Path(__file__).parent.resolve()
 
 LLAMA_SERVER_BIN = str(LLAMA_CPP_DIR / "build" / "bin" / "llama-server")
@@ -152,13 +152,16 @@ def stop_llama_server(proc):
     log("llama-server stopped")
 
 
-def describe_one(img_b64, photo_path):
+def describe_one(img_b64, photo_path, face_context=""):
+    user_text = "Проанализируй эту фотографию."
+    if face_context:
+        user_text += " " + face_context
     data = {
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": [
                 {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}},
-                {"type": "text", "text": "Проанализируй эту фотографию."},
+                {"type": "text", "text": user_text},
             ]},
         ],
         "max_tokens": MAX_NEW_TOKENS,
@@ -186,6 +189,51 @@ def describe_one(img_b64, photo_path):
 
 VLM_MAX_SIZE = 1280
 VLM_JPEG_QUALITY = 85
+
+
+def _bbox_to_position(bbox, img_width):
+    x_center = (bbox[0] + bbox[2]) / 2 / max(img_width, 1)
+    if x_center < 0.33:
+        return "слева"
+    elif x_center > 0.67:
+        return "справа"
+    return "в центре"
+
+
+def _get_face_context(content_hash, img_width, db):
+    if not content_hash or not db:
+        return ""
+    try:
+        rows = db.sqlite.execute(
+            "SELECT f.bbox_x1, f.bbox_y1, f.bbox_x2, f.bbox_y2, p.display_name "
+            "FROM faces f LEFT JOIN personas p ON f.persona_id = p.persona_id "
+            "WHERE f.content_hash = ?",
+            (content_hash,)
+        ).fetchall()
+    except Exception:
+        return ""
+    if not rows:
+        return ""
+    parts = []
+    named_count = 0
+    unnamed_count = 0
+    for r in rows:
+        bbox = [r[0] or 0, r[1] or 0, r[2] or 0, r[3] or 0]
+        pos = _bbox_to_position(bbox, img_width)
+        name = r[4]
+        if name:
+            parts.append(f"{name} ({pos})")
+            named_count += 1
+        else:
+            unnamed_count += 1
+    lines = []
+    if named_count > 0:
+        lines.append(f"На фото обнаружены лица: {', '.join(parts)}.")
+    if unnamed_count > 0:
+        lines.append(f"Также {unnamed_count} лиц без имён.")
+    if lines:
+        lines.append("Используй имена в описании если они подходят к людям на фото.")
+    return " ".join(lines)
 
 
 def prepare_image(path):
@@ -216,13 +264,15 @@ def prepare_image(path):
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=VLM_JPEG_QUALITY)
     img_b64 = base64.b64encode(buf.getvalue()).decode()
-    return img_b64, None
+    return img_b64, None, w
 
 
-def describe_batch(image_paths):
+def describe_batch(image_paths, db=None):
     images_b64 = []
     valid_paths = []
     invalid_paths = []
+    face_contexts = []
+    img_widths = []
     for p in image_paths:
         try:
             fsize = os.path.getsize(p)
@@ -230,13 +280,24 @@ def describe_batch(image_paths):
                 log(f"  Skip {p}: too small ({fsize} bytes)")
                 invalid_paths.append(p)
                 continue
-            img_b64, err = prepare_image(p)
+            img_b64, err, img_w = prepare_image(p)
             if err:
                 log(f"  Skip {p}: not an image ({err})")
                 invalid_paths.append(p)
                 continue
+            content_hash = None
+            if db:
+                ch_row = db.sqlite.execute(
+                    "SELECT content_hash FROM catalog_files WHERE abs_path = ? AND content_hash IS NOT NULL LIMIT 1",
+                    (str(p),)
+                ).fetchone()
+                if ch_row:
+                    content_hash = ch_row[0]
+            fc = _get_face_context(content_hash, img_w, db) if content_hash else ""
             images_b64.append(img_b64)
             valid_paths.append(p)
+            face_contexts.append(fc)
+            img_widths.append(img_w)
         except Exception as e:
             log(f"  Cannot read {p}: {e}")
             invalid_paths.append(p)
@@ -254,7 +315,7 @@ def describe_batch(image_paths):
     if not valid_paths:
         return results
     with ThreadPoolExecutor(max_workers=NP_SLOTS) as pool:
-        futs = {pool.submit(describe_one, images_b64[i], valid_paths[i]): i for i in range(len(valid_paths))}
+        futs = {pool.submit(describe_one, images_b64[i], valid_paths[i], face_contexts[i]): i for i in range(len(valid_paths))}
         for fut in as_completed(futs):
             path, parsed, elapsed, pps, err = fut.result()
             if err:
@@ -367,17 +428,26 @@ def save_description(db, photo_path, parsed):
     try:
         photo = db.get_photo_by_path(path_str)
         if photo:
+            faces_done_row = db.sqlite.execute(
+                "SELECT faces_done FROM catalog_files WHERE abs_path = ? AND is_canonical = 1 LIMIT 1",
+                (path_str,)
+            ).fetchone()
+            faces_done = faces_done_row[0] if faces_done_row else 0
+            if faces_done:
+                faces_present_val = photo.get("faces_present", 0)
+            else:
+                faces_present_val = int(parsed["has_faces"])
             db.update_photo(
                 photo["photo_id"],
                 description=parsed["description"],
-                faces_present=int(parsed["has_faces"]),
+                faces_present=faces_present_val,
                 has_issues=int(parsed["has_issues"]),
                 issue_type=parsed.get("issue_type"),
                 photo_type=parsed.get("photo_type", "photo"),
             )
             db.sqlite.execute("UPDATE photos SET embedded = 0 WHERE photo_id = ?", (photo["photo_id"],))
             db.sqlite.commit()
-            db.update_catalog_file_by_path(path_str, described=1, faces_done=int(parsed["has_faces"]))
+            db.update_catalog_file_by_path(path_str, described=1, faces_done=max(faces_done, int(parsed["has_faces"])))
         else:
             print(f"[WARN] Photo not in DB, skipping: {path_str}", flush=True)
     except Exception as e:
@@ -385,12 +455,13 @@ def save_description(db, photo_path, parsed):
 
 
 def process_single(photo_path):
+    db = get_db()
     server = start_llama_server()
     if not server:
         print("Failed to start llama-server", flush=True)
         return
     try:
-        results = describe_batch([photo_path])
+        results = describe_batch([photo_path], db=db)
         for path, parsed in results:
             print(f"DESC:{parsed['description']}", flush=True)
             print(f"FACES:{parsed['has_faces']}", flush=True)
@@ -439,7 +510,7 @@ def process_directory(photo_dir, batch_size=BATCH_SIZE, limit=0):
 
             t0 = time.time()
             try:
-                results = describe_batch(batch_paths)
+                results = describe_batch(batch_paths, db=db)
             except Exception as e:
                 log(f"Batch {batch_num} FAILED: {e}")
                 failed += len(batch_paths)
@@ -455,7 +526,7 @@ def process_directory(photo_dir, batch_size=BATCH_SIZE, limit=0):
                 save_description(db, path, parsed)
                 if parsed.get("issue_type") == "corrupted":
                     ext = os.path.splitext(str(path))[1].lower()
-                    if ext in {".mp4", ".mov", ".avi", ".mkv", ".webm", ".3gp", ".wmv", ".mpg", ".mpeg", ".m4v", ".flv", ".vob", ".ts"}:
+                    if ext in VIDEO_EXTS:
                         db.sqlite.execute("UPDATE photos SET media_type = 'video', description = '[видео]', faces_present = 0 WHERE path = ? AND deleted = 0", (str(path),))
                         db.sqlite.commit()
                         db.update_catalog_file_by_path(str(path), described=1, faces_done=0)

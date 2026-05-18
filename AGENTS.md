@@ -61,7 +61,7 @@ else:
 Каждая карточка прогресса = `сделано / всего` по canonical:
 - Наполнение: canonical в photos (deleted=0) / canonical в catalog
 - Описание: canonical с description / canonical всего
-- Лица: canonical с faces_present=1 И есть записи в faces (по content_hash) / canonical с faces_present=1
+- Лица: canonical (не видео) с faces_done=1 / canonical (не видео, deleted=0)
 - EXIF: canonical с exif_checked=1 / canonical всего
 - Семантическая индексация: canonical с embedded=1 / canonical всего
 
@@ -197,24 +197,28 @@ personas: persona_id, display_name, comment
 
 6. Обновить `catalog_roots.scanned_at`
 
-### Шаг 2: Описание (describe)
+### Шаг 2: EXIF
 
-1. Найти canonical photos с `description IS NULL` и `deleted=0`
-2. VLM (llama-server + Qwen3.5-4B-Q4_K_M.gguf + mmproj) генерирует описание + ставит `faces_present=True/False`
-3. Счётчик: canonical photos с `description IS NOT NULL` / все canonical photos (deleted=0)
+1. Найти canonical photos с `exif_checked=0` и `deleted=0` (JOIN с catalog_files)
+2. Читаем EXIF (фото через exifread) / видео (через ffprobe)
+3. Записываем дату/GPS/камеру/длительность/кодек
+4. Счётчик: canonical photos с `exif_checked=1` / все canonical photos (deleted=0)
 
 ### Шаг 3: Лица (faces)
 
-1. Найти canonical photos с `faces_present=1, deleted=0` у которых **нет записей в faces по `content_hash`**
+1. Найти canonical photos с `faces_done=0` и `deleted=0` (исключая видео)
 2. InsightFace GPU: детекция, векторные представления, кластеризация в персоны (DBSCAN на GPU)
 3. Запись в `faces` — **обязательно с `content_hash`** из `catalog_files`
-4. Счётчик: canonical photos с `faces_present=1` И есть записи в faces (по content_hash) / canonical photos с `faces_present=1`
+4. Для ВСЕХ обработанных фото: `catalog_files.faces_done=1`; с лицами: `photos.faces_present=1`; без лиц: `photos.faces_present=0`
+5. Счётчик: canonical photos (не видео) с `cf.faces_done=1` / canonical photos (не видео, deleted=0)
 
-### Шаг 4: EXIF
+### Шаг 4: Описание (describe)
 
-1. Найти canonical photos с `exif_checked=0` и `deleted=0`
-2. Читаем EXIF, записываем дату/GPS/камеру
-3. Счётчик: canonical photos с `exif_checked=1` / все canonical photos (deleted=0)
+1. Найти canonical photos с `description IS NULL` и `deleted=0`
+2. VLM (llama-server + Qwen3.5-4B-Q4_K_M.gguf + mmproj) генерирует описание
+3. Если `faces_done=1` (InsightFace уже отработал) — VLM НЕ перетирает `faces_present`
+4. Контекст лиц в промпте: если есть именованные персоны — VLM получает имена + позиции
+5. Счётчик: canonical photos с `description IS NOT NULL` / все canonical photos (deleted=0)
 
 ### Шаг 5: Семантическая индексация (embed)
 
@@ -228,9 +232,24 @@ personas: persona_id, display_name, comment
 
 1. Запускается шаг 1 (scan+ingest)
 2. Считаем прогресс каждого шага (только по canonical unique файлам, deleted=0)
-3. Запускаем незавершённые шаги по порядку: describe → faces → exif → embed
+3. Запускаем незавершённые шаги по порядку: exif → faces → describe → embed
 4. Каждый шаг проверяет `content_hash` для привязки результатов
 5. Все 100% → засыпаем, watchdog разбудит при изменениях
+
+### Каскад инвалидации при изменении персон
+
+Переименовали «Мария» → «Маша» → описания с «Мария» устарели.
+
+`invalidate_for_persona(persona_id)` в database.py — вызывается при:
+- `update_persona` (rename) — из persons.py API и pipeline.py
+- `merge_personas` — из persons.py API и pipeline.py
+- `update_face_persona` — прямо в методе database.py
+
+Действия каскада:
+- Сброс description: `photos SET description=NULL, embedded=0` для затронутых фото
+- Сброс catalog_files: `described=0, embedded=0`
+- Удаление эмбеддингов из LanceDB
+- Сброс `faces_done` НЕ происходит — InsightFace-результат остаётся актуальным
 
 ### Устаревание результатов (content_hash изменился)
 

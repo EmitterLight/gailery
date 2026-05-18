@@ -41,7 +41,7 @@ PIPELINE_IDLE_FLAG = FLAG_DIR / "pipeline_idle"
 MEMORY_WARN_PCT = 85
 MEMORY_CRIT_PCT = 93
 RSS_LIMIT_GB = 5.0
-WORKER_PROCESSES = ["faces.py", "describe.py", "embed.py", "exif.py", "ingest.py", "enrich_description.py", "vision_describe.py"]
+WORKER_PROCESSES = ["faces.py", "describe.py", "embed.py", "exif.py", "ingest.py", "enrich_description.py", "vision_describe.py", "llama-server"]
 PIPELINE_PROCESS = "pipeline.py"
 
 _crash_log = []

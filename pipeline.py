@@ -2,7 +2,7 @@
 """
 pipeline.py - Batch worker: loops through chain until 100% or stopped.
 Single DB writer: only pipeline writes to SQLite. API sends DB commands via MQTT.
-Chain: Ingest -> Describe -> Faces -> EXIF -> Embed
+Chain: Ingest -> EXIF -> Faces -> Describe -> Embed
 
 Usage:
     python pipeline.py
@@ -34,6 +34,7 @@ if os.path.exists(VENV_PYTHON) and sys.executable != VENV_PYTHON:
     os.execv(VENV_PYTHON, [VENV_PYTHON, __file__] + sys.argv[1:])
 
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
+from config import VIDEO_EXTS
 LOG_FILE = str(Path(__file__).parent / "logs" / "pipeline.log")
 FLAG_FILE = str(Path(__file__).parent / "data" / "pipeline_flags" / "pipeline")
 SCRIPTS_DIR = str(Path(__file__).parent)
@@ -92,16 +93,11 @@ def get_progress(root_id=None):
     ingested_photos = cur.execute(f"SELECT COUNT(*) {photo_where}", root_params).fetchone()[0]
     described = cur.execute(f"SELECT COUNT(*) {photo_where} AND p.description IS NOT NULL", root_params).fetchone()[0]
     exif_checked = cur.execute(f"SELECT COUNT(*) {photo_where} AND p.exif_checked = 1", root_params).fetchone()[0]
-    faces_flagged = cur.execute(f"SELECT COUNT(*) {photo_where} AND p.faces_present = 1", root_params).fetchone()[0]
-    faces_done = cur.execute(
-        f"SELECT COUNT(*) {photo_where} AND p.faces_present = 1"
-        f" AND EXISTS (SELECT 1 FROM faces f WHERE f.content_hash = cf.content_hash)",
-        root_params).fetchone()[0]
-    faces_pending = faces_flagged - faces_done
+    faces_done_count = cur.execute(f"SELECT COUNT(*) {photo_where} AND cf.faces_done = 1", root_params).fetchone()[0]
     embedded = cur.execute(f"SELECT COUNT(*) {photo_where} AND p.embedded = 1", root_params).fetchone()[0]
 
     video_where = base + " AND p.media_type = 'video'"
-    videos_catalog = cur.execute(f"SELECT COUNT(*) FROM catalog_files cf WHERE cf.is_canonical = 1 AND cf.deleted = 0 AND cf.ext IN ('.mp4','.mov','.avi','.mkv','.webm','.3gp','.wmv','.mpg','.mpeg','.m4v','.flv','.vob','.ts','.MP4','.MOV','.AVI','.MKV','.WEBM','.3GP','.WMV','.MPG','.MPEG','.M4V','.FLV','.VOB','.TS'){root_where}", root_params).fetchone()[0]
+    videos_catalog = cur.execute(f"SELECT COUNT(*) FROM catalog_files cf WHERE cf.is_canonical = 1 AND cf.deleted = 0 AND cf.ext IN ({','.join("'"+e+"'" for e in VIDEO_EXTS)}){root_where}", root_params).fetchone()[0]
     videos_ingested = cur.execute(f"SELECT COUNT(*) {video_where}", root_params).fetchone()[0]
     videos_exif = cur.execute(f"SELECT COUNT(*) {video_where} AND p.exif_checked = 1", root_params).fetchone()[0]
     p_videos_ingest = videos_ingested / max(videos_catalog, 1) * 100 if videos_catalog > 0 else 0
@@ -110,15 +106,14 @@ def get_progress(root_id=None):
     p_ingest = ingested / max(cat_total, 1) * 100
     p_describe = described / max(ingested_photos, 1) * 100
     p_exif = exif_checked / max(ingested_photos, 1) * 100
-    p_faces = faces_done / max(faces_flagged, 1) * 100 if faces_flagged > 0 else 100
+    p_faces = faces_done_count / max(ingested_photos, 1) * 100
     p_embed = embedded / max(ingested_photos, 1) * 100
 
     return {
         "ingest": (ingested, cat_total, p_ingest),
         "describe": (described, ingested_photos, p_describe),
         "exif": (exif_checked, ingested_photos, p_exif),
-        "faces": (faces_done, faces_flagged, p_faces),
-        "faces_pending": faces_pending,
+        "faces": (faces_done_count, ingested_photos, p_faces),
         "embed": (embedded, ingested_photos, p_embed),
         "videos": {
             "catalog": videos_catalog,
@@ -188,11 +183,12 @@ def _execute_db_cmd(cmd, params):
             step = params.get("step", "")
             reset_map = {
                 "describe": [
-                    "UPDATE photos SET description=NULL, faces_present=0, embedded=0, rich_description=NULL WHERE deleted=0",
+                    "UPDATE photos SET description=NULL, embedded=0, rich_description=NULL WHERE deleted=0",
                     "UPDATE catalog_files SET described=0 WHERE is_canonical=1 AND deleted=0",
                 ],
                 "faces": [
                     "DELETE FROM faces",
+                    "UPDATE photos SET faces_present=0 WHERE deleted=0",
                     "UPDATE catalog_files SET faces_done=0 WHERE is_canonical=1 AND deleted=0",
                     "DELETE FROM personas",
                 ],
@@ -204,6 +200,10 @@ def _execute_db_cmd(cmd, params):
                     "UPDATE photos SET embedded=0 WHERE deleted=0",
                     "UPDATE catalog_files SET embedded=0 WHERE is_canonical=1 AND deleted=0",
                 ],
+                "describe_with_faces": [
+                    "UPDATE photos SET description=NULL, embedded=0 WHERE path IN (SELECT DISTINCT cf.abs_path FROM catalog_files cf JOIN faces f ON f.content_hash = cf.content_hash JOIN personas p ON p.persona_id = f.persona_id WHERE p.display_name IS NOT NULL AND cf.is_canonical=1) AND deleted=0",
+                    "UPDATE catalog_files SET described=0, embedded=0 WHERE content_hash IN (SELECT DISTINCT f.content_hash FROM faces f JOIN personas p ON p.persona_id = f.persona_id WHERE p.display_name IS NOT NULL) AND is_canonical=1",
+                ],
             }
             sqls = reset_map.get(step)
             if not sqls:
@@ -213,6 +213,11 @@ def _execute_db_cmd(cmd, params):
                 cur = db.sqlite.execute(sql)
                 affected += cur.rowcount
             db.sqlite.commit()
+            if step == "faces":
+                try:
+                    db.face_vectors.delete("face_id != ''")
+                except Exception:
+                    pass
             return {"ok": True, "step": step, "affected": affected}
 
         elif cmd == "set_setting":
@@ -315,6 +320,7 @@ def _execute_db_cmd(cmd, params):
             )
             if not persona:
                 return {"ok": False, "error": "Person not found"}
+            db.invalidate_for_persona(params.get("persona_id"))
             fc_map = db.face_count_map()
             return {"ok": True, "persona": dict(persona), "face_count": fc_map.get(persona["persona_id"], 0)}
 
@@ -325,7 +331,7 @@ def _execute_db_cmd(cmd, params):
                 return {"ok": False, "error": "source_persona_id and target_persona_id required"}
             success = db.merge_personas(source, target)
             if success:
-                db.invalidate_embeddings_for_persona(target)
+                db.invalidate_for_persona(target)
                 return {"ok": True}
             return {"ok": False, "error": "Failed to merge"}
 
@@ -520,6 +526,19 @@ def main():
                     pass
                 continue
 
+            if progress["exif"][2] < 100:
+                run_step("EXIF", [VENV_PYTHON, f"{SCRIPTS_DIR}/exif.py", "--all"])
+                if stopped():
+                    break
+                progress = get_progress(root_id=args.root or None)
+
+            if progress["faces"][2] < 100:
+                kill_orphan_llama_servers()
+                run_step("FACES", [VENV_PYTHON, f"{SCRIPTS_DIR}/faces.py"])
+                if stopped():
+                    break
+                progress = get_progress(root_id=args.root or None)
+
             if progress["describe"][2] < 100:
                 db = get_db()
                 _cur = db.sqlite.execute("UPDATE photos SET description='[видео]' WHERE media_type='video' AND (description IS NULL OR description='') AND deleted=0")
@@ -531,19 +550,6 @@ def main():
                 remaining = progress["describe"][1] - progress["describe"][0]
                 n = min(describe_n, remaining) if remaining > 0 else describe_n
                 run_step("DESCRIBE", [VENV_PYTHON, f"{SCRIPTS_DIR}/describe.py", "--limit", str(n), "--batch-size", str(args.batch_size)] + root_path_arg)
-                if stopped():
-                    break
-                progress = get_progress(root_id=args.root or None)
-
-            if progress["faces"][2] < 100 or progress.get("faces_pending", 0) > 0:
-                kill_orphan_llama_servers()
-                run_step("FACES", [VENV_PYTHON, f"{SCRIPTS_DIR}/faces.py"])
-                if stopped():
-                    break
-                progress = get_progress(root_id=args.root or None)
-
-            if progress["exif"][2] < 100:
-                run_step("EXIF", [VENV_PYTHON, f"{SCRIPTS_DIR}/exif.py", "--all"])
                 if stopped():
                     break
                 progress = get_progress(root_id=args.root or None)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 faces.py - Detect faces, generate embeddings, cluster into personas.
-Processes all photos with faces_present=True that have no face records yet.
+Processes all photos with faces_done=0 (not yet processed by InsightFace).
 
 Usage:
     python faces.py
@@ -24,7 +24,7 @@ if os.path.exists(VENV_PYTHON) and sys.executable != VENV_PYTHON:
 os.environ['OMP_NUM_THREADS'] = '4'
 
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
-from config import MODELS_DIR, PHOTO_SHARE_PATH
+from config import MODELS_DIR, PHOTO_SHARE_PATH, VIDEO_EXTS
 LOG_FILE = str(Path(__file__).parent / "logs" / "pipeline.log")
 FLAG_FILE = str(Path(__file__).parent / "data" / "pipeline_flags" / "faces")
 
@@ -55,11 +55,8 @@ def get_undetected_photos(db, limit=0):
         SELECT p.photo_id, p.path, p.description, cf.content_hash
         FROM photos p
         JOIN catalog_files cf ON cf.abs_path = p.path
-        WHERE p.faces_present = 1 AND p.deleted = 0 AND (p.media_type IS NULL OR p.media_type != 'video')
+        WHERE cf.faces_done = 0 AND p.deleted = 0 AND (p.media_type IS NULL OR p.media_type != 'video')
           AND cf.is_canonical = 1 AND cf.deleted = 0
-          AND NOT EXISTS (
-              SELECT 1 FROM faces f WHERE f.content_hash = cf.content_hash
-          )
         ORDER BY p.path
     """
     if limit and limit > 0:
@@ -128,7 +125,7 @@ def run_detection(photos):
             log(f"ERROR {os.path.basename(path)}: {e}")
             try:
                 ext = os.path.splitext(path)[1].lower()
-                if ext in {".mp4", ".mov", ".avi", ".mkv", ".webm", ".3gp", ".wmv", ".mpg", ".mpeg", ".m4v", ".flv", ".vob", ".ts"}:
+                if ext in VIDEO_EXTS:
                     db.sqlite.execute("UPDATE photos SET media_type = 'video', faces_present = 0, description = NULL WHERE path = ? AND deleted = 0", (path,))
                     db.sqlite.commit()
                     log(f"  set media_type=video (not an image)")
@@ -182,7 +179,7 @@ def run_detection(photos):
                 photo = db.get_photo_by_path(path)
                 if photo:
                     t_upd = time.time()
-                    db.sqlite.execute("UPDATE photos SET embedded = 0 WHERE photo_id = ?", (photo["photo_id"],))
+                    db.sqlite.execute("UPDATE photos SET embedded = 0, faces_present = 1 WHERE photo_id = ?", (photo["photo_id"],))
                     db.sqlite.commit()
                     dt_sql_upd = time.time() - t_upd
             except Exception:
@@ -190,10 +187,14 @@ def run_detection(photos):
         elif len(faces) == 0:
             try:
                 photo = db.get_photo_by_path(path)
-                if photo and photo.get("faces_present"):
+                if photo:
                     db.update_photo(photo["photo_id"], faces_present=0)
             except Exception:
                 pass
+        try:
+            db.update_catalog_file_by_path(path, faces_done=1)
+        except Exception:
+            pass
         dt_cleanup = time.time() - t_cleanup
 
         total_saved += saved

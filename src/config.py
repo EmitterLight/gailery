@@ -48,6 +48,9 @@ THUMBNAIL_SIZE = 512
 THUMBNAIL_FORMAT = "WebP"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".raw", ".cr2", ".nef", ".arw", ".dng"}
 
+VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".3gp", ".wmv",
+              ".mpg", ".mpeg", ".m4v", ".flv", ".vob", ".ts"}
+
 # Face detection
 FACE_DETECTION_MODEL = "retinaface"  # or "yolo26"
 FACE_CONFIDENCE_THRESHOLD = 0.5
