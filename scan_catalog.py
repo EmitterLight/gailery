@@ -203,8 +203,9 @@ def scan_root(db, root_id, mq=None):
                         "faces_done": False,
                     })
 
-                if len(new_files) >= 1000:
+                if len(new_files) >= 100:
                     db.add_catalog_files_batch(new_files)
+                    log(f"  Flushed {len(new_files)} new files to DB")
                     new_files = []
 
         scan_complete = True

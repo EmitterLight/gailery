@@ -513,12 +513,6 @@ def main():
                 else:
                     log(f"  {step}: {val}")
 
-            scan_args = [VENV_PYTHON, f"{SCRIPTS_DIR}/scan_catalog.py", "--scan"]
-            run_step("QUICK SCAN", scan_args)
-            if stopped():
-                break
-            progress = get_progress()
-
             all_done = all(pct >= 100 for _, _, pct in [v for v in progress.values() if isinstance(v, tuple)])
             if all_done:
                 _idle_flag = Path(FLAG_FILE).parent / "pipeline_idle"
@@ -542,11 +536,37 @@ def main():
                     pass
                 continue
 
-            if progress["exif"][2] < 100:
-                run_step("EXIF", [VENV_PYTHON, f"{SCRIPTS_DIR}/exif.py", "--all"])
+            filling_done = progress["ingest"][2] >= 100 and progress["exif"][2] >= 100
+
+            if not filling_done:
+                log(">>> ЭТАП 1: НАПОЛНЕНИЕ (скан + хеш + ingest + EXIF) — до 100%")
+
+                scan_args = [VENV_PYTHON, f"{SCRIPTS_DIR}/scan_catalog.py", "--scan"]
+                run_step("SCAN+INGEST", scan_args)
                 if stopped():
                     break
                 progress = get_progress(root_id=args.root or None)
+
+                if progress["ingest"][2] < 100:
+                    log(f"  Ingest ещё не 100% ({progress['ingest'][2]:.1f}%), пробуем хеширование")
+                    run_step("HASH_BACKFILL", [VENV_PYTHON, f"{SCRIPTS_DIR}/scan_catalog.py", "--hash"])
+                    if stopped():
+                        break
+                    progress = get_progress(root_id=args.root or None)
+
+                if progress["exif"][2] < 100 and progress["ingest"][2] >= 100:
+                    run_step("EXIF", [VENV_PYTHON, f"{SCRIPTS_DIR}/exif.py", "--all"])
+                    if stopped():
+                        break
+                    progress = get_progress(root_id=args.root or None)
+
+                if progress["ingest"][2] >= 100 and progress["exif"][2] >= 100:
+                    log(">>> НАПОЛНЕНИЕ 100% — переходим к AI-шагам")
+                else:
+                    log(f">>> НАПОЛНЕНИЕ ещё не готово: ingest={progress['ingest'][2]:.1f}%, exif={progress['exif'][2]:.1f}% — цикл")
+                    continue
+
+            log(">>> ЭТАП 2: AI-обработка (faces → describe → embed)")
 
             if progress["faces"][2] < 100:
                 kill_orphan_llama_servers()
@@ -589,25 +609,6 @@ def main():
                         log(f"DEDUP: no duplicates ({before} rows), optimized in {elapsed:.1f}s")
                 except Exception as e:
                     log(f"DEDUP: error: {e}")
-
-            progress2 = get_progress()
-            any_changed = any(
-                (isinstance(progress2[k], tuple) and isinstance(progress[k], tuple) and progress2[k][0] != progress[k][0])
-                for k in progress
-            )
-            if not any_changed and not all(pct >= 100 for _, _, pct in [v for v in progress2.values() if isinstance(v, tuple)]):
-                log("Прогресса нет, засыпаю 30с...")
-                sleep_until = time.time() + 30
-                while time.time() < sleep_until and not stopped():
-                    _process_db_cmds()
-                    if _wake_flag:
-                        _wake_flag = False
-                        log("WAKE: control_reset — просыпаюсь")
-                        break
-                    if time.time() - last_metrics >= 60:
-                        _collect_metrics()
-                        last_metrics = time.time()
-                    time.sleep(2)
 
         log("Pipeline loop завершён")
     finally:
