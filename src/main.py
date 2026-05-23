@@ -803,12 +803,13 @@ async def control_start(body: dict):
     elif step == "embed":
         cmd = f"/usr/bin/nohup {VENV_PYTHON} {_pr}/embed.py >> {_lf} 2>&1 &"
     elif step == "chain":
+        from config import PIPELINE_SERVICE
         n = body.get("hash_limit", 50)
         dl = body.get("desc_limit", 60)
         bs = body.get("batch_size", 6)
         root = f"--root {body['root_id']}" if body.get("root_id") else ""
         subprocess.run(["pkill", "-f", "pipeline.py"], capture_output=True, timeout=5)
-        subprocess.run(["systemctl", "stop", config.PIPELINE_SERVICE], capture_output=True, timeout=5)
+        subprocess.run(["systemctl", "stop", PIPELINE_SERVICE], capture_output=True, timeout=5)
         cmd = f"/usr/bin/nohup {VENV_PYTHON} {_pr}/pipeline.py --hash-limit {n} --describe {dl} --batch-size {bs} {root} >> {_lf} 2>&1 &"
 
     if cmd:
@@ -818,7 +819,7 @@ async def control_start(body: dict):
                 (FLAG_DIR / "no_restart").unlink()
             except FileNotFoundError:
                 pass
-            os.system(f"systemctl enable {config.PIPELINE_SERVICE} 2>/dev/null")
+            os.system(f"systemctl enable {PIPELINE_SERVICE} 2>/dev/null")
         gpu_steps = {"describe", "faces", "embed", "chain"}
         if step in gpu_steps:
             os.system("pkill -9 -f 'llama-server' 2>/dev/null")
@@ -834,11 +835,12 @@ async def control_start(body: dict):
 
 @app.post("/api/control/stop")
 async def control_stop():
+    from config import PIPELINE_SERVICE
     mq = _get_api_mqtt()
     if mq:
         mq.send_stop("all")
-    os.system(f"systemctl stop {config.PIPELINE_SERVICE} 2>/dev/null")
-    os.system(f"systemctl disable {config.PIPELINE_SERVICE} 2>/dev/null")
+    os.system(f"systemctl stop {PIPELINE_SERVICE} 2>/dev/null")
+    os.system(f"systemctl disable {PIPELINE_SERVICE} 2>/dev/null")
     for pattern in ["llama-server", "vision_describe", "face_pipeline", "faces.py", "faces", "ingest.py", "ingest", "exif.py", "exif", "embed.py", "embed", "pipeline.py", "describe.py", "describe", "enrich_description.py", "enrich"]:
         try:
             os.system(f"pkill -f '{pattern}' 2>/dev/null")
