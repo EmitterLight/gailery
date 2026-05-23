@@ -468,7 +468,7 @@ def main():
     parser.add_argument("--ingest", type=int, default=0, help="Override ingest batch size (0=use --batch)")
     parser.add_argument("--describe", type=int, default=0, help="Override describe batch size (0=use --batch)")
     parser.add_argument("--batch-size", type=int, default=6, help="VLM batch size for describe")
-    parser.add_argument("--hash-limit", type=int, default=50, help="Files to hash per batch (0=all)")
+    parser.add_argument("--hash-limit", type=int, default=200, help="Files to hash per batch (0=all)")
     parser.add_argument("--root", type=str, default="", help="Only process files from this root_id")
     args = parser.parse_args()
 
