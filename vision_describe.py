@@ -212,12 +212,47 @@ def _bbox_to_position(bbox, img_width):
     return "в центре"
 
 
-def _get_face_context(content_hash, img_width, db):
+def _calc_age(comment, photo_date=None):
+    import re
+    if not comment:
+        return None
+    m = re.search(r'(\d{4})[-.](\d{2})[-.](\d{2})', comment)
+    if not m:
+        m = re.search(r'(\d{4})\s+год', comment, re.IGNORECASE)
+        if m:
+            birth_year = int(m.group(1))
+            birth_month = 7
+            birth_day = 1
+        else:
+            return None
+    else:
+        birth_year = int(m.group(1))
+        birth_month = int(m.group(2))
+        birth_day = int(m.group(3))
+    if not photo_date:
+        return None
+    try:
+        pd = photo_date[:10]
+        parts = pd.split('-')
+        if len(parts) != 3:
+            return None
+        py, pm, pdd = int(parts[0]), int(parts[1]), int(parts[2])
+    except Exception:
+        return None
+    age = py - birth_year
+    if (pm, pdd) < (birth_month, birth_day):
+        age -= 1
+    if age < 0 or age > 18:
+        return None
+    return f"{age} {'лет' if age % 10 != 1 or age == 11 else 'год' if age == 1 else 'года'}"
+
+
+def _get_face_context(content_hash, img_width, db, photo_date=None):
     if not content_hash or not db:
         return ""
     try:
         rows = db.sqlite.execute(
-            "SELECT f.bbox_x1, f.bbox_y1, f.bbox_x2, f.bbox_y2, p.display_name "
+            "SELECT f.bbox_x1, f.bbox_y1, f.bbox_x2, f.bbox_y2, p.display_name, p.comment "
             "FROM faces f LEFT JOIN personas p ON f.persona_id = p.persona_id "
             "WHERE f.content_hash = ?",
             (content_hash,)
@@ -233,8 +268,16 @@ def _get_face_context(content_hash, img_width, db):
         bbox = [r[0] or 0, r[1] or 0, r[2] or 0, r[3] or 0]
         pos = _bbox_to_position(bbox, img_width)
         name = r[4]
+        comment = r[5] or ""
         if name:
-            parts.append(f"{name} ({pos})")
+            age_str = _calc_age(comment, photo_date)
+            entry = f"{name} ({pos}"
+            if age_str:
+                entry += f", {age_str}"
+            entry += ")"
+            if comment:
+                entry += f" [{comment}]"
+            parts.append(entry)
             named_count += 1
         else:
             unnamed_count += 1
@@ -244,7 +287,7 @@ def _get_face_context(content_hash, img_width, db):
     if unnamed_count > 0:
         lines.append(f"Также {unnamed_count} лиц без имён.")
     if lines:
-        lines.append("Используй имена в описании если они подходят к людям на фото.")
+        lines.append("Используй имена в описании если они подходят к людям на фото. Для детей укажи возраст.")
     return " ".join(lines)
 
 
@@ -298,6 +341,7 @@ def describe_batch(image_paths, db=None):
                 invalid_paths.append(p)
                 continue
             content_hash = None
+            photo_date = None
             if db:
                 ch_row = db.sqlite.execute(
                     "SELECT content_hash FROM catalog_files WHERE abs_path = ? AND content_hash IS NOT NULL LIMIT 1",
@@ -305,7 +349,13 @@ def describe_batch(image_paths, db=None):
                 ).fetchone()
                 if ch_row:
                     content_hash = ch_row[0]
-            fc = _get_face_context(content_hash, img_w, db) if content_hash else ""
+                date_row = db.sqlite.execute(
+                    "SELECT COALESCE(manual_date, date) FROM photos WHERE path = ? AND deleted = 0 LIMIT 1",
+                    (str(p),)
+                ).fetchone()
+                if date_row and date_row[0]:
+                    photo_date = str(date_row[0])[:10]
+            fc = _get_face_context(content_hash, img_w, db, photo_date=photo_date) if content_hash else ""
             images_b64.append(img_b64)
             valid_paths.append(p)
             face_contexts.append(fc)
