@@ -12,8 +12,9 @@ var STEPS = [
 ];
 
 var TASKS = [
-    {id:'ingest', name:'Наполнение базы', icon:'📂', desc:'Сканирование фото, добавление записей в базу',
-     params:[{k:'ingest_limit',l:'Количество фото',v:100,t:'n'},{k:'exif',l:'Читать EXIF',v:'1',t:'s',opts:[['1','Да'],['0','Нет']]}]},
+    {id:'ingest', name:'Скан каталога', icon:'📂', desc:'Обход директорий, сбор путей (без хешей)', params:[]},
+    {id:'hash', name:'Хеширование', icon:'🔗', desc:'Вычисление xxh128 хешей батчами, дедупликация, добавление в photos',
+     params:[{k:'hash_limit',l:'Файлов за раз',v:50,t:'n'}]},
     {id:'describe', name:'Описание фото', icon:'🖼️', desc:'VLM (Qwen3.5-4B) генерирует описание и флаг лиц',
      params:[{k:'desc_limit',l:'Лимит описаний (0=все)',v:60,t:'n'},{k:'batch_size',l:'Размер батча ВЛМ',v:6,t:'n'}]},
     {id:'faces', name:'Поиск лиц', icon:'👤', desc:'InsightFace: детекция, векторные представления, кластеризация в персоны', params:[]},
@@ -260,7 +261,7 @@ function runChainBlock(blockCid) {
     var infoEl = document.getElementById(pfx+'chainInfo');
     var lim = limEl ? limEl.value : 100;
     var rootId = rootEl ? rootEl.value : '';
-    var params = {step:'chain',ingest_limit:lim,desc_limit:lim,batch_size:10,exif:'1'};
+    var params = {step:'chain',hash_limit:lim,desc_limit:lim,batch_size:10,exif:'1'};
     if (rootId) params.root_id = rootId;
     A.post('/api/control/start', params, function(d) {
         if (d.ok) {
