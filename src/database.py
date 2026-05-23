@@ -1146,15 +1146,15 @@ deleted=None, deleted_only=None,
                 enabled_ids
             ).fetchone()
 
-            photos_total = photos_row[1]
-            photos_only = photos_row[2]
-            videos_ingested = photos_row[3]
-            described = photos_row[4]
-            faces_flagged = photos_row[5]
-            exif_done = photos_row[6]
-            embedded = photos_row[7]
-            videos_exif = photos_row[8]
-            photos_deleted = photos_row[9]
+            photos_total = photos_row[1] or 0
+            photos_only = photos_row[2] or 0
+            videos_ingested = photos_row[3] or 0
+            described = photos_row[4] or 0
+            faces_flagged = photos_row[5] or 0
+            exif_done = photos_row[6] or 0
+            embedded = photos_row[7] or 0
+            videos_exif = photos_row[8] or 0
+            photos_deleted = photos_row[9] or 0
 
             catalog_total = self.sqlite.execute(
                 f"SELECT COUNT(*) FROM catalog_files WHERE is_canonical=1 AND deleted=0 AND root_id IN ({rid_ph})",
