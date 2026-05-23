@@ -106,10 +106,11 @@ a { color: inherit; text-decoration: none; }
 .page.active { display: block; }
 
 /* === FROM control.html — summary boxes === */
-.summary { display: grid; grid-template-columns: repeat(6,1fr); gap: 8px; margin-bottom: 20px; }
-.sbox { background: #161b22; border: 1px solid #21262d; border-radius: 6px; padding: 10px 12px; text-align: center; }
+.summary { display: flex; gap: 8px; margin-bottom: 20px; align-items: stretch; }
+.sbox { background: #161b22; border: 1px solid #21262d; border-radius: 6px; padding: 10px 12px; text-align: center; flex: 1; min-width: 0; }
 .sbox .sv { font-size: 22px; color: #58a6ff; font-weight: bold; }
-.sbox .sl { font-size: 10px; color: #8b949e; margin-top: 2px; }
+.sbox .sl { font-size: 10px; color: #8b949e; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sbox.sep { flex: 0 0 2px; background: #30363d; padding: 0; margin: 0 4px; border-radius: 1px; border: none; }
 
 /* === FROM control.html — pipeline banner === */
 .pipeline-banner { border-radius: 8px; padding: 14px 20px; margin-bottom: 20px; border: 1px solid #21262d; }
@@ -170,7 +171,7 @@ a { color: inherit; text-decoration: none; }
 .cy-arrow { display: flex; align-items: center; justify-content: center; color: #30363d; font-size: 16px; padding: 0 2px; flex-shrink: 0; }
 .cy-arrow.lit { color: #238636; }
 .cy-sep { display: flex; align-items: center; justify-content: center; color: #58a6ff; font-size: 11px; font-weight: bold; padding: 0 6px; flex-shrink: 0; writing-mode: horizontal-tb; white-space: nowrap; border-left: 2px solid #30363d; margin: 0 4px; }
-.sbox.sep { width: 2px; background: #30363d; padding: 0; margin: 0 8px; min-width: 2px; border-radius: 1px; }
+
 
 /* === FROM control.html — controls === */
 .pb-ctrl { display: flex; gap: 8px; align-items: center; margin-top: 12px; padding-top: 12px; border-top: 1px solid #21262d; }
@@ -521,7 +522,8 @@ a { color: inherit; text-decoration: none; }
     .main { grid-column: 1; padding: 10px 12px; }
     .topbar .burger { display: block; }
     .topbar .topbar-nav { display: none; }
-    .summary { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .summary { flex-wrap: wrap; gap: 6px; }
+    .sbox { min-width: calc(33% - 6px); }
     .sbox .sv { font-size: 18px; }
     .sbox .sl { font-size: 9px; }
     .pipeline-banner { padding: 10px 12px; }
@@ -537,7 +539,7 @@ a { color: inherit; text-decoration: none; }
     .task-body input, .task-body select { width: 100%; font-size: 16px; }
 }
 @media (min-width: 769px) { .topbar .burger { display: none; } }
-@media (max-width: 480px) { .summary { grid-template-columns: repeat(2, 1fr); } .cy-step { min-width: calc(50% - 4px); } }
+@media (max-width: 480px) { .summary { flex-wrap: wrap; gap: 4px; } .sbox { min-width: calc(50% - 4px); } .cy-step { min-width: calc(50% - 4px); } }
 .svc-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
 .svc-table th { text-align: left; padding: 6px 10px; color: var(--c-text-muted); border-bottom: 1px solid var(--c-border-strong); font-weight: 600; font-size: 11px; text-transform: uppercase; }
 .svc-table td { padding: 8px 10px; border-bottom: 1px solid var(--c-border-default); vertical-align: middle; }
