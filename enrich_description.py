@@ -143,6 +143,18 @@ SYSTEM_PROMPT = """Ты — душа семейного архива. Ты зн�
 Если есть дата рождения из фактов — обязательно вычисли и укажи возраст ребёнка на момент фото. Пример: фото 2010-10-04, рождение 2009-05-07 → «Алиса, 1 год».
 Опиши подробно что видно: кто, где стоит/сидит, что вокруг. Сохрани всё существенное из исходного описания, но с именами и связями."""
 
+_DEFAULT_SYSTEM_PROMPT = SYSTEM_PROMPT
+
+def get_system_prompt():
+    try:
+        from database import get_db
+        custom = get_db().get_setting("prompt_enrich_system")
+        if custom:
+            return custom
+    except Exception:
+        pass
+    return _DEFAULT_SYSTEM_PROMPT
+
 
 def log(msg):
     line = f"[{datetime.now().isoformat()}] [ENRICH] {msg}"
@@ -454,7 +466,7 @@ def run_llm(db, photo_data):
 {faces_text}"""
 
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": get_system_prompt()},
             {"role": "user", "content": user_msg},
         ]
 
@@ -473,7 +485,7 @@ def run_llm(db, photo_data):
                     log("XML hallucination, retrying clean")
                     print("  [XML hallucination, retrying]")
                     clean_msgs = [
-                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "system", "content": get_system_prompt()},
                         {"role": "user", "content": user_msg},
                     ]
                     msg_clean = llm_request(server, clean_msgs, use_tools=False)
@@ -547,7 +559,7 @@ def run_llm(db, photo_data):
             if not content:
                 log("No content after tools, retrying without thinking")
                 clean_msgs = [
-                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "system", "content": get_system_prompt()},
                     {"role": "user", "content": user_msg},
                 ]
                 msg_clean = llm_request(server, clean_msgs, use_tools=False)
@@ -556,7 +568,7 @@ def run_llm(db, photo_data):
             if content.startswith("<function=") or content.startswith("<parameter>"):
                 log("XML hallucination after tools, retrying clean")
                 clean_msgs = [
-                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "system", "content": get_system_prompt()},
                     {"role": "user", "content": user_msg},
                 ]
                 msg_clean = llm_request(server, clean_msgs, use_tools=False)
@@ -569,7 +581,7 @@ def run_llm(db, photo_data):
             if not content or len(content) < 10:
                 log("Empty after tools, retrying clean")
                 clean_msgs = [
-                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "system", "content": get_system_prompt()},
                     {"role": "user", "content": user_msg},
                 ]
                 msg_clean = llm_request(server, clean_msgs, use_tools=False)

@@ -70,6 +70,18 @@ SYSTEM_PROMPT = """Ты — автоматический анализатор ф
 - Если есть суммы, даты, номера, имена — все обязательно перепиши точно.
 - Если текст частично не виден или размыт — укажи что именно не удалось разобрать."""
 
+_DEFAULT_SYSTEM_PROMPT = SYSTEM_PROMPT
+
+def get_system_prompt():
+    try:
+        from database import get_db
+        custom = get_db().get_setting("prompt_vlm_system")
+        if custom:
+            return custom
+    except Exception:
+        pass
+    return _DEFAULT_SYSTEM_PROMPT
+
 
 def log(msg):
     line = f"[{datetime.now().isoformat()}] [VLM] {msg}"
@@ -158,7 +170,7 @@ def describe_one(img_b64, photo_path, face_context=""):
         user_text += " " + face_context
     data = {
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": get_system_prompt()},
             {"role": "user", "content": [
                 {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}},
                 {"type": "text", "text": user_text},

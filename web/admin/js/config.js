@@ -3,6 +3,7 @@
 
 A.registerBlock('config', 'Конфигурация', '⚙️', function(cid) { A.renderBlock_config(cid); });
 A.registerBlock('models', 'Модели', '💻', function(cid) { A.renderBlock_models(cid); });
+A.registerBlock('prompts', 'Промты', '💬', function(cid) { A.renderBlock_prompts(cid); });
 A.registerBlock('family', 'Семейные данные', '👨‍👩‍👧‍👦', function(cid) { A.renderBlock_family(cid); });
 
 // ═══════ CONFIG ═══════
@@ -24,6 +25,7 @@ A.renderBlock_config = function(containerId) {
         var h = '';
         for (var i=0;i<groups.length;i++) {
             var g = groups[i];
+            if (g.name === 'Промты') continue;
             h += '<div class="cfg-group"><div class="cfg-group-head">'+(g.icon||'')+' '+A.esc(g.name)+'</div>';
             for (var j=0;j<g.params.length;j++) {
                 var p = g.params[j];
@@ -115,6 +117,90 @@ function cancelCfgEdit(valEl, original) {
     valEl.textContent = original;
     valEl.addEventListener('click', function(e) { startCfgEdit(this); });
 }
+
+// ═══════ PROMPTS ═══════
+function buildPrompts() {
+    var el = A.$('page-prompts');
+    if (!el) return;
+    el.innerHTML =
+        '<h2 class="page-h2">💬 Промты</h2>'+
+        '<div id="promptsBlock"></div>';
+    A.renderBlock_prompts('promptsBlock');
+}
+
+A.renderBlock_prompts = function(containerId) {
+    var el = document.getElementById(containerId);
+    if (!el) return;
+    var pfx = 'prm_'+containerId+'_';
+    el.innerHTML = '<div id="prmContent_'+containerId+'">⏳ Загрузка...</div>';
+    A.ajax('/api/config', function(cfg) {
+        var groups = cfg.groups||[];
+        var pg = null;
+        for (var i=0;i<groups.length;i++) {
+            if (groups[i].name === 'Промты') { pg = groups[i]; break; }
+        }
+        if (!pg) { el.innerHTML = '<div class="c-muted">Промты не найдены</div>'; return; }
+        var h = '';
+        for (var j=0;j<pg.params.length;j++) {
+            var p = pg.params[j];
+            var isTool = p.k.indexOf('tool:')!==-1;
+            var isSystem = p.k.indexOf('SYSTEM_PROMPT')!==-1;
+            h += '<div class="cfg-group" style="margin-bottom:16px">';
+            if (isSystem) {
+                h += '<div class="cfg-group-head" style="margin-bottom:8px">'+A.esc(p.k)+'</div>';
+                h += '<div class="c-muted" style="font-size:12px;margin-bottom:6px">'+A.esc(p.d)+'</div>';
+                h += '<textarea class="prm-ta" id="'+pfx+'ta_'+j+'" data-env="'+A.esc(p.env_key||'')+'" data-original="'+A.esc(p.v)+'" rows="12" style="width:100%;min-height:200px;font-family:monospace;font-size:13px;line-height:1.6;resize:vertical;border:1px solid var(--bd);border-radius:6px;padding:10px;background:var(--bg-deep);color:var(--fg)">'+A.esc(p.v)+'</textarea>';
+                h += '<div style="margin-top:6px;display:flex;gap:8px;align-items:center"><button class="btn btn-go btn-sm" data-prm-idx="'+j+'" data-prm-env="'+A.esc(p.env_key||'')+'">Сохранить</button><button class="btn btn-sec btn-sm prm-reset" data-prm-idx="'+j+'" data-prm-env="'+A.esc(p.env_key||'')+'" title="Сбросить к дефолту">↺ Сброс</button><span class="prm-st" id="'+pfx+'st_'+j+'"></span></div>';
+            } else if (isTool) {
+                h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">';
+                h += '<span style="font-weight:600;font-size:13px">🔧 '+A.esc(p.k.replace('Enrich tool: ',''))+'</span></div>';
+                h += '<div class="c-muted" style="font-size:12px;margin-bottom:6px">'+A.esc(p.d)+'</div>';
+                h += '<textarea class="prm-ta" id="'+pfx+'ta_'+j+'" data-env="'+A.esc(p.env_key||'')+'" data-original="'+A.esc(p.v)+'" rows="4" style="width:100%;min-height:60px;font-family:monospace;font-size:13px;line-height:1.5;resize:vertical;border:1px solid var(--bd);border-radius:6px;padding:10px;background:var(--bg-deep);color:var(--fg)">'+A.esc(p.v)+'</textarea>';
+                h += '<div style="margin-top:6px;display:flex;gap:8px;align-items:center"><button class="btn btn-go btn-sm" data-prm-idx="'+j+'" data-prm-env="'+A.esc(p.env_key||'')+'">Сохранить</button><button class="btn btn-sec btn-sm prm-reset" data-prm-idx="'+j+'" data-prm-env="'+A.esc(p.env_key||'')+'" title="Сбросить к дефолту">↺ Сброс</button><span class="prm-st" id="'+pfx+'st_'+j+'"></span></div>';
+            }
+            h += '</div>';
+        }
+        var content = document.getElementById('prmContent_'+containerId);
+        if (content) content.innerHTML = h;
+        content.querySelectorAll('button[data-prm-idx]').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var idx = this.getAttribute('data-prm-idx');
+                var envKey = this.getAttribute('data-prm-env');
+                var ta = document.getElementById(pfx+'ta_'+idx);
+                var stEl = document.getElementById(pfx+'st_'+idx);
+                if (!ta || !envKey) return;
+                var newVal = ta.value;
+                if (stEl) { stEl.textContent = '⏳'; stEl.className = 'prm-st c-info'; }
+                A.post('/api/config/update', {env_key: envKey, value: newVal}, function(d) {
+                    if (d.ok) {
+                        ta.setAttribute('data-original', newVal);
+                        if (stEl) { stEl.textContent = '✓ Сохранено'; stEl.className = 'prm-st c-ok'; }
+                    } else {
+                        if (stEl) { stEl.textContent = '✗ '+(d.error||''); stEl.className = 'prm-st c-err'; }
+                    }
+                }, function() {
+                    if (stEl) { stEl.textContent = '✗ Ошибка сети'; stEl.className = 'prm-st c-err'; }
+                });
+                setTimeout(function() { if (stEl) stEl.textContent = ''; }, 3000);
+            });
+        });
+        content.querySelectorAll('.prm-reset').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var envKey = this.getAttribute('data-prm-env');
+                var idx = this.getAttribute('data-prm-idx');
+                var stEl = document.getElementById(pfx+'st_'+idx);
+                if (!envKey) return;
+                A.post('/api/config/update', {env_key: envKey, value: ''}, function(d) {
+                    if (d.ok) {
+                        A.renderBlock_prompts(containerId);
+                    } else {
+                        if (stEl) { stEl.textContent = '✗ '+(d.error||''); stEl.className = 'prm-st c-err'; }
+                    }
+                });
+            });
+        });
+    });
+};
 
 // ═══════ MODELS ═══════
 function buildModels() {
@@ -348,6 +434,7 @@ function fillTopPersonas(cid) {
 A.on('navigate', function(page) {
     if (page==='config') buildConfig();
     if (page==='models') buildModels();
+    if (page==='prompts') buildPrompts();
     if (page==='family') buildFamily();
 });
 

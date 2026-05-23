@@ -1219,6 +1219,8 @@ async def maintenance_dedup_embeddings():
 
 
 def _get_prompts():
+    from database import get_db
+    db = get_db()
     prompts = []
     _project_root = str(Path(__file__).parent.parent)
     if _project_root not in sys.path:
@@ -1231,12 +1233,14 @@ def _get_prompts():
                 pass
     try:
         vd = importlib.import_module("vision_describe")
-        prompts.append({"k": "VLM SYSTEM_PROMPT", "v": vd.SYSTEM_PROMPT.strip(), "d": "Системный промт описания фото"})
+        vlm_prompt = db.get_setting("prompt_vlm_system") or vd.SYSTEM_PROMPT.strip()
+        prompts.append({"k": "VLM SYSTEM_PROMPT", "v": vlm_prompt, "d": "Системный промт описания фото", "env_key": "prompt_vlm_system", "editable": True})
     except Exception as e:
         prompts.append({"k": "VLM SYSTEM_PROMPT", "v": f"Ошибка загрузки: {e}", "d": "Системный промт описания фото"})
     try:
         ed = importlib.import_module("enrich_description")
-        prompts.append({"k": "Enrich SYSTEM_PROMPT", "v": ed.SYSTEM_PROMPT.strip(), "d": "Системный промт обогащения описания"})
+        enrich_prompt = db.get_setting("prompt_enrich_system") or ed.SYSTEM_PROMPT.strip()
+        prompts.append({"k": "Enrich SYSTEM_PROMPT", "v": enrich_prompt, "d": "Системный промт обогащения описания", "env_key": "prompt_enrich_system", "editable": True})
         tools = getattr(ed, "TOOLS", None)
         if tools:
             for t in tools:
@@ -1245,7 +1249,9 @@ def _get_prompts():
                 desc = fn.get("description", "")
                 params = fn.get("parameters", {}).get("properties", {})
                 param_str = ", ".join(f"{p}: {d.get('type','?')}" for p, d in params.items()) if params else "нет"
-                prompts.append({"k": f"Enrich tool: {name}", "v": f"{desc} | Параметры: {param_str}", "d": "Инструмент обогащения"})
+                env_key = f"prompt_enrich_tool_{name}"
+                tool_val = db.get_setting(env_key) or f"{desc} | Параметры: {param_str}"
+                prompts.append({"k": f"Enrich tool: {name}", "v": tool_val, "d": "Инструмент обогащения", "env_key": env_key, "editable": True})
     except Exception as e:
         prompts.append({"k": "Enrich SYSTEM_PROMPT", "v": f"Ошибка загрузки: {e}", "d": "Системный промт обогащения описания"})
     return prompts
@@ -1416,6 +1422,13 @@ async def config_update(request: Request):
     value = body.get("value", "")
     if not env_key:
         return {"ok": False, "error": "env_key is required"}
+    if env_key.startswith("prompt_"):
+        from database import get_db
+        db = get_db()
+        db.set_setting(env_key, value)
+        _config_cache["data"] = None
+        _config_cache["ts"] = 0
+        return {"ok": True, "env_key": env_key, "value": value}
     env_path = PROJECT_ROOT / ".env"
     lines = []
     found = False

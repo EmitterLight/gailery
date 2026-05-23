@@ -43,6 +43,18 @@ SYSTEM_PROMPT = """Ты — автоматический анализатор ф
 - photo_type: классификация изображения. photo = обычная фотография, screenshot = скриншот экрана, document = документ/квитанция/скан/чек/сертификат/объявление, meme = мем/карточка с текстом, icon = иконка/аватарка, other = всё остальное
 - has_faces: true если видны лица людей (даже частично), false если нет людей или лица не видны"""
 
+_DEFAULT_SYSTEM_PROMPT = SYSTEM_PROMPT
+
+def get_system_prompt():
+    try:
+        from database import get_db
+        custom = get_db().get_setting("prompt_vlm_system")
+        if custom:
+            return custom
+    except Exception:
+        pass
+    return _DEFAULT_SYSTEM_PROMPT
+
 
 def set_flag():
     import os
@@ -166,7 +178,7 @@ def _describe_ollama_request(img_b64, ollama_url, ollama_model, face_context="")
     body = json.dumps({
         "model": ollama_model,
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": get_system_prompt()},
             {"role": "user", "content": user_text, "images": [img_b64]},
         ],
         "stream": False,
