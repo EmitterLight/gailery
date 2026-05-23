@@ -872,6 +872,7 @@ async def list_photos(limit: int = 100, offset: int = 0, sort: str = "changed_de
         recent_pids = [r[0] for r in recent_rows]
         change_times = {r[0]: r[1] for r in recent_rows}
         photos = []
+        p_cols = [d[0] for d in db.sqlite.execute("SELECT * FROM photos LIMIT 0").description]
         for pid in recent_pids:
             row = db.sqlite.execute(
                 "SELECT p.*, cf.content_hash FROM photos p "
@@ -879,8 +880,21 @@ async def list_photos(limit: int = 100, offset: int = 0, sort: str = "changed_de
                 "WHERE p.photo_id=?", (pid,)
             ).fetchone()
             if row:
-                cols = [d[0] for d in db.sqlite.execute("SELECT p.photo_id FROM photos p LIMIT 0").description] + ["content_hash"]
-                photos.append(dict(zip(cols, row)))
+                photos.append(dict(zip(p_cols, row[:len(p_cols)])))
+                photos[-1]["content_hash"] = row[len(p_cols)] if len(row) > len(p_cols) else None
+        total = db.count_photos()
+    else:
+        rows = db.sqlite.execute(
+            "SELECT p.*, cf.content_hash FROM photos p "
+            "LEFT JOIN catalog_files cf ON cf.abs_path = p.path AND cf.is_canonical = 1 "
+            "WHERE p.deleted=0 ORDER BY p.date DESC LIMIT ? OFFSET ?",
+            (limit, offset)
+        ).fetchall()
+        p_cols = [d[0] for d in db.sqlite.execute("SELECT * FROM photos LIMIT 0").description]
+        photos = []
+        for row in rows:
+            photos.append(dict(zip(p_cols, row[:len(p_cols)])))
+            photos[-1]["content_hash"] = row[len(p_cols)] if len(row) > len(p_cols) else None
         total = db.count_photos()
 
     hashes = [p.get("content_hash", "") for p in photos if p.get("content_hash")]
