@@ -139,12 +139,11 @@ function buildUI(mode) {
             '<div class="pb-top"><div><div class="pb-title" id="pbTitle">Пайплайн остановлен</div><div class="pb-pipeline-time" id="pbPipelineTime"></div></div><div class="pb-status s-idle" id="pbStatus">IDLE</div></div>'+
             '<div class="cyclo" id="cyclo"></div>'+
             '<div class="pb-ctrl">'+
-            '<label>Лимит:</label><input type="number" id="chainLimit" value="100" min="0">'+
+            '<label>Лимит:</label><input type="number" id="chainLimit" value="200" min="0">'+
             '<label style="margin-left:8px">Источник:</label><select id="chainRoot" class="ctrl-select"></select>'+
             '<button class="btn btn-go" id="btnStart">Запустить цепочку</button>'+
             '<button class="btn btn-stop" id="btnStop" disabled>Остановить всё</button>'+
-            '<span class="c-dim" style="font-size:11px" id="chainInfo"></span></div></div>'+
-            '<div class="tasks" id="taskList-pipeline"><div style="color:var(--c-text-muted);padding:12px">⏳ Загрузка задач...</div></div>';
+            '<span class="c-dim" style="font-size:11px" id="chainInfo"></span></div></div>';
         A.$('btnStart').addEventListener('click', runChain);
         A.$('btnStop').addEventListener('click', stopAll);
         A.$('chainRoot').addEventListener('change', loadStatus);
@@ -396,7 +395,7 @@ function renderCyclo() {
 }
 
 function renderTasks() {
-    var sec = A.$(A.page==='tasks' ? 'taskList-tasks' : 'taskList-pipeline');
+    var sec = A.$('taskList-tasks');
     if (!sec || !st) return;
     var cur = (st.step_details||'').toLowerCase();
     var run = st.current_step !== 'idle';
