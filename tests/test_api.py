@@ -35,12 +35,30 @@ class TestPhotosSearchAPI:
         assert "photo_times" in data
         assert isinstance(data["photo_times"], list)
 
-    def test_photo_list(self, app_client):
-        """Эндпоинт списка фото возвращает photos в ответе."""
-        resp = app_client.get("/api/photos/list?limit=5")
+    def test_photo_list(self, app_client, db_with_photos):
+        """Эндпоинт списка фото возвращает photos с заполненными path/photo_id."""
+        resp = app_client.get("/api/photos/list?limit=5&sort=date_desc")
         assert resp.status_code == 200
         data = resp.json()
         assert "photos" in data
+        if len(data["photos"]) > 0:
+            p = data["photos"][0]
+            assert p.get("path"), "photo list item must have non-empty path"
+            assert p.get("photo_id"), "photo list item must have non-empty photo_id"
+            ch = p.get("content_hash", "")
+            if ch:
+                assert not ch.startswith("/"), f"content_hash looks like a path: {ch[:30]}"
+
+    def test_photo_list_sort_changed_desc(self, app_client, db_with_photos):
+        """/api/photos/list с sort=changed_desc не падает и возвращает данные."""
+        resp = app_client.get("/api/photos/list?limit=5&sort=changed_desc")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "photos" in data
+        if len(data["photos"]) > 0:
+            p = data["photos"][0]
+            assert p.get("path"), "changed_desc photo must have non-empty path"
+            assert p.get("photo_id"), "changed_desc photo must have non-empty photo_id"
 
     def test_search_person_filter(self, app_client):
         """Фильтр по персоне обрабатывается без краша (может быть 200 или 500)."""
@@ -127,6 +145,15 @@ class TestPersonsAPI:
         assert "persons" in data
         assert "total" in data
 
+    def test_list_persons_has_comment(self, app_client):
+        """Каждая персона в списке содержит поле comment."""
+        resp = app_client.get("/api/persons/?limit=10")
+        assert resp.status_code == 200
+        data = resp.json()
+        if data["persons"]:
+            for p in data["persons"]:
+                assert "comment" in p, f"persona {p.get('persona_id')} missing comment field"
+
     def test_get_names(self, app_client):
         """Эндпоинт имён персон доступен."""
         resp = app_client.get("/api/persons/names")
@@ -138,6 +165,21 @@ class TestPersonsAPI:
             "display_name": "Тест"
         })
         assert resp.status_code in (200, 404)
+
+    def test_update_persona_with_comment(self, app_client, db_with_photos):
+        """Персоне можно задать comment через PUT."""
+        db = db_with_photos
+        db.add_face_sqlite_only(photo_id="img1.jpg", face_id="face1", bbox=[10,20,30,40], confidence=0.9, persona_id="p1", content_hash="hash1")
+        db.sqlite.execute("INSERT OR IGNORE INTO personas (persona_id, name) VALUES (?, ?)", ("p1", "cluster_p1"))
+        db.sqlite.commit()
+        resp = app_client.put("/api/persons/p1", json={
+            "display_name": "Тестовый Человек",
+            "comment": "друг семьи"
+        })
+        assert resp.status_code == 200
+        updated = resp.json()
+        assert updated.get("comment") == "друг семьи"
+        assert updated.get("display_name") == "Тестовый Человек"
 
 
 class TestCatalogAPI:
@@ -154,6 +196,49 @@ class TestCatalogAPI:
     def test_locate(self, app_client):
         """Локация несуществующего пути не падает."""
         resp = app_client.get("/api/catalog/locate?path=/nonexistent")
+        assert resp.status_code == 200
+
+
+class TestMapAPI:
+    def test_map_photos_endpoint(self, app_client):
+        """/api/photos/map возвращает список с lat/lon."""
+        resp = app_client.get("/api/photos/map")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+        if len(data) > 0:
+            for f in ["lat", "lon", "date"]:
+                assert f in data[0], f"map point missing '{f}'"
+
+    def test_map_page_loads(self, app_client):
+        """Страница карты загружается."""
+        resp = app_client.get("/map")
+        assert resp.status_code == 200
+        assert b"leaflet" in resp.content.lower()
+
+
+class TestPipelineControlAPI:
+    def test_control_stop(self, app_client):
+        """Остановка пайплайна не крашит API."""
+        resp = app_client.post("/api/control/stop")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data.get("ok") is True
+
+    def test_control_start_faces_has_limit(self, app_client):
+        """Запуск faces с faces_limit передаёт лимит."""
+        resp = app_client.post("/api/control/start", json={
+            "step": "faces", "faces_limit": 10
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data.get("ok") is True
+
+    def test_control_start_describe_has_params(self, app_client):
+        """Запуск describe с desc_limit и batch_size."""
+        resp = app_client.post("/api/control/start", json={
+            "step": "describe", "desc_limit": 10, "batch_size": 3
+        })
         assert resp.status_code == 200
 
 
