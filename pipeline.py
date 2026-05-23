@@ -84,10 +84,12 @@ def get_progress(root_id=None):
     root_where = " AND cf.root_id = ?" if root_id else ""
     root_params = [root_id] if root_id else []
 
+    canonical_total = cur.execute(f"SELECT COUNT(*) FROM catalog_files cf WHERE cf.is_canonical = 1 AND cf.deleted = 0{root_where}", root_params).fetchone()[0]
+    canonical_hashed = cur.execute(f"SELECT COUNT(*) FROM catalog_files cf WHERE cf.is_canonical = 1 AND cf.deleted = 0 AND cf.content_hash IS NOT NULL{root_where}", root_params).fetchone()[0]
+    unhashed = canonical_total - canonical_hashed
+
     base = f"FROM catalog_files cf JOIN photos p ON p.path = cf.abs_path WHERE cf.is_canonical = 1 AND cf.deleted = 0 AND cf.content_hash IS NOT NULL AND p.deleted = 0{root_where}"
     photo_where = base + " AND (p.media_type IS NULL OR p.media_type != 'video')"
-
-    cat_total = cur.execute(f"SELECT COUNT(*) FROM catalog_files cf WHERE cf.is_canonical = 1 AND cf.deleted = 0 AND cf.content_hash IS NOT NULL{root_where}", root_params).fetchone()[0]
 
     ingested = cur.execute(f"SELECT COUNT(*) {base}", root_params).fetchone()[0]
     ingested_photos = cur.execute(f"SELECT COUNT(*) {photo_where}", root_params).fetchone()[0]
@@ -105,14 +107,15 @@ def get_progress(root_id=None):
     p_videos_exif = videos_exif / max(videos_ingested, 1) * 100 if videos_ingested > 0 else 0
     p_videos_describe = videos_described / max(videos_ingested, 1) * 100 if videos_ingested > 0 else 0
 
-    p_ingest = ingested / max(cat_total, 1) * 100
+    p_ingest = ingested / max(canonical_total, 1) * 100
     p_describe = described / max(ingested_photos, 1) * 100
     p_exif = exif_checked / max(ingested, 1) * 100
     p_faces = faces_done_count / max(ingested, 1) * 100
     p_embed = embedded / max(ingested_photos, 1) * 100
 
     return {
-        "ingest": (ingested, cat_total, p_ingest),
+        "ingest": (ingested, canonical_total, p_ingest),
+        "unhashed": unhashed,
         "describe": (described, ingested_photos, p_describe),
         "exif": (exif_checked, ingested, p_exif),
         "faces": (faces_done_count, ingested, p_faces),
@@ -512,6 +515,8 @@ def main():
                 if isinstance(val, tuple):
                     done, total, pct = val
                     log(f"  {step}: {done}/{total} ({pct:.1f}%)")
+                elif step == "unhashed":
+                    log(f"  unhashed: {val} файлов без хеша")
                 else:
                     log(f"  {step}: {val}")
 
@@ -538,7 +543,7 @@ def main():
                     pass
                 continue
 
-            filling_done = progress["ingest"][2] >= 100 and progress["exif"][2] >= 100
+            filling_done = progress["ingest"][2] >= 100 and progress["exif"][2] >= 100 and progress["unhashed"] == 0
 
             if not filling_done:
                 log(">>> ЭТАП 1: НАПОЛНЕНИЕ — СКАН → ХЕШ → ДЕДУП+INGEST → EXIF")
