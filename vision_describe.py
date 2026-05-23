@@ -164,8 +164,10 @@ def stop_llama_server(proc):
     log("llama-server stopped")
 
 
-def describe_one(img_b64, photo_path, face_context=""):
+def describe_one(img_b64, photo_path, face_context="", photo_context=""):
     user_text = "Проанализируй эту фотографию."
+    if photo_context:
+        user_text += " " + photo_context
     if face_context:
         user_text += " " + face_context
     data = {
@@ -210,6 +212,35 @@ def _bbox_to_position(bbox, img_width):
     elif x_center > 0.67:
         return "справа"
     return "в центре"
+
+
+def _get_photo_context(photo_path, db):
+    if not db:
+        return ""
+    parts = []
+    try:
+        row = db.sqlite.execute(
+            "SELECT p.manual_date, p.date, cr.alias "
+            "FROM photos p "
+            "LEFT JOIN catalog_files cf ON cf.abs_path = p.path AND cf.is_canonical = 1 "
+            "LEFT JOIN catalog_roots cr ON cf.root_id = cr.root_id "
+            "WHERE p.path = ? AND p.deleted = 0",
+            (photo_path,)
+        ).fetchone()
+        if row:
+            date_val = row[0] or row[1]
+            if date_val:
+                date_str = str(date_val)[:10]
+                parts.append(f"Дата съёмки: {date_str}.")
+            if row[2]:
+                parts.append(f"Папка: {row[2]}.")
+    except Exception:
+        pass
+    path = Path(photo_path)
+    parent = path.parent.name
+    if parent and not any(c in parent for c in ('DCIM', 'Camera', 'OpenCamera', '100ANDRO')):
+        parts.append(f"Подпапка: {parent}.")
+    return " ".join(parts)
 
 
 def _calc_age(comment, photo_date=None):
@@ -327,6 +358,7 @@ def describe_batch(image_paths, db=None):
     valid_paths = []
     invalid_paths = []
     face_contexts = []
+    photo_contexts = []
     img_widths = []
     for p in image_paths:
         try:
@@ -342,6 +374,7 @@ def describe_batch(image_paths, db=None):
                 continue
             content_hash = None
             photo_date = None
+            pc = ""
             if db:
                 ch_row = db.sqlite.execute(
                     "SELECT content_hash FROM catalog_files WHERE abs_path = ? AND content_hash IS NOT NULL LIMIT 1",
@@ -355,10 +388,12 @@ def describe_batch(image_paths, db=None):
                 ).fetchone()
                 if date_row and date_row[0]:
                     photo_date = str(date_row[0])[:10]
+                pc = _get_photo_context(str(p), db)
             fc = _get_face_context(content_hash, img_w, db, photo_date=photo_date) if content_hash else ""
             images_b64.append(img_b64)
             valid_paths.append(p)
             face_contexts.append(fc)
+            photo_contexts.append(pc)
             img_widths.append(img_w)
         except Exception as e:
             log(f"  Cannot read {p}: {e}")
@@ -377,7 +412,7 @@ def describe_batch(image_paths, db=None):
     if not valid_paths:
         return results
     with ThreadPoolExecutor(max_workers=NP_SLOTS) as pool:
-        futs = {pool.submit(describe_one, images_b64[i], valid_paths[i], face_contexts[i]): i for i in range(len(valid_paths))}
+        futs = {pool.submit(describe_one, images_b64[i], valid_paths[i], face_contexts[i], photo_contexts[i]): i for i in range(len(valid_paths))}
         for fut in as_completed(futs):
             path, parsed, elapsed, pps, err = fut.result()
             if err:
