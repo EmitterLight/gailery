@@ -577,11 +577,13 @@ def main():
                     break
                 log(">>> НАПОЛНЕНИЕ 100% — переходим к AI-шагам")
 
-            log(">>> ЭТАП 2: AI-обработка (faces → describe → embed)")
+            log(">>> ЭТАП 2: AI-обработка (faces → describe → embed) батчами")
+
+            ai_batch = describe_n
 
             if progress["faces"][2] < 100:
                 kill_orphan_llama_servers()
-                run_step("FACES", [VENV_PYTHON, f"{SCRIPTS_DIR}/faces.py"])
+                run_step("FACES", [VENV_PYTHON, f"{SCRIPTS_DIR}/faces.py", "--limit", str(ai_batch)])
                 if stopped():
                     break
                 progress = get_progress(root_id=args.root or None)
@@ -595,7 +597,7 @@ def main():
                     log(f"MIGRATE: set description='[видео]' for {_cur.rowcount} videos")
                 kill_orphan_llama_servers()
                 remaining = progress["describe"][1] - progress["describe"][0]
-                n = min(describe_n, remaining) if remaining > 0 else describe_n
+                n = min(ai_batch, remaining) if remaining > 0 else ai_batch
                 run_step("DESCRIBE", [VENV_PYTHON, f"{SCRIPTS_DIR}/describe.py", "--limit", str(n), "--batch-size", str(args.batch_size)] + root_path_arg)
                 if stopped():
                     break
@@ -603,7 +605,7 @@ def main():
 
             if progress["embed"][2] < 100:
                 kill_orphan_llama_servers()
-                run_step("EMBED", [VENV_PYTHON, f"{SCRIPTS_DIR}/embed.py"])
+                run_step("EMBED", [VENV_PYTHON, f"{SCRIPTS_DIR}/embed.py", "--limit", str(ai_batch)])
                 if stopped():
                     break
 
