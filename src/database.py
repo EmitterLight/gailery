@@ -1137,7 +1137,7 @@ deleted=None, deleted_only=None,
                 f"SUM(CASE WHEN deleted=0 THEN 1 ELSE 0 END),"
                 f"SUM(CASE WHEN deleted=0 AND (media_type IS NULL OR media_type!='video') THEN 1 ELSE 0 END),"
                 f"SUM(CASE WHEN deleted=0 AND media_type='video' THEN 1 ELSE 0 END),"
-                f"SUM(CASE WHEN deleted=0 AND (media_type IS NULL OR media_type!='video') AND description IS NOT NULL AND description!='' THEN 1 ELSE 0 END),"
+                f"SUM(CASE WHEN deleted=0 AND (media_type IS NULL OR media_type!='video') AND path IN (SELECT cf.abs_path FROM catalog_files cf WHERE cf.described=1 AND cf.is_canonical=1) THEN 1 ELSE 0 END),"
                 f"SUM(CASE WHEN deleted=0 AND (media_type IS NULL OR media_type!='video') AND path IN (SELECT cf.abs_path FROM catalog_files cf WHERE cf.faces_done=1 AND cf.is_canonical=1) THEN 1 ELSE 0 END),"
                 f"SUM(CASE WHEN deleted=0 AND (media_type IS NULL OR media_type!='video') AND exif_checked=1 THEN 1 ELSE 0 END),"
                 f"SUM(CASE WHEN deleted=0 AND (media_type IS NULL OR media_type!='video') AND embedded=1 THEN 1 ELSE 0 END),"
