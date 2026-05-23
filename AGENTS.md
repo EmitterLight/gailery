@@ -266,9 +266,10 @@ personas: persona_id, display_name, comment
 - `update_face_persona` — прямо в методе database.py
 
 Действия каскада:
-- Сброс description: `photos SET description=NULL, embedded=0` для затронутых фото
-- Сброс catalog_files: `described=0, embedded=0`
+- Сброс флага описания: `catalog_files SET described=0, embedded=0` для затронутых фото
+- Сброс embedded: `photos SET embedded=0` для затронутых фото
 - Удаление эмбеддингов из LanceDB
+- **Описание НЕ удаляется** (description остаётся) — pipeline переописал фото с новыми данными персон
 - Сброс `faces_done` НЕ происходит — InsightFace-результат остаётся актуальным
 
 ### Устаревание результатов (content_hash изменился)

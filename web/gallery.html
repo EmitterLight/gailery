@@ -2366,7 +2366,9 @@ function selectYear(year) {
             var cls = hasName ? 'dp-pchip has-name' : 'dp-pchip';
             html += '<div class="' + cls + '" onclick="openFaceModal(\'' + esc(per.persona_id) + '\',\'' + esc(fid) + '\')">';
             if (fid) html += '<img src="' + API + '/photos/face/' + fid + '?margin=0.5" loading="lazy">';
-            html += '<span class="nm">' + esc(per.display_name || per.name) + '</span></div>';
+            html += '<span class="nm">' + esc(per.display_name || per.name) + '</span>';
+            if (per.comment) html += '<span class="cm" style="font-size:9px;color:#8b949e;margin-left:2px">' + esc(per.comment) + '</span>';
+            html += '</div>';
         }
         html += '</div>';
     }

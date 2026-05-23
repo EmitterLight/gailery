@@ -253,6 +253,19 @@ VLM получает помимо изображения текстовый ко
 
 ---
 
+## Каскад инвалидации при изменении персон
+
+`invalidate_for_persona(persona_id)` — вызывается при update_persona, merge_personas, update_face_persona.
+
+Действия:
+1. `catalog_files SET described=0, embedded=0` — флаги сброшены, pipeline переописал
+2. `photos SET embedded=0` — эмбеддинги устарели
+3. Удаление эмбеддингов из LanceDB
+4. **Описание НЕ удаляется** (description остаётся) — pipeline переописал фото с новыми данными персон
+5. `faces_done` НЕ сбрасывается — InsightFace-результат актуален
+
+---
+
 ## Счётчики прогресса
 
 Все считаются только по canonical файлам с хешем (уникальным):

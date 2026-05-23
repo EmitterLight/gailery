@@ -185,6 +185,7 @@ def _enrich_photo(p, photo_faces, persona_map, include_created=False, include_th
                 "persona_id": pers_id,
                 "name": persona.get("name") or pers_id,
                 "display_name": persona.get("display_name"),
+                "comment": persona.get("comment"),
                 "face_count": sum(1 for ff in faces if ff.get("persona_id") == pers_id),
                 "total_face_count": persona.get("total_face_count", 0),
                 "face_ids": [ff["face_id"] for ff in faces if ff.get("persona_id") == pers_id],
@@ -903,8 +904,8 @@ async def list_photos(limit: int = 100, offset: int = 0, sort: str = "changed_de
     if persona_ids_needed:
         pids = list(persona_ids_needed)
         pid_ph = ",".join("?" * len(pids))
-        for pr in db.sqlite.execute(f"SELECT persona_id, name, display_name FROM personas WHERE persona_id IN ({pid_ph})", pids).fetchall():
-            persona_map[pr[0]] = {"persona_id": pr[0], "name": pr[1], "display_name": pr[2]}
+        for pr in db.sqlite.execute(f"SELECT persona_id, name, display_name, comment FROM personas WHERE persona_id IN ({pid_ph})", pids).fetchall():
+            persona_map[pr[0]] = {"persona_id": pr[0], "name": pr[1], "display_name": pr[2], "comment": pr[3]}
 
     last_changes = {}
     if sort == "changed_desc":
@@ -1045,7 +1046,7 @@ async def search_photos(
         pids = list(persona_ids_needed)
         pid_ph = ",".join("?" * len(pids))
         p_rows = db.sqlite.execute(
-            f"SELECT persona_id, name, display_name FROM personas WHERE persona_id IN ({pid_ph})",
+            f"SELECT persona_id, name, display_name, comment FROM personas WHERE persona_id IN ({pid_ph})",
             pids
         ).fetchall()
         for pr in p_rows:
@@ -1235,8 +1236,8 @@ async def semantic_search(q: str = "", limit: int = 20, threshold: float = 1.0):
     if persona_ids_needed:
         pids = list(persona_ids_needed)
         pid_ph = ",".join("?" * len(pids))
-        for pr in db.sqlite.execute(f"SELECT persona_id, name, display_name FROM personas WHERE persona_id IN ({pid_ph})", pids).fetchall():
-            persona_map[pr[0]] = {"persona_id": pr[0], "name": pr[1], "display_name": pr[2]}
+        for pr in db.sqlite.execute(f"SELECT persona_id, name, display_name, comment FROM personas WHERE persona_id IN ({pid_ph})", pids).fetchall():
+            persona_map[pr[0]] = {"persona_id": pr[0], "name": pr[1], "display_name": pr[2], "comment": pr[3]}
 
     enriched_list = []
     for photo, score in out_list:

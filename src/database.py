@@ -1111,7 +1111,7 @@ deleted=None, deleted_only=None,
                 if pid:
                     self.delete_photo_embedding(pid[0])
             self.sqlite.execute(
-                "UPDATE photos SET description = NULL, embedded = 0 WHERE path IN "
+                "UPDATE photos SET embedded = 0 WHERE path IN "
                 "(SELECT cf.abs_path FROM catalog_files cf WHERE cf.content_hash = ? AND cf.is_canonical = 1) AND deleted = 0",
                 (ch,)
             )

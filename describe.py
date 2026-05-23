@@ -63,7 +63,7 @@ def count_undescribed():
     db = DatabaseManager()
     return db.sqlite.execute(
         "SELECT COUNT(*) FROM photos p JOIN catalog_files cf ON cf.abs_path = p.path "
-        "WHERE (p.description IS NULL OR p.description = '') AND p.deleted = 0 AND cf.is_canonical = 1 AND (p.media_type IS NULL OR p.media_type != 'video')"
+        "WHERE (p.description IS NULL OR p.description = '' OR cf.described = 0) AND p.deleted = 0 AND cf.is_canonical = 1 AND (p.media_type IS NULL OR p.media_type != 'video')"
     ).fetchone()[0]
 
 
@@ -215,7 +215,7 @@ def _get_photos_to_describe(limit=0, dir_filter=""):
     sql = """
         SELECT p.photo_id, p.path FROM photos p
         JOIN catalog_files c ON p.path = c.abs_path AND c.is_canonical = 1 AND c.deleted = 0
-WHERE (p.description IS NULL OR p.description = '') AND p.deleted = 0 AND (p.media_type IS NULL OR p.media_type != 'video')
+WHERE (p.description IS NULL OR p.description = '' OR c.described = 0) AND p.deleted = 0 AND (p.media_type IS NULL OR p.media_type != 'video')
     """
     if dir_filter:
         dir_filter = dir_filter.rstrip('/')
