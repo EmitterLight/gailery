@@ -179,21 +179,11 @@ function buildSummaryHtml() {
     return h;
 }
 
-function buildCycloHtml() {
-    if (!st) return '<div class="c-dim" style="padding:12px">Нет данных</div>';
+function buildCycloStepsHtml(run) {
+    if (!st) return '';
     var cur = (st.step_details||'').toLowerCase();
-    var run = st.current_step !== 'idle';
-    var h = '<div class="pipeline-banner '+(run?'running':'idle')+'">';
-    h += '<div class="pb-top"><div><div class="pb-title '+(run?'c-ok':'c-text')+'">'+(run?'⚡ Пайплайн работает: '+A.esc(st.step_details):'Пайплайн остановлен')+'</div>';
-    if (run && st.pipeline_started_at) {
-        var ps = new Date(st.pipeline_started_at + (st.pipeline_started_at.indexOf('+')<0&&st.pipeline_started_at.indexOf('Z')<0?'+00:00':''));
-        h += '<div class="pb-pipeline-time '+(run?'c-ok':'c-muted')+'">Цепочка идёт: '+A.fmtDur(Date.now()-ps.getTime())+'</div>';
-    } else if (!run && st.pipeline_started_at) {
-        var ps2 = new Date(st.pipeline_started_at + (st.pipeline_started_at.indexOf('+')<0&&st.pipeline_started_at.indexOf('Z')<0?'+00:00':''));
-        h += '<div class="pb-pipeline-time">Последний запуск: '+ps2.toLocaleTimeString()+'</div>';
-    }
-    h += '</div><div class="pb-status '+(run?'s-run':'s-idle')+'">'+(run?'● '+A.esc(st.step_details):'IDLE')+'</div></div>';
-    h += '<div class="cyclo">';
+    if (run === undefined) run = st.current_step !== 'idle';
+    var h = '';
     for (var i=0;i<STEPS.length;i++) {
         var s = STEPS[i];
         if (s.sep) {
@@ -210,18 +200,51 @@ function buildCycloHtml() {
         var pctStr = A.fmtPct(pct), barW = Math.min(pct,100);
         h += '<div class="cy-step '+cls+'">';
         h += '<div class="cy-icon">'+s.icon+'</div>';
-        h += '<div class="cy-name">'+s.name+'</div>';
+        h += '<div class="cy-name'+(isActive||isDone?' '+s.cls:'')+'">'+s.name+'</div>';
         h += '<div class="cy-pct">'+pctStr+'</div>';
         h += '<div class="cy-count">'+cnt.done+'/'+cnt.total+'</div>';
         h += '<div class="cy-bar-bg"><div class="cy-bar" style="width:'+barW+'%"></div></div>';
         h += '<div class="cy-badge">'+badgeHtml+'</div>';
+        if (isActive && ts.started) {
+            h += '<div class="cy-time" id="cyTime_'+s.id+'">'+A.fmtDur(Date.now()-ts.started.getTime())+'</div>';
+        } else if (ts.status==='done'&&ts.started&&ts.stopped) {
+            h += '<div class="cy-time">'+A.fmtDur(ts.stopped.getTime()-ts.started.getTime())+' · '+A.fmtDur(Date.now()-ts.stopped.getTime())+' назад</div>';
+        }
+        var cycleDelta = cnt.done - ts.baseCount;
+        if (ts.baseCount>0&&cycleDelta>0) {
+            h += '<div class="cy-count c-ok">+'+cycleDelta+' за цикл</div>';
+        }
         if (isDone&&!isActive) h += '<div class="cy-check">✓</div>';
+        if (s.id==='faces'&&isActive&&st.faces_phase) {
+            var phaseNames = {loading:'Загрузка',detecting:'Детекция',lance_write:'LanceDB',clustering:'Кластеризация',detection_done:'Завершение',done:'Готово'};
+            var phaseLabel = phaseNames[st.faces_phase]||st.faces_phase;
+            var detailHtml = st.faces_detail ? A.esc(st.faces_detail) : '';
+            h += '<div style="font-size:9px;margin-top:3px" class="c-warn">'+phaseLabel+(detailHtml?': '+detailHtml:'')+'</div>';
+        }
         h += '</div>';
         if (i<STEPS.length-1) {
             var arrowLit = run && STEPS.slice(0,i+1).some(function(ss){return ss.id===cur;});
             h += '<div class="cy-arrow'+(arrowLit?' lit':'')+'">→</div>';
         }
     }
+    return h;
+}
+
+function buildCycloHtml() {
+    if (!st) return '<div class="c-dim" style="padding:12px">Нет данных</div>';
+    var run = st.current_step !== 'idle';
+    var h = '<div class="pipeline-banner '+(run?'running':'idle')+'">';
+    h += '<div class="pb-top"><div><div class="pb-title '+(run?'c-ok':'c-text')+'">'+(run?'⚡ Пайплайн работает: '+A.esc(st.step_details):'Пайплайн остановлен')+'</div>';
+    if (run && st.pipeline_started_at) {
+        var ps = new Date(st.pipeline_started_at + (st.pipeline_started_at.indexOf('+')<0&&st.pipeline_started_at.indexOf('Z')<0?'+00:00':''));
+        h += '<div class="pb-pipeline-time '+(run?'c-ok':'c-muted')+'">Цепочка идёт: '+A.fmtDur(Date.now()-ps.getTime())+'</div>';
+    } else if (!run && st.pipeline_started_at) {
+        var ps2 = new Date(st.pipeline_started_at + (st.pipeline_started_at.indexOf('+')<0&&st.pipeline_started_at.indexOf('Z')<0?'+00:00':''));
+        h += '<div class="pb-pipeline-time">Последний запуск: '+ps2.toLocaleTimeString()+'</div>';
+    }
+    h += '</div><div class="pb-status '+(run?'s-run':'s-idle')+'">'+(run?'● '+A.esc(st.step_details):'IDLE')+'</div></div>';
+    h += '<div class="cyclo">';
+    h += buildCycloStepsHtml(run);
     h += '</div></div>';
     return h;
 }
@@ -329,34 +352,11 @@ function renderTasksInto(cid) {
 function renderSummary() {
     var sec = A.$('summary');
     if (!sec) return;
-    if (!st || !st.photos_total) { sec.innerHTML = ''; return; }
-    var ct = st.catalog_total || 0, ci = st.catalog_ingested || 0;
-    var h = '';
-    h += '<div class="sbox"><div class="sv">'+ci+'</div><div class="sl">Внесено из '+ct+'</div></div>';
-    h += '<div class="sbox"><div class="sv">'+(st.catalog_exif_done||0)+'</div><div class="sl">EXIF из '+ci+'</div></div>';
-    h += '<div class="sbox sep"></div>';
-    h += '<div class="sbox"><div class="sv">'+(st.catalog_described||0)+'</div><div class="sl">Описано из '+ci+'</div></div>';
-    h += '<div class="sbox"><div class="sv">'+(st.catalog_faces_done||0)+'</div><div class="sl">Лица из '+(st.faces_flagged_in_db||0)+'</div></div>';
-    h += '<div class="sbox"><div class="sv">'+(st.photos_embedded||0)+'</div><div class="sl">Индекс из '+(st.photos_total||0)+'</div></div>';
-    if (st.videos && st.videos.catalog) {
-        h += '<div class="sbox"><div class="sv">'+st.videos.ingested+'</div><div class="sl">Видео из '+st.videos.catalog+'</div></div>';
-    } else {
-        h += '<div class="sbox"><div class="sv">0</div><div class="sl">Видео</div></div>';
-    }
-    if (st.per_root && st.per_root.length > 1) {
-        h += '<div class="src-section"><div class="src-title">По источникам:</div>';
-        for (var i=0;i<st.per_root.length;i++) {
-            var r = st.per_root[i];
-            h += '<div class="src-row"><span class="src-alias">'+A.esc(r.alias)+'</span><span class="src-counts">'+r.ingested+' / '+r.catalog_total+'</span><span class="src-details">D:'+r.described+' E:'+r.exif_done+' I:'+r.embedded+'</span></div>';
-        }
-        h += '</div>';
-    }
-    sec.innerHTML = h;
+    sec.innerHTML = buildSummaryHtml();
 }
 
 function renderCyclo() {
     if (!st) return;
-    var cur = (st.step_details||'').toLowerCase();
     var run = st.current_step !== 'idle';
     var banner = A.$('pipelineBanner');
     if (!banner) return;
@@ -385,53 +385,14 @@ function renderCyclo() {
         if (btnStop) btnStop.disabled = true;
         var pte = A.$('pbPipelineTime');
         if (st.pipeline_started_at) {
-            var ps = new Date(st.pipeline_started_at + (st.pipeline_started_at.indexOf('+')<0&&st.pipeline_started_at.indexOf('Z')<0?'+00:00':''));
-            pte.textContent = 'Последний запуск: '+ps.toLocaleTimeString();
+            var ps2 = new Date(st.pipeline_started_at + (st.pipeline_started_at.indexOf('+')<0&&st.pipeline_started_at.indexOf('Z')<0?'+00:00':''));
+            pte.textContent = 'Последний запуск: '+ps2.toLocaleTimeString();
         } else {
             pte.textContent = '';
         }
     }
 
-    var h = '';
-    for (var i=0;i<STEPS.length;i++) {
-        var s = STEPS[i], pct = stepPct(s.id), cnt = stepCount(s.id);
-        var isActive = (s.id===cur&&run), ts = taskState[s.id], isDone = pct>=100, isFailed = ts&&ts.status==='fail';
-        var cls = 'st-wait', badgeHtml = '○ ожидание';
-        if (isFailed) { cls = 'st-fail'; badgeHtml = '✗ ошибка'; }
-        else if (isActive) { cls = 'st-run'; badgeHtml = '● работает'; }
-        else if (isDone) { cls = 'st-done'; badgeHtml = '✓ готово'; }
-        var pctStr = A.fmtPct(pct), countStr = cnt.done+'/'+cnt.total, barW = Math.min(pct,100);
-
-        h += '<div class="cy-step '+cls+'">';
-        h += '<div class="cy-icon">'+s.icon+'</div>';
-        h += '<div class="cy-name'+(isActive||isDone?' '+s.cls:'')+'">'+s.name+'</div>';
-        h += '<div class="cy-pct">'+pctStr+'</div>';
-        h += '<div class="cy-count">'+countStr+'</div>';
-        h += '<div class="cy-bar-bg"><div class="cy-bar" style="width:'+barW+'%"></div></div>';
-        h += '<div class="cy-badge">'+badgeHtml+'</div>';
-        if (isActive && ts.started) {
-            h += '<div class="cy-time" id="cyTime_'+s.id+'">'+A.fmtDur(Date.now()-ts.started.getTime())+'</div>';
-        } else if (ts.status==='done'&&ts.started&&ts.stopped) {
-            h += '<div class="cy-time">'+A.fmtDur(ts.stopped.getTime()-ts.started.getTime())+' · '+A.fmtDur(Date.now()-ts.stopped.getTime())+' назад</div>';
-        }
-        var cycleDelta = cnt.done - ts.baseCount;
-        if (ts.baseCount>0&&cycleDelta>0) {
-            h += '<div class="cy-count c-ok">+'+cycleDelta+' за цикл</div>';
-        }
-        if (isDone&&!isActive) h += '<div class="cy-check">✓</div>';
-        if (s.id==='faces'&&isActive&&st.faces_phase) {
-            var phaseNames = {loading:'Загрузка',detecting:'Детекция',lance_write:'LanceDB',clustering:'Кластеризация',detection_done:'Завершение',done:'Готово'};
-            var phaseLabel = phaseNames[st.faces_phase]||st.faces_phase;
-            var detailHtml = st.faces_detail ? A.esc(st.faces_detail) : '';
-            h += '<div style="font-size:9px;margin-top:3px" class="c-warn">'+phaseLabel+(detailHtml?': '+detailHtml:'')+'</div>';
-        }
-        h += '</div>';
-        if (i<STEPS.length-1) {
-            var arrowLit = run && STEPS.slice(0,i+1).some(function(ss){return ss.id===cur;});
-            h += '<div class="cy-arrow'+(arrowLit?' lit':'')+'">→</div>';
-        }
-    }
-    A.$('cyclo').innerHTML = h;
+    A.$('cyclo').innerHTML = buildCycloStepsHtml(run);
 }
 
 function renderTasks() {
@@ -575,7 +536,7 @@ A._resetTask = function(step) {
 function runChain() {
     var lim = A.$('chainLimit').value;
     var rootId = A.$('chainRoot').value;
-    var params = {step:'chain',ingest_limit:lim,desc_limit:lim,batch_size:(A.$('p_batch_size')?A.$('p_batch_size').value:6)||10,exif:(A.$('p_exif')?A.$('p_exif').value:'1')};
+    var params = {step:'chain',hash_limit:lim,desc_limit:lim,batch_size:10,exif:'1'};
     if (rootId) params.root_id = rootId;
     A.post('/api/control/start', params, function(d) {
         if (d.ok) {
