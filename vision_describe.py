@@ -536,7 +536,7 @@ def get_undescribed_photos(db, photo_dir, limit=0):
         where_extra = " AND cf.abs_path LIKE ?"
         params.append(str(photo_dir) + "/%")
     sql = ("SELECT p.path FROM photos p JOIN catalog_files cf ON cf.abs_path = p.path "
-           "WHERE (p.description IS NULL OR p.description = '') AND p.deleted = 0 "
+           "WHERE (p.description IS NULL OR p.description = '' OR cf.described = 0) AND p.deleted = 0 "
            "AND cf.is_canonical = 1" + where_extra + " ORDER BY RANDOM()")
     if limit > 0:
         sql += f" LIMIT {limit}"
@@ -607,7 +607,10 @@ def process_directory(photo_dir, batch_size=BATCH_SIZE, limit=0):
 
     from database import DatabaseManager
     db2 = DatabaseManager()
-    total_undescribed = db2.count_photos("description IS NULL OR description = ''")
+    total_undescribed = db2.sqlite.execute(
+        "SELECT COUNT(*) FROM photos p JOIN catalog_files cf ON cf.abs_path = p.path "
+        "WHERE (p.description IS NULL OR p.description = '' OR cf.described = 0) AND p.deleted = 0 AND cf.is_canonical = 1"
+    ).fetchone()[0]
     total_all = db2.count_photos()
     described_pct = (total_all - total_undescribed) / total_all * 100 if total_all else 0
 
