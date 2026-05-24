@@ -537,7 +537,7 @@ def get_undescribed_photos(db, photo_dir, limit=0):
         params.append(str(photo_dir) + "/%")
     sql = ("SELECT p.path FROM photos p JOIN catalog_files cf ON cf.abs_path = p.path "
            "WHERE (p.description IS NULL OR p.description = '' OR cf.described = 0) AND p.deleted = 0 "
-           "AND cf.is_canonical = 1" + where_extra + " ORDER BY RANDOM()")
+           "AND cf.is_canonical = 1 AND (p.media_type IS NULL OR p.media_type != 'video')" + where_extra + " ORDER BY RANDOM()")
     if limit > 0:
         sql += f" LIMIT {limit}"
     rows = cur.execute(sql, params).fetchall()
