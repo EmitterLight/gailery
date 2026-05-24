@@ -155,7 +155,7 @@ def stop_llama_server(proc):
 
 
 def describe_one(img_b64, photo_path, agent_context=""):
-    user_text = "Опиши двумя предложениями: (1) кратко кто и где (2) детали одежды и окружения."
+    user_text = "Опиши двумя предложениями: (1) кратко кто (только имена из данных ниже), возраст, родство и где (2) детали одежды, поз, окружения."
     if agent_context:
         user_text += "\n\n" + agent_context
     data = {
