@@ -866,6 +866,7 @@ async def list_photos(limit: int = 100, offset: int = 0, sort: str = "changed_de
         recent_rows = db.sqlite.execute(
             "SELECT p.photo_id, MAX(c.changed_at) as cat FROM changes c "
             "JOIN photos p ON c.photo_id = p.photo_id "
+            "WHERE c.field NOT IN ('photo_type','has_issues','issue_type','media_type','img_width','img_height') "
             "GROUP BY p.photo_id ORDER BY cat DESC LIMIT ?",
             (limit,)
         ).fetchall()
@@ -926,6 +927,7 @@ async def list_photos(limit: int = 100, offset: int = 0, sort: str = "changed_de
             persona_map[pr[0]] = {"persona_id": pr[0], "name": pr[1], "display_name": pr[2], "comment": pr[3]}
 
     last_changes = {}
+    last_change_details = {}
     if sort == "changed_desc":
         for p in photos:
             last_changes[p.get("path", "")] = change_times.get(p.get("photo_id"))
@@ -942,10 +944,26 @@ async def list_photos(limit: int = 100, offset: int = 0, sort: str = "changed_de
             if path:
                 last_changes[path] = cat
 
+    detail_rows = db.sqlite.execute(
+        "SELECT c.photo_id, c.field, c.value, c.changed_at FROM changes c "
+        "INNER JOIN (SELECT photo_id, MAX(changed_at) as mx FROM changes "
+        "WHERE field NOT IN ('photo_type','has_issues','issue_type','media_type','img_width','img_height') "
+        "GROUP BY photo_id) l "
+        "ON c.photo_id = l.photo_id AND c.changed_at = l.mx "
+        "WHERE c.field NOT IN ('photo_type','has_issues','issue_type','media_type','img_width','img_height')"
+    ).fetchall()
+    for dr in detail_rows:
+        pid = dr[0]
+        last_change_details[pid] = {"field": dr[1], "value": dr[2], "changed_at": dr[3]}
+
     enriched = []
     for p in photos:
         ep = _enrich_photo(p, photo_faces, persona_map, include_thumbnail=True)
         ep["changed_at"] = last_changes.get(p.get("path"))
+        det = last_change_details.get(p.get("photo_id"))
+        if det:
+            ep["_last_change_field"] = det["field"]
+            ep["_last_change_value"] = det["value"]
         enriched.append(ep)
 
     if sort == "changed_desc":
@@ -1322,6 +1340,112 @@ async def enrich_description(photo_id: str):
         if mq:
             mq.release_gpu_from_api()
             logger.info("[ENRICH] GPU released via MQTT")
+
+
+@router.get("/reprocess-log")
+def reprocess_log(lines: int = 30, tag: str = "REPROCESS"):
+    log_path = str(PROJECT_ROOT / "logs" / "pipeline.log")
+    if not os.path.exists(log_path):
+        return {"lines": []}
+    try:
+        result = subprocess.run(
+            ["tail", "-n", str(min(lines, 200)), log_path],
+            capture_output=True, text=True, timeout=5
+        )
+        all_lines = result.stdout.strip().splitlines() if result.stdout else []
+        if tag:
+            filtered = [l for l in all_lines if f"[{tag}]" in l]
+        else:
+            filtered = all_lines
+        return {"lines": filtered[-lines:]}
+    except Exception as e:
+        return {"lines": [], "error": str(e)}
+
+
+@router.get("/{photo_id}/reprocess")
+def reprocess_photo(photo_id: str, skip_faces: bool = False, skip_describe: bool = False, skip_embed: bool = False):
+    import subprocess
+    from database import get_db
+    from config import VENV_PYTHON as VENV
+
+    db = get_db()
+    photo = db.get_photo(photo_id)
+    if not photo:
+        photo = db.get_photo_by_path(photo_id)
+    if not photo:
+        raise HTTPException(status_code=404, detail="photo not found")
+
+    path = photo.get("path", "")
+    content_hash_row = db.sqlite.execute(
+        "SELECT content_hash FROM catalog_files WHERE abs_path = ? AND is_canonical = 1 LIMIT 1",
+        (path,)
+    ).fetchone()
+    content_hash = content_hash_row[0] if content_hash_row else None
+    if not content_hash:
+        raise HTTPException(status_code=400, detail="no content_hash")
+
+    skip_args = []
+    if skip_faces:
+        skip_args.append("--skip-faces")
+    if skip_describe:
+        skip_args.append("--skip-describe")
+    if skip_embed:
+        skip_args.append("--skip-embed")
+
+    cmd = [VENV, str(PROJECT_ROOT / "reprocess_photo.py"), "--hash", content_hash] + skip_args
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(PROJECT_ROOT / "src")
+    env["PYTHONUNBUFFERED"] = "1"
+    _vnvidia = str(PROJECT_ROOT / "venv" / "lib" / "python3.12" / "site-packages" / "nvidia")
+    env["LD_LIBRARY_PATH"] = ":".join([
+        _vnvidia + "/cublas/lib",
+        _vnvidia + "/cuda_runtime/lib",
+        "/usr/local/cuda-12.6/targets/x86_64-linux/lib",
+        str(LLAMA_CPP_DIR / "build" / "bin"),
+    ])
+
+    mq = _get_mqtt_api()
+    if mq:
+        mq.request_gpu_for_api(worker_name="reprocess")
+        logger.info("[REPROCESS] GPU acquired via MQTT")
+    else:
+        logger.warning("[REPROCESS] No MQTT, proceeding without GPU lock")
+
+    try:
+        result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=300)
+        logger.info(f"[REPROCESS] subprocess rc={result.returncode}")
+        if result.stderr:
+            logger.info(f"[REPROCESS] stderr: {result.stderr[:500]}")
+    except subprocess.TimeoutExpired:
+        if mq:
+            mq.release_gpu_from_api()
+        return {"ok": False, "error": "timeout"}
+    except Exception as e:
+        if mq:
+            mq.release_gpu_from_api()
+        return {"ok": False, "error": str(e)}
+
+    if mq:
+        mq.release_gpu_from_api()
+        logger.info("[REPROCESS] GPU released via MQTT")
+
+    db2 = get_db()
+    row = db2.sqlite.execute(
+        "SELECT cf.faces_done, cf.described, cf.embedded, p.description "
+        "FROM catalog_files cf JOIN photos p ON p.path = cf.abs_path "
+        "WHERE cf.content_hash = ? AND cf.is_canonical = 1",
+        (content_hash,)
+    ).fetchone()
+
+    return {
+        "ok": True,
+        "faces_done": row[0] if row else 0,
+        "described": row[1] if row else 0,
+        "embedded": row[2] if row else 0,
+        "description": row[3] if row else None,
+        "output": result.stdout[-1000:] if result.stdout else None,
+        "returncode": result.returncode,
+    }
 
 
 @router.put("/{photo_id}/rich_description")

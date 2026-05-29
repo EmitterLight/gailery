@@ -611,6 +611,39 @@
             .card .overlay .desc { display: none; }
             .card .overlay .date { font-size: 8px; }
         }
+        .rp-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:2000; justify-content:center; align-items:center; }
+        .rp-overlay.show { display:flex; }
+        .rp-modal { background:#161b22; border:1px solid #30363d; border-radius:8px; padding:20px; width:420px; max-height:80vh; overflow-y:auto; color:#c9d1d9; font-family:monospace; font-size:12px; }
+        .rp-modal h3 { color:#58a6ff; margin:0 0 12px; font-size:14px; }
+        .rp-steps { display:flex; gap:8px; margin-bottom:12px; }
+        .rp-step { flex:1; text-align:center; padding:6px 4px; border-radius:4px; background:#21262d; border:1px solid #30363d; font-size:10px; text-transform:uppercase; }
+        .rp-step.running { border-color:#58a6ff; background:#0d2240; animation:rpPulse 1.5s infinite; }
+        .rp-step.done { border-color:#238636; background:#0d2818; }
+        .rp-step.fail { border-color:#da3633; background:#2d0a0a; }
+        @keyframes rpPulse { 0%,100%{opacity:1} 50%{opacity:.6} }
+        .rp-log { background:#0d1117; border:1px solid #21262d; border-radius:4px; padding:8px; height:140px; overflow-y:auto; font-size:10px; line-height:1.4; margin-bottom:12px; white-space:pre-wrap; word-break:break-all; }
+        .rp-log .log-faces { color:#58a6ff; }
+        .rp-log .log-describe { color:#d2a8ff; }
+        .rp-log .log-embed { color:#3fb950; }
+        .rp-log .log-reprocess { color:#8b949e; }
+        .rp-result { margin-top:8px; padding:8px; border-radius:4px; background:#0d2818; border:1px solid #238636; display:none; font-size:11px; line-height:1.5; }
+        .rp-buttons { display:flex; gap:8px; }
+        .rp-checks label { display:block; margin:2px 0; font-size:11px; cursor:pointer; }
+        .light-theme .rp-modal { background:#f6f8fa; border-color:#d0d7de; color:#24292f; }
+        .light-theme .rp-modal h3 { color:#0969da; }
+        .light-theme .rp-step { background:#f6f8fa; border-color:#d0d7de; color:#24292f; }
+        .light-theme .rp-step.running { border-color:#0969da; background:#ddf4ff; color:#0969da; }
+        .light-theme .rp-step.done { border-color:#1a7f37; background:#dafbe1; color:#1a7f37; }
+        .light-theme .rp-step.fail { border-color:#cf222e; background:#ffebe9; color:#cf222e; }
+        .light-theme .rp-log { background:#fff; border-color:#d0d7de; color:#24292f; }
+        .light-theme .rp-log .log-faces { color:#0969da; }
+        .light-theme .rp-log .log-describe { color:#8250df; }
+        .light-theme .rp-log .log-embed { color:#1a7f37; }
+        .light-theme .rp-log .log-reprocess { color:#57606a; }
+        .light-theme .rp-result { background:#dafbe1; border-color:#1a7f37; color:#24292f; }
+        .light-theme .rp-overlay { background:rgba(255,255,255,.7); }
+        .light-theme .rp-buttons button { background:#f6f8fa; color:#24292f; border:1px solid #d0d7de; }
+        .light-theme .rp-checks label { color:#24292f; }
     </style>
 </head>
 <body>
@@ -2153,6 +2186,9 @@ function selectYear(year) {
         html += '<button onclick="showCustomDesc(\'' + esc(p.db_id || '') + '\')" style="padding:4px 12px;background:#1f6feb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-family:monospace">Своё описание</button>';
         html += '</div>';
     }
+    html += '<div style="margin-top:6px">';
+    html += '<button onclick="showReprocessModal(\'' + esc(p.db_id || '') + '\')" style="padding:4px 12px;background:#6e40c9;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-family:monospace">Переобработать</button>';
+    html += '</div>';
     if (p.date) {
         var showDate = p.manual_date || p.date;
         html += '<div class="dp-meta" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">Дата: ' + formatDate(showDate);
@@ -4459,6 +4495,179 @@ openDetail = function(idx) {
         dpCurY = 0;
     }, { passive: true });
 })();
+</script>
+
+<div id="rpOverlay" class="rp-overlay">
+  <div class="rp-modal">
+    <h3>Переобработка фото</h3>
+    <div class="rp-checks" id="rpChecks">
+      <label><input type="checkbox" id="rpDoFaces" checked> Лица (InsightFace)</label>
+      <label><input type="checkbox" id="rpDoDescribe" checked> Описание (VLM)</label>
+      <label><input type="checkbox" id="rpDoEmbed" checked> Индексация (Embed)</label>
+    </div>
+    <div class="rp-steps">
+      <div class="rp-step" id="rpStepFaces">Лица</div>
+      <div class="rp-step" id="rpStepDescribe">Описание</div>
+      <div class="rp-step" id="rpStepEmbed">Индексация</div>
+    </div>
+    <div class="rp-log" id="rpLog"></div>
+    <div class="rp-result" id="rpResult"></div>
+    <div class="rp-buttons">
+      <button id="rpStartBtn" style="padding:6px 16px;background:#238636;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-family:monospace">Запуск</button>
+      <button onclick="closeReprocessModal()" style="padding:6px 16px;background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:4px;cursor:pointer;font-size:11px;font-family:monospace">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<script>
+var _rpPhotoId = null;
+
+function showReprocessModal(photoId) {
+    _rpPhotoId = photoId;
+    document.getElementById('rpOverlay').classList.add('show');
+    _resetRpSteps();
+    document.getElementById('rpLog').textContent = '';
+    document.getElementById('rpResult').style.display = 'none';
+    document.getElementById('rpStartBtn').disabled = false;
+    document.getElementById('rpStartBtn').textContent = 'Запуск';
+    document.getElementById('rpStartBtn').onclick = startReprocess;
+    document.getElementById('rpChecks').style.display = '';
+}
+
+function closeReprocessModal() {
+    document.getElementById('rpOverlay').classList.remove('show');
+    _rpPhotoId = null;
+}
+
+function _resetRpSteps() {
+    ['Faces','Describe','Embed'].forEach(function(s) {
+        document.getElementById('rpStep' + s).className = 'rp-step';
+    });
+}
+
+function _setRpStep(name, state) {
+    var el = document.getElementById('rpStep' + name);
+    if (el) el.className = 'rp-step ' + state;
+}
+
+function startReprocess() {
+    if (!_rpPhotoId) return;
+    var btn = document.getElementById('rpStartBtn');
+    btn.onclick = null;
+    btn.disabled = true;
+    btn.textContent = 'Работает...';
+    document.getElementById('rpChecks').style.display = 'none';
+    _resetRpSteps();
+    document.getElementById('rpLog').textContent = 'Запуск переобработки...\n';
+    document.getElementById('rpResult').style.display = 'none';
+
+    var params = [];
+    if (!document.getElementById('rpDoFaces').checked) params.push('skip_faces=true');
+    if (!document.getElementById('rpDoDescribe').checked) params.push('skip_describe=true');
+    if (!document.getElementById('rpDoEmbed').checked) params.push('skip_embed=true');
+    var url = API + '/photos/' + encodeURIComponent(_rpPhotoId) + '/reprocess';
+    if (params.length) url += '?' + params.join('&');
+
+    _setRpStep('Faces', 'running');
+    _setRpStep('Describe', 'running');
+    _setRpStep('Embed', 'running');
+
+    var logUrl = API + '/photos/reprocess-log?lines=20&tag=REPROCESS';
+    var _lastLogLen = 0;
+    var _pollTimer = setInterval(function() {
+        fetch(logUrl).then(function(r){return r.json()}).then(function(d){
+            if (d.lines && d.lines.length > _lastLogLen) {
+                var log = document.getElementById('rpLog');
+                var newLines = d.lines.slice(_lastLogLen);
+                _lastLogLen = d.lines.length;
+                for (var i = 0; i < newLines.length; i++) {
+                    var line = newLines[i];
+                    var cls = 'log-reprocess';
+                    if (line.indexOf('[FACES]') >= 0 || line.indexOf('[CLUSTER]') >= 0) cls = 'log-faces';
+                    else if (line.indexOf('[DESCRIBE]') >= 0 || line.indexOf('[VLM]') >= 0) cls = 'log-describe';
+                    else if (line.indexOf('[EMBED]') >= 0) cls = 'log-embed';
+                    var span = document.createElement('span');
+                    span.className = cls;
+                    span.textContent = line.replace(/.*?\] \[[A-Z]+\]\s*/, '') + '\n';
+                    log.appendChild(span);
+                }
+                log.scrollTop = log.scrollHeight;
+
+                if (line.indexOf('START: FACES') >= 0) _setRpStep('Faces', 'running');
+                if (line.indexOf('DONE: FACES') >= 0) _setRpStep('Faces', 'done');
+                if (line.indexOf('FAILED: FACES') >= 0) _setRpStep('Faces', 'fail');
+                if (line.indexOf('START: DESCRIBE') >= 0) _setRpStep('Describe', 'running');
+                if (line.indexOf('DONE: DESCRIBE') >= 0) _setRpStep('Describe', 'done');
+                if (line.indexOf('FAILED: DESCRIBE') >= 0) _setRpStep('Describe', 'fail');
+                if (line.indexOf('START: EMBED') >= 0) _setRpStep('Embed', 'running');
+                if (line.indexOf('DONE: EMBED') >= 0) _setRpStep('Embed', 'done');
+                if (line.indexOf('FAILED: EMBED') >= 0) _setRpStep('Embed', 'fail');
+            }
+        }).catch(function(){});
+    }, 2000);
+
+    fetch(url).then(function(resp) {
+        return resp.json();
+    }).then(function(d) {
+        clearInterval(_pollTimer);
+        if (d.ok) {
+            if (!params.some(function(p){return p.indexOf('faces')>=0})) {
+                _setRpStep('Faces', d.faces_done ? 'done' : 'fail');
+            } else { _setRpStep('Faces', 'done'); }
+            if (!params.some(function(p){return p.indexOf('describe')>=0})) {
+                _setRpStep('Describe', d.described ? 'done' : 'fail');
+            } else { _setRpStep('Describe', 'done'); }
+            if (!params.some(function(p){return p.indexOf('embed')>=0})) {
+                _setRpStep('Embed', d.embedded ? 'done' : 'fail');
+            } else { _setRpStep('Embed', 'done'); }
+
+            var log = document.getElementById('rpLog');
+            var span = document.createElement('span');
+            span.className = 'log-reprocess';
+            span.textContent = '=== Завершено ===\n';
+            log.appendChild(span);
+            log.scrollTop = log.scrollHeight;
+
+            if (d.description) {
+                var res = document.getElementById('rpResult');
+                res.style.display = 'block';
+                res.textContent = d.description;
+            }
+            if (_rpPhotoId && typeof _dpIdx !== 'undefined') {
+                fetch(API + '/photos/?path=' + encodeURIComponent(_rpPhotoId)).then(function(r){return r.json()}).then(function(fresh){
+                    if (fresh && fresh.photo_id) currentPhotos[_dpIdx] = fresh;
+                    openDetail(_dpIdx);
+                }).catch(function(){ openDetail(_dpIdx); });
+            }
+            setTimeout(closeReprocessModal, 1500);
+        } else {
+            _setRpStep('Faces', 'fail');
+            _setRpStep('Describe', 'fail');
+            _setRpStep('Embed', 'fail');
+            var log2 = document.getElementById('rpLog');
+            var span2 = document.createElement('span');
+            span2.className = 'log-reprocess';
+            span2.textContent = 'Ошибка: ' + (d.error || 'unknown') + '\n';
+            log2.appendChild(span2);
+        }
+        btn.disabled = false;
+        btn.textContent = 'Готово';
+        btn.onclick = closeReprocessModal;
+    }).catch(function(err) {
+        clearInterval(_pollTimer);
+        _setRpStep('Faces', 'fail');
+        _setRpStep('Describe', 'fail');
+        _setRpStep('Embed', 'fail');
+        var log3 = document.getElementById('rpLog');
+        var span3 = document.createElement('span');
+        span3.className = 'log-reprocess';
+        span3.textContent = 'Ошибка: ' + err.message + '\n';
+        log3.appendChild(span3);
+        btn.disabled = false;
+        btn.textContent = 'Ошибка';
+        btn.onclick = function() { showReprocessModal(_rpPhotoId); };
+    });
+}
 </script>
 </body>
 </html>

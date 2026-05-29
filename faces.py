@@ -49,7 +49,7 @@ def clear_flag():
         pass
 
 
-def get_undetected_photos(db, limit=0):
+def get_undetected_photos(db, limit=0, content_hash=None):
     cur = db.sqlite.cursor()
     sql = """
         SELECT p.photo_id, p.path, p.description, cf.content_hash
@@ -57,11 +57,15 @@ def get_undetected_photos(db, limit=0):
         JOIN catalog_files cf ON cf.abs_path = p.path
         WHERE cf.faces_done = 0 AND p.deleted = 0 AND (p.media_type IS NULL OR p.media_type != 'video')
           AND cf.is_canonical = 1 AND cf.deleted = 0
-        ORDER BY p.path
     """
+    params = []
+    if content_hash:
+        sql += " AND cf.content_hash = ?"
+        params.append(content_hash)
+    sql += " ORDER BY p.path"
     if limit and limit > 0:
         sql += f" LIMIT {limit}"
-    rows = cur.execute(sql).fetchall()
+    rows = cur.execute(sql, params).fetchall()
     result = []
     for r in rows:
         if not Path(r[1]).exists():
@@ -238,7 +242,9 @@ def run_clustering():
 def main():
     parser = argparse.ArgumentParser(description="Face detection + embedding + clustering")
     parser.add_argument("--limit", type=int, default=0, help="Limit photos (0=all)")
+    parser.add_argument("--hash", type=str, default="", help="Process single photo by content_hash")
     parser.add_argument("--no-cluster", action="store_true", help="Skip clustering after detection")
+    parser.add_argument("--no-gpu-lock", action="store_true", help="Skip GPU lock acquire (already held by caller)")
     args = parser.parse_args()
 
     from database import DatabaseManager
@@ -259,12 +265,12 @@ def main():
 
 def _main(db, args, mq=None):
 
-    if mq:
+    if mq and not args.no_gpu_lock:
         if not mq.acquire_gpu(timeout=60):
             log("GPU занят, faces не может запуститься")
             return 1
 
-    photos = get_undetected_photos(db, limit=args.limit)
+    photos = get_undetected_photos(db, limit=args.limit, content_hash=args.hash or None)
     if not photos:
         log("No photos need face detection")
         if not args.no_cluster:

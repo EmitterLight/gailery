@@ -108,7 +108,7 @@ function stepPct(id) {
 }
 function stepCount(id) {
     if (!st) return {done:0,total:0};
-    var ct = st.catalog_total||0, ci = st.catalog_ingested||0, ff = st.faces_flagged_in_db||0;
+    var ct = st.catalog_total||0, ci = st.catalog_ingested||0;
     if (id==='ingest') {
         if (st.current_step === 'scan_catalog' && A.workers && A.workers.scan_catalog && A.workers.scan_catalog.progress) {
             var p = A.workers.scan_catalog.progress;
@@ -117,7 +117,7 @@ function stepCount(id) {
         return {done:ci,total:ct};
     }
     if (id==='describe') return {done:st.catalog_described||0,total:ci||ct};
-    if (id==='faces') return {done:st.catalog_faces_done||0,total:ff||ci||ct};
+    if (id==='faces') return {done:st.catalog_faces_done||0,total:(st.catalog_faces_done||0)+(st.catalog_faces_not||0)||ci||ct};
     if (id==='exif') return {done:st.catalog_exif_done||0,total:ci||ct};
     if (id==='embed') return {done:st.photos_embedded||0,total:st.photos_total||0};
     return {done:0,total:0};

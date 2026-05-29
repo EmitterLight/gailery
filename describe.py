@@ -273,6 +273,8 @@ def main():
     parser.add_argument("--batch-size", type=int, default=6, help="VLM batch size (parallel slots)")
     parser.add_argument("--all", action="store_true", help="Describe all undescribed photos")
     parser.add_argument("--dir", type=str, default="", help="Only describe photos under this directory")
+    parser.add_argument("--hash", type=str, default="", help="Process single photo by content_hash")
+    parser.add_argument("--no-gpu-lock", action="store_true", help="Skip GPU lock acquire (already held by caller)")
     args = parser.parse_args()
 
     from config import describe_backend as db_backend, OLLAMA_MODE, OLLAMA_BASE_URL, OLLAMA_DESCRIBE_MODEL
@@ -311,6 +313,10 @@ def _main_local(args, mq, t0):
         sys.executable, str(Path(__file__).parent / "vision_describe.py"),
         "--batch-size", str(args.batch_size),
     ]
+    if args.hash:
+        cmd += ["--hash", args.hash]
+    if args.no_gpu_lock:
+        cmd += ["--no-gpu-lock"]
     if args.dir:
         cmd.append(args.dir)
     limit = 0 if args.all else args.limit

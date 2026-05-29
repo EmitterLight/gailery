@@ -571,8 +571,46 @@ async def get_system_report():
                 "catalog_files": db.sqlite.execute("SELECT COUNT(*) FROM catalog_files WHERE deleted = 0").fetchone()[0],
                 "db_size_mb": round(os.path.getsize(str(DATA_DIR / "gallery.db")) / (1024**2), 1),
                 "lancedb_size_mb": 0,
+            },
+            "pipeline": {
+                "cf_total": db.sqlite.execute("SELECT COUNT(*) FROM catalog_files WHERE deleted = 0").fetchone()[0],
+                "cf_canonical": db.sqlite.execute("SELECT COUNT(*) FROM catalog_files WHERE is_canonical = 1 AND deleted = 0").fetchone()[0],
+                "cf_duplicates": db.sqlite.execute("SELECT COUNT(*) FROM catalog_files WHERE is_canonical = 0 AND deleted = 0").fetchone()[0],
+                "cf_unhashed": db.sqlite.execute("SELECT COUNT(*) FROM catalog_files WHERE is_canonical = 1 AND deleted = 0 AND content_hash IS NULL").fetchone()[0],
+                "cf_empty": db.sqlite.execute("SELECT COUNT(*) FROM catalog_files WHERE is_canonical = 1 AND deleted = 0 AND size = 0").fetchone()[0],
+                "cf_deleted": db.sqlite.execute("SELECT COUNT(*) FROM catalog_files WHERE deleted = 1").fetchone()[0],
+                "cf_auto_missing": db.sqlite.execute("SELECT COUNT(*) FROM catalog_files WHERE deleted = 1 AND deleted_type = 'auto_missing'").fetchone()[0],
+                "cf_auto_empty": db.sqlite.execute("SELECT COUNT(*) FROM catalog_files WHERE deleted = 1 AND deleted_type = 'auto_empty'").fetchone()[0],
+                "cf_ingested": db.sqlite.execute("SELECT COUNT(*) FROM catalog_files WHERE is_canonical = 1 AND deleted = 0 AND ingested = 1").fetchone()[0],
+                "cf_described": db.sqlite.execute("SELECT COUNT(*) FROM catalog_files WHERE is_canonical = 1 AND deleted = 0 AND described = 1").fetchone()[0],
+                "cf_faces_done": db.sqlite.execute("SELECT COUNT(*) FROM catalog_files WHERE is_canonical = 1 AND deleted = 0 AND faces_done = 1").fetchone()[0],
+                "cf_embedded": db.sqlite.execute("SELECT COUNT(*) FROM catalog_files WHERE is_canonical = 1 AND deleted = 0 AND embedded = 1").fetchone()[0],
+                "cf_exif_done": db.sqlite.execute("SELECT COUNT(*) FROM catalog_files WHERE is_canonical = 1 AND deleted = 0 AND exif_done = 1").fetchone()[0],
+                "p_alive": db.sqlite.execute("SELECT COUNT(*) FROM photos WHERE deleted = 0").fetchone()[0],
+                "p_video": db.sqlite.execute("SELECT COUNT(*) FROM photos WHERE deleted = 0 AND media_type = 'video'").fetchone()[0],
+                "p_photo": db.sqlite.execute("SELECT COUNT(*) FROM photos WHERE deleted = 0 AND (media_type IS NULL OR media_type != 'video')").fetchone()[0],
+                "p_described": db.sqlite.execute("SELECT COUNT(*) FROM photos p JOIN catalog_files cf ON cf.abs_path = p.path WHERE cf.is_canonical = 1 AND cf.described = 1 AND p.deleted = 0 AND (p.media_type IS NULL OR p.media_type != 'video')").fetchone()[0],
+                "p_faces_done": db.sqlite.execute("SELECT COUNT(*) FROM photos p JOIN catalog_files cf ON cf.abs_path = p.path WHERE cf.is_canonical = 1 AND cf.faces_done = 1 AND p.deleted = 0 AND (p.media_type IS NULL OR p.media_type != 'video')").fetchone()[0],
+                "p_faces_present": db.sqlite.execute("SELECT COUNT(*) FROM photos WHERE deleted = 0 AND faces_present = 1").fetchone()[0],
+                "p_embedded": db.sqlite.execute("SELECT COUNT(*) FROM photos WHERE deleted = 0 AND embedded = 1").fetchone()[0],
+                "p_exif": db.sqlite.execute("SELECT COUNT(*) FROM photos WHERE deleted = 0 AND exif_checked = 1").fetchone()[0],
+                "f_total": db.sqlite.execute("SELECT COUNT(*) FROM faces").fetchone()[0],
+                "f_with_persona": db.sqlite.execute("SELECT COUNT(*) FROM faces WHERE persona_id IS NOT NULL").fetchone()[0],
+                "f_with_hash": db.sqlite.execute("SELECT COUNT(*) FROM faces WHERE content_hash IS NOT NULL").fetchone()[0],
+                "personas_total": db.sqlite.execute("SELECT COUNT(*) FROM personas").fetchone()[0],
+                "personas_named": db.sqlite.execute("SELECT COUNT(*) FROM personas WHERE display_name IS NOT NULL AND display_name != ''").fetchone()[0],
+                "pct_described": 0,
+                "pct_faces": 0,
+                "pct_embedded": 0,
+                "pct_exif": 0,
             }
         }
+        pl = report["pipeline"]
+        pp = max(pl["p_photo"], 1)
+        pl["pct_described"] = round(pl["p_described"] / pp * 100, 1)
+        pl["pct_faces"] = round(pl["p_faces_done"] / pp * 100, 1)
+        pl["pct_embedded"] = round(pl["p_embedded"] / pp * 100, 1)
+        pl["pct_exif"] = round(pl["cf_exif_done"] / max(pl["cf_canonical"], 1) * 100, 1)
         try:
             total = int(subprocess.run(["du", "-s",
                 str(DATA_DIR / "lancedb")], capture_output=True, text=True,

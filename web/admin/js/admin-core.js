@@ -173,7 +173,7 @@ var A = {
 };
 
 var _blocks = [];
-var DEFAULT_DASH_BLOCKS = ['pipeline_status', 'workers'];
+var DEFAULT_DASH_BLOCKS = ['pipeline_status', 'workers', 'monitor_feed'];
 
 function registerBlock(id, name, icon, renderFn, refreshFn) {
     _blocks.push({id: id, name: name, icon: icon, render: renderFn, refresh: refreshFn || null});

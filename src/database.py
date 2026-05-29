@@ -395,7 +395,7 @@ class DatabaseManager:
     def update_photo(self, photo_id, **kwargs):
         if not kwargs:
             return
-        skip_log = {"exif_checked", "embedded"}
+        skip_log = {"exif_checked", "embedded", "photo_type", "has_issues", "issue_type", "media_type", "img_width", "img_height"}
         from datetime import datetime, timezone
         now = datetime.now(timezone.utc).isoformat()
         cur = self.sqlite.cursor()
@@ -806,6 +806,21 @@ deleted=None, deleted_only=None,
             )
         self.sqlite.commit()
         self.invalidate_for_persona(persona_id)
+        now = datetime.now(timezone.utc).isoformat()
+        affected = self.sqlite.execute(
+            "SELECT DISTINCT cf.abs_path FROM faces f "
+            "JOIN catalog_files cf ON cf.content_hash = f.content_hash AND cf.is_canonical = 1 "
+            "WHERE f.persona_id = ?", (persona_id,)
+        ).fetchall()
+        for row in affected:
+            path = row[0]
+            photo = self.sqlite.execute("SELECT photo_id FROM photos WHERE path = ? AND deleted = 0", (path,)).fetchone()
+            if photo:
+                self.sqlite.execute(
+                    "INSERT INTO changes (photo_id, field, value, changed_at) VALUES (?, ?, ?, ?)",
+                    (photo[0], 'persona_update', persona_id, now)
+                )
+        self.sqlite.commit()
         return self.get_persona(persona_id)
 
     def delete_persona(self, persona_id):

@@ -56,9 +56,9 @@ LD_LIBRARY_PATH = ":".join([
 ])
 
 SYSTEM_PROMPT = """Ты описываешь фото в два предложения.
-Первое — кратко: кто (имена, возраст, связь) и где.
+Первое — кратко: кто (имена, связь) и где. Возраст — только детям до 18 лет.
 Второе — детально: одежда, позы, окружение, детали.
-Без "вероятно", без эмоций. Имена вместо "девушка/женщина"."""
+Взрослые: женщина/мужчина, не девочка/мальчик. Без "вероятно", без эмоций. Имена вместо "девушка/женщина"."""
 
 _DEFAULT_SYSTEM_PROMPT = SYSTEM_PROMPT
 
@@ -357,6 +357,11 @@ def _build_agent_context(photo_path, db):
             (photo_path,)).fetchone()
         photo_date = str(photo[0])[:10] if photo and photo[0] else None
 
+        faces_done_row = db.sqlite.execute(
+            "SELECT faces_done FROM catalog_files WHERE abs_path=? AND is_canonical=1 LIMIT 1",
+            (photo_path,)).fetchone()
+        faces_done = faces_done_row[0] if faces_done_row else 0
+
         rows = db.sqlite.execute(
             "SELECT f.bbox_x1, f.bbox_y1, f.bbox_x2, f.bbox_y2, per.display_name, per.comment, per.persona_id "
             "FROM faces f LEFT JOIN personas per ON f.persona_id=per.persona_id WHERE f.content_hash=?",
@@ -364,37 +369,55 @@ def _build_agent_context(photo_path, db):
 
         named = []
         unnamed = 0
-        for r in rows:
-            name = r[4]
-            comment = r[5] or ""
-            pid = r[6]
-            pos = _bbox_to_position([r[0] or 0, r[1] or 0, r[2] or 0, r[3] or 0])
-            pcnt = 0
-            if pid:
-                pc = db.sqlite.execute("SELECT COUNT(*) FROM faces WHERE persona_id=?", (pid,)).fetchone()
-                pcnt = pc[0] if pc else 0
-            age_str = _calc_age(comment, photo_date) if name and comment else None
-            if name:
-                line = name
-                if pos: line += f" ({pos})"
-                if age_str: line += f", {age_str}"
-                if comment: line += f" [{comment}]"
-                if pcnt: line += f" [{pcnt} фото]"
-                named.append(line)
-            else:
-                unnamed += 1
+        if faces_done:
+            for r in rows:
+                name = r[4]
+                comment = r[5] or ""
+                pid = r[6]
+                pos = _bbox_to_position([r[0] or 0, r[1] or 0, r[2] or 0, r[3] or 0])
+                pcnt = 0
+                if pid:
+                    pc = db.sqlite.execute("SELECT COUNT(*) FROM faces WHERE persona_id=?", (pid,)).fetchone()
+                    pcnt = pc[0] if pc else 0
+                age_str = _calc_age(comment, photo_date) if name and comment else None
+                if name:
+                    line = name
+                    if pos: line += f" ({pos})"
+                    if age_str: line += f", {age_str}"
+                    if comment: line += f" [{comment}]"
+                    if pcnt: line += f" [{pcnt} фото]"
+                    named.append(line)
+                else:
+                    unnamed += 1
+        else:
+            unnamed = len(rows)
 
         if named:
             parts.append("Люди: " + "; ".join(named))
         if unnamed:
             parts.append(f"Ещё {unnamed} чел.")
 
-        ff = db.get_setting("family_facts")
-        if ff:
-            parts.append("Семья:")
-            for line in ff.strip().split("\n"):
-                if line.strip():
-                    parts.append(line.strip())
+        if faces_done and named:
+            ff = db.get_setting("family_facts")
+            if ff:
+                parts.append("Семья:")
+                for line in ff.strip().split("\n"):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    import re as _re
+                    if photo_date:
+                        m = _re.search(r'(\d{1,2})\s+(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\s+(\d{4})', line)
+                        if m:
+                            birth_year = int(m.group(2))
+                            try:
+                                py = int(photo_date[:4])
+                            except Exception:
+                                py = 0
+                            age = py - birth_year
+                            if age > 18:
+                                line = _re.sub(r'\d{1,2}\s+(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\s+\d{4}', '', line).strip()
+                    parts.append(line)
 
         alias_row = db.sqlite.execute(
             "SELECT cr.alias FROM catalog_roots cr JOIN catalog_files cf ON cf.root_id=cr.root_id WHERE cf.abs_path=? AND cf.is_canonical=1 LIMIT 1",
@@ -528,13 +551,16 @@ def get_db():
     return DatabaseManager()
 
 
-def get_undescribed_photos(db, photo_dir, limit=0):
+def get_undescribed_photos(db, photo_dir, limit=0, content_hash=None):
     cur = db.sqlite.cursor()
     where_extra = ""
     params = []
     if photo_dir:
         where_extra = " AND cf.abs_path LIKE ?"
         params.append(str(photo_dir) + "/%")
+    if content_hash:
+        where_extra += " AND cf.content_hash = ?"
+        params.append(content_hash)
     sql = ("SELECT p.path FROM photos p JOIN catalog_files cf ON cf.abs_path = p.path "
            "WHERE (p.description IS NULL OR p.description = '' OR cf.described = 0) AND p.deleted = 0 "
            "AND cf.is_canonical = 1 AND (p.media_type IS NULL OR p.media_type != 'video')" + where_extra + " ORDER BY RANDOM()")
@@ -595,10 +621,10 @@ def process_single(photo_path):
         stop_llama_server(server)
 
 
-def process_directory(photo_dir, batch_size=BATCH_SIZE, limit=0):
+def process_directory(photo_dir, batch_size=BATCH_SIZE, limit=0, content_hash=None):
     db = get_db()
 
-    photos = get_undescribed_photos(db, photo_dir, limit)
+    photos = get_undescribed_photos(db, photo_dir, limit, content_hash=content_hash)
     total = len(photos)
 
     if total == 0:
@@ -721,23 +747,26 @@ def main():
     parser.add_argument("--single", action="store_true", help="Process single photo")
     parser.add_argument("--batch-size", type=int, default=BATCH_SIZE, help=f"Batch size (default: {BATCH_SIZE})")
     parser.add_argument("--limit", type=int, default=0, help="Limit number of photos (0=all)")
+    parser.add_argument("--hash", type=str, default="", help="Process single photo by content_hash")
+    parser.add_argument("--no-gpu-lock", action="store_true", help="Skip GPU lock acquire (already held by caller)")
     args = parser.parse_args()
 
     try:
         from mqtt_client import create_worker_mqtt
         mq = create_worker_mqtt("describe")
-        if not mq.acquire_gpu(timeout=60):
-            log("GPU занят, describe не может запуститься")
-            if mq:
-                mq.shutdown()
-            return
+        if not args.no_gpu_lock and mq:
+            if not mq.acquire_gpu(timeout=60):
+                log("GPU занят, describe не может запуститься")
+                if mq:
+                    mq.shutdown()
+                return
     except Exception:
         mq = None
 
     if args.single:
         process_single(args.path)
     else:
-        process_directory(args.path, batch_size=args.batch_size, limit=args.limit)
+        process_directory(args.path, batch_size=args.batch_size, limit=args.limit, content_hash=args.hash or None)
 
     if mq:
         mq.release_gpu()

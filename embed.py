@@ -316,7 +316,7 @@ class EmbedEngine:
         log("GPU memory released")
 
 
-def get_unembedded_photos_sql(db, limit=0, offset=0):
+def get_unembedded_photos_sql(db, limit=0, offset=0, content_hash=None):
     cur = db.sqlite.cursor()
     sql = """
         SELECT p.photo_id, p.path, p.description, COALESCE(p.manual_date, p.date) as date,
@@ -325,11 +325,15 @@ def get_unembedded_photos_sql(db, limit=0, offset=0):
         FROM photos p
         JOIN catalog_files c ON p.path = c.abs_path AND c.is_canonical = 1 AND c.deleted = 0
         WHERE (p.embedded = 0 OR p.embedded IS NULL) AND p.deleted = 0 AND (p.media_type IS NULL OR p.media_type != 'video')
-        ORDER BY p.path
     """
+    params = []
+    if content_hash:
+        sql += " AND c.content_hash = ?"
+        params.append(content_hash)
+    sql += " ORDER BY p.path"
     if limit > 0:
         sql += f" LIMIT {limit} OFFSET {offset}"
-    rows = cur.execute(sql).fetchall()
+    rows = cur.execute(sql, params).fetchall()
     cols = ["photo_id", "path", "description", "date",
             "camera_make", "camera_model", "gps_lat", "gps_lon", "faces_present", "content_hash"]
     return [dict(zip(cols, r)) for r in rows]
@@ -339,6 +343,8 @@ def main():
     parser = argparse.ArgumentParser(description="Generate text embeddings for semantic search")
     parser.add_argument("--limit", type=int, default=0, help="Max photos (0=all)")
     parser.add_argument("--force", action="store_true", help="Re-embed all photos")
+    parser.add_argument("--hash", type=str, default="", help="Process single photo by content_hash")
+    parser.add_argument("--no-gpu-lock", action="store_true", help="Skip GPU lock acquire (already held by caller)")
     args = parser.parse_args()
 
     from database import DatabaseManager
@@ -368,9 +374,12 @@ def _main(db, args, mq=None):
         all_photos = db.get_all_photos()
         photos = all_photos[:args.limit] if args.limit > 0 else all_photos
     else:
+        content_hash = args.hash or None
         cur = db.sqlite.cursor()
+        ch_where = " AND c.content_hash = ?" if content_hash else ""
+        ch_params = [content_hash] if content_hash else []
         total_unembedded = cur.execute(
-            "SELECT COUNT(*) FROM photos p JOIN catalog_files c ON p.path = c.abs_path AND c.is_canonical = 1 AND c.deleted = 0 WHERE (p.embedded = 0 OR p.embedded IS NULL) AND p.deleted = 0"
+            "SELECT COUNT(*) FROM photos p JOIN catalog_files c ON p.path = c.abs_path AND c.is_canonical = 1 AND c.deleted = 0 WHERE (p.embedded = 0 OR p.embedded IS NULL) AND p.deleted = 0" + ch_where, ch_params
         ).fetchone()[0]
         log(f"Found {total_unembedded} photos to embed (SQL query)")
         photos = None
@@ -381,7 +390,7 @@ def _main(db, args, mq=None):
 
     total_to_embed = total_unembedded if not args.force else len(photos)
 
-    if mq:
+    if mq and not args.no_gpu_lock:
         log("Acquiring GPU...")
         if not mq.acquire_gpu(timeout=60):
             log("GPU занят, embed не может запуститься")
@@ -422,7 +431,7 @@ def _main(db, args, mq=None):
                 if not chunk:
                     break
             else:
-                chunk = get_unembedded_photos_sql(db, limit=fetch_size, offset=0)
+                chunk = get_unembedded_photos_sql(db, limit=fetch_size, offset=0, content_hash=args.hash or None)
                 if not chunk:
                     break
 
@@ -593,6 +602,7 @@ def _mark_embedded_batch(db, photo_ids):
     cur = db.sqlite.cursor()
     ph = ",".join("?" * len(photo_ids))
     cur.execute(f"UPDATE photos SET embedded = 1 WHERE photo_id IN ({ph})", photo_ids)
+    cur.execute(f"UPDATE catalog_files SET embedded = 1 WHERE abs_path IN (SELECT path FROM photos WHERE photo_id IN ({ph}) AND is_canonical = 1)", photo_ids)
     db.sqlite.commit()
 
 
