@@ -57,6 +57,11 @@ def get_undetected_photos(db, limit=0, content_hash=None):
         JOIN catalog_files cf ON cf.abs_path = p.path
         WHERE cf.faces_done = 0 AND p.deleted = 0 AND (p.media_type IS NULL OR p.media_type != 'video')
           AND cf.is_canonical = 1 AND cf.deleted = 0
+          AND NOT EXISTS (
+            SELECT 1 FROM faces f
+            WHERE f.content_hash = cf.content_hash
+               OR f.photo_id = p.path
+          )
     """
     params = []
     if content_hash:
@@ -112,6 +117,11 @@ def run_detection(photos):
         photo_id = str(Path(path).relative_to(PHOTO_SHARE_PATH)) if path.startswith(str(PHOTO_SHARE_PATH) + "/") else path
         existing = db.get_faces_for_photo(photo_id)
         if existing:
+            try:
+                db.update_catalog_file_by_path(path, faces_done=1)
+            except Exception:
+                pass
+            log(f"  skip {os.path.basename(path)} (faces already exist)")
             continue
 
         try:

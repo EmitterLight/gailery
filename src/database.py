@@ -1218,6 +1218,8 @@ deleted=None, deleted_only=None,
 
         return {
             "photos_total": photos_total,
+            "photos_only": photos_only,
+            "videos_total": videos_ingested,
             "photos_deleted": photos_deleted,
             "photos_described": described,
             "photos_faces_flagged": faces_flagged,

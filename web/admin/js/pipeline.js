@@ -109,6 +109,7 @@ function stepPct(id) {
 function stepCount(id) {
     if (!st) return {done:0,total:0};
     var ct = st.catalog_total||0, ci = st.catalog_ingested||0;
+    var po = st.photos_only||0;
     if (id==='ingest') {
         if (st.current_step === 'scan_catalog' && A.workers && A.workers.scan_catalog && A.workers.scan_catalog.progress) {
             var p = A.workers.scan_catalog.progress;
@@ -116,10 +117,10 @@ function stepCount(id) {
         }
         return {done:ci,total:ct};
     }
-    if (id==='describe') return {done:st.catalog_described||0,total:ci||ct};
-    if (id==='faces') return {done:st.catalog_faces_done||0,total:(st.catalog_faces_done||0)+(st.catalog_faces_not||0)||ci||ct};
-    if (id==='exif') return {done:st.catalog_exif_done||0,total:ci||ct};
-    if (id==='embed') return {done:st.photos_embedded||0,total:st.photos_total||0};
+    if (id==='describe') return {done:st.catalog_described||0,total:po||ci||ct};
+    if (id==='faces') return {done:st.catalog_faces_done||0,total:po||(st.catalog_faces_done||0)+(st.catalog_faces_not||0)||ci||ct};
+    if (id==='exif') return {done:st.catalog_exif_done||0,total:po||ci||ct};
+    if (id==='embed') return {done:st.photos_embedded||0,total:po||ci||ct};
     return {done:0,total:0};
 }
 
@@ -154,13 +155,14 @@ function buildUI(mode) {
 function buildSummaryHtml() {
     if (!st || !st.photos_total) return '';
     var ct = st.catalog_total || 0, ci = st.catalog_ingested || 0;
+    var po = st.photos_only || 0;
     var h = '<div class="summary">';
     h += '<div class="sbox"><div class="sv">'+ci+'</div><div class="sl">Внесено из '+ct+'</div></div>';
-    h += '<div class="sbox"><div class="sv">'+(st.catalog_exif_done||0)+'</div><div class="sl">EXIF из '+ci+'</div></div>';
+    h += '<div class="sbox"><div class="sv">'+(st.catalog_exif_done||0)+'</div><div class="sl">EXIF из '+po+'</div></div>';
     h += '<div class="sbox sep"></div>';
-    h += '<div class="sbox"><div class="sv">'+(st.catalog_faces_done||0)+'</div><div class="sl">Лица из '+(st.faces_flagged_in_db||0)+'</div></div>';
-    h += '<div class="sbox"><div class="sv">'+(st.catalog_described||0)+'</div><div class="sl">Описано из '+ci+'</div></div>';
-    h += '<div class="sbox"><div class="sv">'+(st.photos_embedded||0)+'</div><div class="sl">Индекс из '+(st.photos_total||0)+'</div></div>';
+    h += '<div class="sbox"><div class="sv">'+(st.catalog_faces_done||0)+'</div><div class="sl">Лица из '+po+'</div></div>';
+    h += '<div class="sbox"><div class="sv">'+(st.catalog_described||0)+'</div><div class="sl">Описано из '+po+'</div></div>';
+    h += '<div class="sbox"><div class="sv">'+(st.photos_embedded||0)+'</div><div class="sl">Индекс из '+po+'</div></div>';
     if (st.videos && st.videos.catalog) {
         h += '<div class="sbox"><div class="sv">'+st.videos.ingested+'</div><div class="sl">Видео из '+st.videos.catalog+'</div></div>';
     } else {
