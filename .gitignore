@@ -85,3 +85,7 @@ deploy/
 
 # Screenshots
 web/screenshots/
+
+# анализ кода
+*.exe
+20260611_153549_Documentation.md
