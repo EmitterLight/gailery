@@ -108,3 +108,13 @@ def _apply_ollama_overrides():
         pass
 
 _apply_ollama_overrides()
+
+# ── Model paths (centralized) ────────────────────────────────────
+# All paths relative to MODELS_DIR; single source of truth for model filenames.
+# These are used by vision_describe.py, enrich_description.py, embed.py, faces.py.
+
+VLM_MODEL_PATH   = MODELS_DIR / "gguf" / "Qwen3.5-4B-Q4_K_M.gguf"      # vision_describe.py
+VLM_MMPROJ_PATH  = MODELS_DIR / "gguf" / "mmproj-BF16.gguf"            # vision_describe.py
+TEXT_LLM_PATH    = MODELS_DIR / "gguf" / "Qwen3.5-4B-Q4_K_M.gguf"      # enrich_description.py
+EMBED_GGUF_PATH  = MODELS_DIR / "gguf" / "Qwen3-Embedding-0.6B-Q8_0.gguf"  # embed.py
+INSIGHTFACE_PATH = MODELS_DIR / "insightface"                           # faces.py

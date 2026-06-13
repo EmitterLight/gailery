@@ -24,7 +24,7 @@ if os.path.exists(VENV_PYTHON) and sys.executable != VENV_PYTHON:
 os.environ['OMP_NUM_THREADS'] = '4'
 
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
-from config import MODELS_DIR, PHOTO_SHARE_PATH, VIDEO_EXTS
+from config import MODELS_DIR, PHOTO_SHARE_PATH, VIDEO_EXTS, INSIGHTFACE_PATH
 LOG_FILE = str(Path(__file__).parent / "logs" / "pipeline.log")
 FLAG_FILE = str(Path(__file__).parent / "data" / "pipeline_flags" / "faces")
 
@@ -98,7 +98,7 @@ def run_detection(photos):
         'cudnn_conv_use_max_workspace': '1',
         'gpu_mem_limit': 6*1024*1024*1024,
     }
-    insightface_root = str(MODELS_DIR / "insightface")
+    insightface_root = str(INSIGHTFACE_PATH)
     app = FaceAnalysis(name='buffalo_l', root=insightface_root, providers=[('CUDAExecutionProvider', cuda_opts), 'CPUExecutionProvider'])
     app.prepare(ctx_id=0, det_size=(640, 640))
     log(f"InsightFace loaded on GPU (optimized CUDA provider)")

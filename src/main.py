@@ -1321,6 +1321,7 @@ async def get_config():
         LANCEDB_PATH, FLAG_DIR, LOG_FILE,
         SERVICE_NAME, MQTT_PREFIX,
         OLLAMA_MODE, OLLAMA_BASE_URL, OLLAMA_EMBED_MODEL, OLLAMA_EMBED_CHUNK, OLLAMA_DESCRIBE_MODEL,
+        VLM_MODEL_PATH, VLM_MMPROJ_PATH, TEXT_LLM_PATH, EMBED_GGUF_PATH, INSIGHTFACE_PATH,
     )
     try:
         from config import embed_backend, search_backend, describe_backend
@@ -1384,7 +1385,7 @@ async def get_config():
                 {"k": "EMBEDDING_DIM (лица)", "v": "128", "d": "Размерность эмбеддингов лиц"},
                 {"k": "EMBEDDING_MODEL (текст)", "v": EMBEDDING_MODEL, "d": "Модель текстовых эмбеддингов"},
                 {"k": "EMBEDDING_DIM (текст)", "v": str(EMBEDDING_DIM), "d": "Размерность текстовых эмбеддингов"},
-                {"k": "VLM модель", "v": "Qwen3.5-4B-Q4_K_M.gguf", "d": "VLM модель описания фото"},
+                {"k": "VLM модель", "v": VLM_MODEL_PATH.name, "d": "VLM модель описания фото"},
                 {"k": "VLM порт", "v": "8101", "d": "Порт llama-server VLM"},
                 {"k": "VLM слоты", "v": "6", "d": "Параллельные слоты VLM"},
                 {"k": "VLM контекст", "v": "8192", "d": "Размер контекста VLM (токенов)"},
@@ -1392,10 +1393,10 @@ async def get_config():
                 {"k": "VLM температура", "v": "0.1", "d": "Температура сэмплирования VLM"},
                 {"k": "VLM макс.размер фото", "v": "1280px", "d": "Макс. размер фото для VLM"},
                 {"k": "VLM JPEG quality", "v": "85", "d": "Качество JPEG при подготовке фото"},
-                {"k": "Enrich порт", "v": "8103", "d": "Порт llama-server обогащения"},
+                {"k": "Enrich модель", "v": TEXT_LLM_PATH.name, "d": "Модель обогащения описаний"},
                 {"k": "Enrich макс.токены", "v": "2048", "d": "Макс. токены обогащения"},
                 {"k": "Enrich температура", "v": "0.4", "d": "Температура сэмплирования обогащения"},
-                {"k": "Embed модель", "v": "Qwen3-Embedding-0.6B (transformers)", "d": "Модель семантической индексации"},
+                {"k": "Embed модель", "v": EMBED_GGUF_PATH.name, "d": "Модель семантической индексации"},
             ]
         },
         {

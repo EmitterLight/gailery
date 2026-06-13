@@ -29,13 +29,13 @@ if os.path.exists(VENV_PYTHON) and sys.executable != VENV_PYTHON:
 
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 import config as app_config
-from config import PHOTO_SHARE_PATH
+from config import PHOTO_SHARE_PATH, EMBED_GGUF_PATH
 LOG_FILE = str(Path(__file__).parent / "logs" / "pipeline.log")
 FLAG_FILE = str(Path(__file__).parent / "data" / "pipeline_flags" / "embed")
 
 NUM_SEQ = 4
 N_CTX = 512
-MODEL_PATH = str(Path(__file__).parent / "models" / "gguf" / "Qwen3-Embedding-0.6B-Q8_0.gguf")
+MODEL_PATH = str(EMBED_GGUF_PATH)
 SEARCH_TEXT_MAX_LEN = 900
 LANCE_FLUSH_SIZE = 2048
 LOG_INTERVAL = 10
